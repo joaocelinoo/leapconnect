@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - In Settings → Services, you can enable Home Assistant, enter your MQTT broker details, and test the connection before saving
 - All vehicle sensors appear in Home Assistant as ready-to-use entities: battery level, mileage, temperatures, tire pressures, door/window status, GPS position, live car image, and remote control buttons
 - Vehicle data is sent to Home Assistant automatically every time the app collects new data
+- **Separate polling timers**: history collection and Home Assistant updates now run on independent schedules — you can collect history every 15 minutes while pushing updates to HA every 30 seconds, for example
+- The Home Assistant polling interval supports sub-minute values (10 sec, 30 sec, etc.) for near-real-time updates in your smart home dashboard
 
 ### Changed
 
@@ -21,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On wider screens, the Credentials and Certificates cards sit side by side in a compact grid
 - Settings now use the full available width instead of being limited to a narrow column
 - The app version shown in Settings is now read automatically from the project configuration, so it always stays up to date
+- The Home Assistant section in Services now includes a polling interval control with +/− stepper (10 sec steps below 1 min, 1 min steps above)
 
 ## [0.3.0] - 2026-05-03
 

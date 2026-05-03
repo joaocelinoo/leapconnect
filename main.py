@@ -207,12 +207,15 @@ async def lifespan(app: FastAPI):
     _scheduler = VehicleDataScheduler(_history_repo)
     saved = await _history_repo.load_scheduler_settings()
     _scheduler.update_settings(
-        enabled=saved.enabled, interval_minutes=saved.interval_minutes
+        enabled=saved.enabled,
+        interval_minutes=saved.interval_minutes,
+        mqtt_interval_seconds=saved.mqtt_interval_seconds,
     )
     _LOGGER.info(
-        "Scheduler settings loaded: enabled=%s, interval=%d min",
+        "Scheduler settings loaded: enabled=%s, history=%d min, mqtt=%d sec",
         saved.enabled,
         saved.interval_minutes,
+        saved.mqtt_interval_seconds,
     )
 
     # Initialize MQTT Home Assistant service
@@ -1261,6 +1264,7 @@ async def update_scheduler_settings(request: Request) -> SchedulerStatusResponse
     body = await request.json()
     enabled = body.get("enabled")
     interval = body.get("interval_minutes")
+    mqtt_interval = body.get("mqtt_interval_seconds")
 
     if enabled is not None and not isinstance(enabled, bool):
         raise HTTPException(status_code=422, detail="'enabled' must be a boolean")
@@ -1272,8 +1276,20 @@ async def update_scheduler_settings(request: Request) -> SchedulerStatusResponse
                 status_code=422,
                 detail="'interval_minutes' must be an integer",
             ) from exc
+    if mqtt_interval is not None:
+        try:
+            mqtt_interval = int(mqtt_interval)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail="'mqtt_interval_seconds' must be an integer",
+            ) from exc
 
-    settings = _scheduler.update_settings(enabled=enabled, interval_minutes=interval)
+    settings = _scheduler.update_settings(
+        enabled=enabled,
+        interval_minutes=interval,
+        mqtt_interval_seconds=mqtt_interval,
+    )
 
     # Persist to DB
     await _history_repo.save_scheduler_settings(settings)

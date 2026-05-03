@@ -148,7 +148,7 @@
             <button
               class="interval-set-btn"
               :disabled="pendingInterval === scheduler.interval_minutes || schedulerUpdating"
-              @click="applyInterval"
+              @click="applyInterval('interval_minutes', pendingInterval)"
             >Set</button>
           </div>
         </div>
@@ -183,6 +183,20 @@
           >
             {{ mqtt.enabled ? 'Disable' : 'Enable' }}
           </button>
+        </div>
+
+        <div class="interval-row">
+          <span class="interval-label">Polling interval</span>
+          <div class="interval-control">
+            <button class="interval-btn" @click="pendingMqttInterval = Math.max(10, stepDown(pendingMqttInterval))">−</button>
+            <span class="interval-value">{{ formatSeconds(pendingMqttInterval) }}</span>
+            <button class="interval-btn" @click="pendingMqttInterval = Math.min(3600, stepUp(pendingMqttInterval))">+</button>
+            <button
+              class="interval-set-btn"
+              :disabled="pendingMqttInterval === scheduler.mqtt_interval_seconds || schedulerUpdating"
+              @click="applyMqttInterval"
+            >Set</button>
+          </div>
         </div>
 
         <button class="save-btn" style="margin-top:12px" @click="showMqttEdit = true">
@@ -446,6 +460,7 @@ const notifications = reactive([
 const scheduler = reactive({
   enabled: false,
   interval_minutes: 15,
+  mqtt_interval_seconds: 60,
   is_running: false,
   last_run: null,
   last_error: null,
@@ -454,6 +469,7 @@ const scheduler = reactive({
 })
 
 const pendingInterval = ref(15)
+const pendingMqttInterval = ref(60)
 const schedulerUpdating = ref(false)
 
 async function loadScheduler() {
@@ -461,6 +477,7 @@ async function loadScheduler() {
     const data = await api('GET', '/api/scheduler')
     Object.assign(scheduler, data)
     pendingInterval.value = data.interval_minutes
+    pendingMqttInterval.value = data.mqtt_interval_seconds
   } catch {
     // scheduler not available yet
   }
@@ -473,6 +490,7 @@ async function updateScheduler(patch) {
     const data = await api('PUT', '/api/scheduler', patch)
     Object.assign(scheduler, data)
     pendingInterval.value = data.interval_minutes
+    pendingMqttInterval.value = data.mqtt_interval_seconds
   } catch {
     await loadScheduler()
   } finally {
@@ -484,10 +502,32 @@ function toggleScheduler(val) {
   updateScheduler({ enabled: val })
 }
 
-function applyInterval() {
-  if (pendingInterval.value !== scheduler.interval_minutes) {
-    updateScheduler({ interval_minutes: pendingInterval.value })
+function applyInterval(key, value) {
+  if (value !== scheduler[key]) {
+    updateScheduler({ [key]: value })
   }
+}
+
+function applyMqttInterval() {
+  if (pendingMqttInterval.value !== scheduler.mqtt_interval_seconds) {
+    updateScheduler({ mqtt_interval_seconds: pendingMqttInterval.value })
+  }
+}
+
+function formatSeconds(s) {
+  if (s < 60) return `${s} sec`
+  const m = Math.round(s / 60)
+  return `${m} min`
+}
+
+function stepUp(val) {
+  if (val < 60) return val + 10
+  return val + 60
+}
+
+function stepDown(val) {
+  if (val <= 60) return val - 10
+  return val - 60
 }
 
 // -- MQTT / Home Assistant state --------------------------------------------

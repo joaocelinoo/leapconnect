@@ -267,7 +267,13 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
         async with self._session_factory() as session:
             result = await session.execute(
                 select(AppSettingRow).where(
-                    AppSettingRow.key.in_(["scheduler_enabled", "scheduler_interval"])
+                    AppSettingRow.key.in_(
+                        [
+                            "scheduler_enabled",
+                            "scheduler_interval",
+                            "scheduler_mqtt_interval_seconds",
+                        ]
+                    )
                 )
             )
             rows = {r.key: r.value for r in result.scalars().all()}
@@ -275,6 +281,9 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
         return SchedulerSettings(
             enabled=rows.get("scheduler_enabled", "0") == "1",
             interval_minutes=int(rows.get("scheduler_interval", "15")),
+            mqtt_interval_seconds=int(
+                rows.get("scheduler_mqtt_interval_seconds", "60")
+            ),
         )
 
     async def save_scheduler_settings(self, settings: SchedulerSettings) -> None:
@@ -282,6 +291,7 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
         pairs = {
             "scheduler_enabled": "1" if settings.enabled else "0",
             "scheduler_interval": str(settings.interval_minutes),
+            "scheduler_mqtt_interval_seconds": str(settings.mqtt_interval_seconds),
         }
         async with self._session_factory() as session:
             for key, value in pairs.items():

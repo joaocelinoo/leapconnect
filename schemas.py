@@ -491,6 +491,7 @@ class DailySummaryResponse(BaseModel):
 class SchedulerStatusResponse(BaseModel):
     enabled: bool
     interval_minutes: int
+    mqtt_interval_seconds: int
     is_running: bool
     last_run: str | None = None
     last_error: str | None = None

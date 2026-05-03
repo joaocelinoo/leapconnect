@@ -7,7 +7,6 @@ to an MQTT broker using Home Assistant's MQTT Discovery protocol.
 from __future__ import annotations
 
 import asyncio
-import base64
 import contextlib
 import json
 import logging
@@ -123,8 +122,7 @@ class HomeAssistantMqttService:
         if image_package:
             try:
                 img_bytes = image_package.compose(status, format="PNG")
-                img_b64 = base64.b64encode(img_bytes).decode()
-                await self._publish(f"{prefix}/image", img_b64, retain=True)
+                await self._publish(f"{prefix}/image", img_bytes, retain=True)
             except Exception:
                 _LOGGER.debug("Failed to compose car image for MQTT")
 
@@ -744,17 +742,17 @@ class HomeAssistantMqttService:
         topic = f"{disc_prefix}/device_tracker/{device_id}/config"
         await self._publish(topic, json.dumps(tracker_config), retain=True)
 
-        # ── Camera (dynamic car image) ─────────────────────────────────────
-        camera_config = {
+        # ── Image (dynamic car image) ──────────────────────────────────────
+        image_config = {
             "name": f"{device_name} Image",
             "unique_id": f"{device_id}_image",
-            "topic": f"{prefix}/{vin}/image",
-            "image_encoding": "b64",
+            "image_topic": f"{prefix}/{vin}/image",
             "device": device_info,
             "icon": "mdi:car",
+            "content_type": "image/png",
         }
-        topic = f"{disc_prefix}/camera/{device_id}/image/config"
-        await self._publish(topic, json.dumps(camera_config), retain=True)
+        topic = f"{disc_prefix}/image/{device_id}/image/config"
+        await self._publish(topic, json.dumps(image_config), retain=True)
 
         # Buttons (commands)
         commands = [
@@ -778,7 +776,9 @@ class HomeAssistantMqttService:
 
         _LOGGER.info("MQTT discovery published for %s (%s)", device_name, vin)
 
-    async def _publish(self, topic: str, payload: str, *, retain: bool = False) -> None:
+    async def _publish(
+        self, topic: str, payload: str | bytes, *, retain: bool = False
+    ) -> None:
         """Queue a message for publishing."""
         if self._connected and self._client:
             try:
