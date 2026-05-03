@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Separate polling timers**: history collection and Home Assistant updates now run on independent schedules — you can collect history every 15 minutes while pushing updates to HA every 30 seconds, for example
 - The Home Assistant polling interval supports sub-minute values (10 sec, 30 sec, etc.) for near-real-time updates in your smart home dashboard
 - **HA polling interval exposed as a Home Assistant entity**: you can adjust the polling interval directly from your HA dashboard using a slider (10 s – 3600 s), without opening the webapp
+- **Charge limit controllable from Home Assistant**: a new slider entity (50%–100%) lets you set the charge limit directly from HA — the command is sent to the vehicle via the Leapmotor API
+- Both ignition states are now exposed in Home Assistant: "Ignition" (key on) and "Ignition Ready" (vehicle ready to drive)
 
 ### Changed
 
