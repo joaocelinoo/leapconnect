@@ -39,55 +39,91 @@
     <SectionCard title="Leapmotor Credentials" :icon="KeyRound">
       <InfoRow label="Email" :value="leapmotorEmail" color="#e2e6f0" />
       <InfoRow label="Connection" :value="store.connected ? 'Connected' : 'Offline'" :color="store.connected ? '#00e676' : '#ffab40'" :dot="true" />
-      <button class="action-btn" @click="showLeapmotorEdit = !showLeapmotorEdit">
-        {{ showLeapmotorEdit ? 'Cancel' : 'Edit Credentials' }}
+      <button class="save-btn" style="margin-top:12px" @click="showLeapmotorEdit = true">
+        Edit Credentials
       </button>
-      <div v-if="showLeapmotorEdit" class="edit-panel">
-        <div class="form-group">
-          <label>Leapmotor Email</label>
-          <input v-model="accountForm.username" type="email" placeholder="your@email.com" />
-        </div>
-        <div class="form-group">
-          <label>Leapmotor Password</label>
-          <input v-model="accountForm.password" type="password" placeholder="Leapmotor account password" />
-        </div>
-        <button class="save-btn" :disabled="accountSaving" @click="saveLeapmotorAccount">
-          {{ accountSaving ? 'Saving…' : 'Save & Reconnect' }}
-        </button>
-        <div v-if="accountError" class="field-error">{{ accountError }}</div>
-        <div v-if="accountSuccess" class="field-success">{{ accountSuccess }}</div>
-      </div>
     </SectionCard>
+
+    <!-- Leapmotor Credentials Modal -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showLeapmotorEdit" class="mqtt-overlay" @click.self="closeLeapmotorModal">
+          <div class="mqtt-modal">
+            <div class="mqtt-modal-header">
+              <KeyRound :size="16" style="color:#00d4ff" />
+              <span class="mqtt-modal-title">Leapmotor Credentials</span>
+              <button class="mqtt-modal-close" @click="closeLeapmotorModal">&times;</button>
+            </div>
+            <div class="mqtt-modal-body">
+              <div class="form-group">
+                <label>Leapmotor Email</label>
+                <input v-model="accountForm.username" type="email" placeholder="your@email.com" />
+              </div>
+              <div class="form-group">
+                <label>Leapmotor Password</label>
+                <input v-model="accountForm.password" type="password" placeholder="Leapmotor account password" />
+              </div>
+              <div v-if="accountError" class="field-error" style="margin-bottom:8px">{{ accountError }}</div>
+              <div v-if="accountSuccess" class="field-success" style="margin-bottom:8px">{{ accountSuccess }}</div>
+            </div>
+            <div class="mqtt-modal-footer">
+              <button class="test-btn" @click="closeLeapmotorModal">Cancel</button>
+              <button class="save-btn" :disabled="accountSaving" @click="saveLeapmotorAccount">
+                {{ accountSaving ? 'Saving…' : 'Save & Reconnect' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- Certificates -->
     <SectionCard title="Certificates" :icon="ShieldCheck">
       <InfoRow label="App Certificate" :value="certsStatus.cert_exists ? 'Installed' : 'Missing'" :color="certsStatus.cert_exists ? '#00e676' : '#ff5252'" :dot="true" />
       <InfoRow label="Private Key" :value="certsStatus.key_exists ? 'Installed' : 'Missing'" :color="certsStatus.key_exists ? '#00e676' : '#ff5252'" :dot="true" />
-      <button class="action-btn" @click="showCertEdit = !showCertEdit">
-        {{ showCertEdit ? 'Cancel' : 'Update Certificates' }}
+      <button class="save-btn" style="margin-top:12px" @click="showCertEdit = true">
+        Update Certificates
       </button>
-      <div v-if="showCertEdit" class="edit-panel">
-        <div class="form-group">
-          <label>App Certificate (.crt / .pem)</label>
-          <div class="file-upload" :class="{ filled: certFile }" @click="$refs.certInput.click()">
-            <span>{{ certFile ? certFile.name : 'Choose file…' }}</span>
-          </div>
-          <input ref="certInput" type="file" accept=".crt,.pem,.cer" hidden @change="e => certFile = e.target.files[0]" />
-        </div>
-        <div class="form-group">
-          <label>Private Key (.key / .pem)</label>
-          <div class="file-upload" :class="{ filled: keyFile }" @click="$refs.keyInput.click()">
-            <span>{{ keyFile ? keyFile.name : 'Choose file…' }}</span>
-          </div>
-          <input ref="keyInput" type="file" accept=".key,.pem" hidden @change="e => keyFile = e.target.files[0]" />
-        </div>
-        <button class="save-btn" :disabled="certSaving || !certFile || !keyFile" @click="saveCertificates">
-          {{ certSaving ? 'Uploading…' : 'Upload Certificates' }}
-        </button>
-        <div v-if="certError" class="field-error">{{ certError }}</div>
-        <div v-if="certSuccess" class="field-success">{{ certSuccess }}</div>
-      </div>
     </SectionCard>
+
+    <!-- Certificates Modal -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showCertEdit" class="mqtt-overlay" @click.self="closeCertModal">
+          <div class="mqtt-modal">
+            <div class="mqtt-modal-header">
+              <ShieldCheck :size="16" style="color:#00d4ff" />
+              <span class="mqtt-modal-title">Update Certificates</span>
+              <button class="mqtt-modal-close" @click="closeCertModal">&times;</button>
+            </div>
+            <div class="mqtt-modal-body">
+              <div class="form-group">
+                <label>App Certificate (.crt / .pem)</label>
+                <div class="file-upload" :class="{ filled: certFile }" @click="$refs.certInput.click()">
+                  <span>{{ certFile ? certFile.name : 'Choose file…' }}</span>
+                </div>
+                <input ref="certInput" type="file" accept=".crt,.pem,.cer" hidden @change="e => certFile = e.target.files[0]" />
+              </div>
+              <div class="form-group">
+                <label>Private Key (.key / .pem)</label>
+                <div class="file-upload" :class="{ filled: keyFile }" @click="$refs.keyInput.click()">
+                  <span>{{ keyFile ? keyFile.name : 'Choose file…' }}</span>
+                </div>
+                <input ref="keyInput" type="file" accept=".key,.pem" hidden @change="e => keyFile = e.target.files[0]" />
+              </div>
+              <div v-if="certError" class="field-error" style="margin-bottom:8px">{{ certError }}</div>
+              <div v-if="certSuccess" class="field-success" style="margin-bottom:8px">{{ certSuccess }}</div>
+            </div>
+            <div class="mqtt-modal-footer">
+              <button class="test-btn" @click="closeCertModal">Cancel</button>
+              <button class="save-btn" :disabled="certSaving || !certFile || !keyFile" @click="saveCertificates">
+                {{ certSaving ? 'Uploading…' : 'Upload Certificates' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- Vehicle -->
     <SectionCard title="Vehicle" :icon="Car">
@@ -273,22 +309,37 @@
       </Transition>
     </Teleport>
 
-    <!-- Raw Data toggle -->
-    <SectionCard title="Raw Data" :icon="Code">
-      <button class="raw-toggle" @click="showRaw = !showRaw">
-        {{ showRaw ? 'Hide' : 'Show' }} full JSON
+    <!-- Debug -->
+    <SectionCard title="Debug" :icon="Code">
+      <button class="save-btn" style="margin-top:4px" @click="showRaw = true">
+        Show Raw JSON
       </button>
-      <div v-if="showRaw">
-        <div class="raw-tabs">
-          <button class="raw-tab" :class="{ active: rawTab === 'vehicle' }" @click="rawTab = 'vehicle'">Vehicle</button>
-          <button class="raw-tab" :class="{ active: rawTab === 'status' }" @click="rawTab = 'status'">Status</button>
-        </div>
-        <div class="raw-panel">
-          <pre v-if="rawTab === 'vehicle'">{{ JSON.stringify(rawData?.vehicle_raw, null, 2) }}</pre>
-          <pre v-else>{{ JSON.stringify(rawData?.status_raw, null, 2) }}</pre>
-        </div>
-      </div>
     </SectionCard>
+
+    <!-- Debug Modal -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showRaw" class="mqtt-overlay" @click.self="showRaw = false">
+          <div class="mqtt-modal" style="max-width:560px">
+            <div class="mqtt-modal-header">
+              <Code :size="16" style="color:#00d4ff" />
+              <span class="mqtt-modal-title">Raw JSON Data</span>
+              <button class="mqtt-modal-close" @click="showRaw = false">&times;</button>
+            </div>
+            <div class="mqtt-modal-body" style="padding:0">
+              <div class="raw-tabs">
+                <button class="raw-tab" :class="{ active: rawTab === 'vehicle' }" @click="rawTab = 'vehicle'">Vehicle</button>
+                <button class="raw-tab" :class="{ active: rawTab === 'status' }" @click="rawTab = 'status'">Status</button>
+              </div>
+              <div class="raw-panel">
+                <pre v-if="rawTab === 'vehicle'">{{ JSON.stringify(rawData?.vehicle_raw, null, 2) }}</pre>
+                <pre v-else>{{ JSON.stringify(rawData?.status_raw, null, 2) }}</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -327,6 +378,12 @@ const accountSuccess = ref('')
 const leapmotorEmail = ref('—')
 const accountForm = reactive({ username: '', password: '' })
 
+function closeLeapmotorModal() {
+  showLeapmotorEdit.value = false
+  accountError.value = ''
+  accountSuccess.value = ''
+}
+
 // Certificates edit
 const showCertEdit = ref(false)
 const certSaving = ref(false)
@@ -335,6 +392,12 @@ const certSuccess = ref('')
 const certFile = ref(null)
 const keyFile = ref(null)
 const certsStatus = reactive({ cert_exists: false, key_exists: false })
+
+function closeCertModal() {
+  showCertEdit.value = false
+  certError.value = ''
+  certSuccess.value = ''
+}
 
 const initials = computed(() => {
   const n = displayName.value
