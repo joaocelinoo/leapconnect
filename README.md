@@ -18,6 +18,32 @@ Web dashboard for monitoring and controlling Leapmotor vehicles via the [leapmot
 - **Home Assistant integration**: Optional MQTT export of all vehicle data for smart home
 - **Local history recording**: Optional SQLite database to track vehicle data over time.
 
+## Screenshots
+
+### Login
+
+![Login](docs/screenshots/login.png)
+
+### Dashboard
+
+![Dashboard](docs/screenshots/dashboard.png)
+
+### Details
+
+![Details](docs/screenshots/details.png)
+
+### History
+
+![History](docs/screenshots/history.png)
+
+### Messages
+
+![Messages](docs/screenshots/messages.png)
+
+### Settings
+
+![Settings](docs/screenshots/settings.png)
+
 ## Tested Vehicles
 
 | Model | Status |
@@ -33,6 +59,8 @@ Web dashboard for monitoring and controlling Leapmotor vehicles via the [leapmot
 - [uv](https://docs.astral.sh/uv/) (for local development)
 - Leapmotor app certificate files (`.pem` and `.key`)
 - A valid Leapmotor account
+
+> **⚠️ Strongly recommended:** Create a separate Leapmotor account and share your vehicle with it, rather than using your primary account. This way, if anything goes wrong (e.g. account suspension), your main account remains unaffected.
 
 ## Quick Start (Docker)
 
@@ -240,3 +268,16 @@ Each command updates the version in both files, creates a commit, and tags it `v
 You will need:
 - **Email & Password**: Your Leapmotor account credentials
 - **Vehicle PIN** (optional): Required for remote control actions (lock, unlock, climate, etc.)
+
+## Disclaimer
+
+**This is NOT an official Leapmotor product.**
+
+LeapConnect is an independent, community-driven project with no affiliation to Leapmotor International or its subsidiaries. It interacts with Leapmotor's cloud services through unofficial, reverse-engineered APIs.
+
+By using this software you acknowledge that:
+
+- You use LeapConnect **entirely at your own risk**.
+- The author(s) accept **no responsibility** for any consequences, including but not limited to account suspension or ban by Leapmotor.
+- Vehicle commands are sent over unofficial channels — **use remote controls with caution**.
+- The project may stop working at any time if Leapmotor changes its APIs.
