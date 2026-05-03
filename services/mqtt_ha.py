@@ -169,7 +169,9 @@ class HomeAssistantMqttService:
             data["battery_charge_soc_setting"] = b.charge_soc_setting
             data["battery_charge_time_setting"] = b.charge_time_setting
             data["battery_dc_input_fast_charge"] = b.dc_input_fast_charge
-            data["battery_is_charging"] = b.is_charging
+            data["battery_is_charging"] = bool(
+                b.charging_power_kw is not None and b.charging_power_kw > 0
+            )
             data["battery_is_discharging"] = b.is_discharging
 
         # Driving
@@ -369,9 +371,16 @@ class HomeAssistantMqttService:
         await self._publish(f"{prefix}/parked", _bool(status.is_parked), retain=True)
 
         if status.battery:
+            # Workaround: battery.is_charging from leapmotor-api returns True
+            # when charge_remain_time is 0 (not None). Use charging_power_kw > 0
+            # as additional check until the library is fixed.
+            b = status.battery
+            battery_charging = bool(
+                b.charging_power_kw is not None and b.charging_power_kw > 0
+            )
             await self._publish(
                 f"{prefix}/battery_charging",
-                _bool(status.battery.is_charging),
+                _bool(battery_charging),
                 retain=True,
             )
             await self._publish(
