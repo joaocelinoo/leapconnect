@@ -46,16 +46,49 @@ Create a `docker-compose.yml`:
 
 ```yaml
 services:
+  generate-certs:
+    image: alpine:latest
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        if [ -f /certs/traefik.crt ] && [ -f /certs/traefik.key ]; then
+          echo "Certificates already exist, skipping."
+          exit 0
+        fi
+        apk add --no-cache openssl
+        SAN="DNS:localhost,IP:127.0.0.1"
+        for ip in $$(hostname -I 2>/dev/null); do SAN="$$SAN,IP:$$ip"; done
+        openssl req -x509 -nodes -days 3650 \
+          -newkey rsa:2048 \
+          -keyout /certs/traefik.key \
+          -out /certs/traefik.crt \
+          -subj "/CN=leapmotor-webapp" \
+          -addext "subjectAltName=$$SAN"
+    volumes:
+      - ./traefik/certs:/certs
+    network_mode: host
+
   traefik:
     image: traefik:latest
+    depends_on:
+      generate-certs:
+        condition: service_completed_successfully
     command:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--providers.file.filename=/etc/traefik/dynamic.yml"
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
+      - ./traefik/certs:/certs:ro
     restart: unless-stopped
 
   app:
@@ -68,7 +101,8 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.leapmotor.rule=PathPrefix(`/`)"
-      - "traefik.http.routers.leapmotor.entrypoints=web"
+      - "traefik.http.routers.leapmotor.entrypoints=websecure"
+      - "traefik.http.routers.leapmotor.tls=true"
       - "traefik.http.services.leapmotor.loadbalancer.server.port=8099"
     restart: unless-stopped
 ```
@@ -77,7 +111,7 @@ services:
 docker compose up -d
 ```
 
-The app will be available at **http://localhost**.
+The app will be available at **https://localhost**.
 
 ### Building from source
 
@@ -87,11 +121,33 @@ cd leapconnect
 docker compose up -d --build
 ```
 
-The app is available at **http://localhost**.
+The app is available at **https://localhost**.
 
-Traefik handles reverse proxying on port 80. The app container runs internally on port 8099.
+Traefik handles reverse proxying with HTTPS on port 443 and automatic HTTP→HTTPS redirect on port 80. The app container runs internally on port 8099.
 
 Vehicle history data is persisted in a Docker volume (`app-data`).
+
+### HTTPS & Certificates
+
+The Docker Compose setup includes automatic TLS certificate generation. On first `docker compose up`, a one-shot init container generates a self-signed certificate with all local IP addresses in the SAN (Subject Alternative Name), so you can access the app via `https://<server-ip>` without certificate errors.
+
+- Certificates are stored in `traefik/certs/` (git-ignored)
+- If certificates already exist, the init container skips generation
+- To regenerate (e.g. after an IP change), delete the old certificates and restart:
+
+```bash
+rm traefik/certs/traefik.crt traefik/certs/traefik.key
+docker compose up -d
+```
+
+Alternatively, you can use the standalone script to regenerate certificates with custom IPs or hostnames:
+
+```bash
+rm traefik/certs/traefik.crt traefik/certs/traefik.key
+./generate-traefik-certs.sh                     # auto-detect local IPs
+./generate-traefik-certs.sh 192.168.1.100       # add extra IP
+./generate-traefik-certs.sh myhost.local        # add extra hostname
+```
 
 ## Development
 

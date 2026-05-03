@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **HTTPS support**: Docker Compose now serves the app over HTTPS (port 443) with automatic HTTP→HTTPS redirect
+- Auto-generated self-signed TLS certificates: a one-shot init container creates certificates on first startup with all local IPs in the SAN, so the app is accessible via `https://<server-ip>` from any device on the network
+- `generate-traefik-certs.sh` standalone script for manual certificate regeneration with support for extra IPs/hostnames as arguments
+- Traefik dynamic TLS configuration (`traefik/dynamic.yml`)
 - **Services setup wizard step**: after entering Leapmotor credentials, the initial setup now offers an optional step to configure Home Assistant (MQTT) and local data recording (history) before entering the app
 - Users can enable/disable data recording and set the collection interval directly during first-time setup
 - Users can enable Home Assistant, configure MQTT broker settings, and test the connection during first-time setup
