@@ -1391,21 +1391,27 @@ async def _handle_mqtt_settings(key: str, value: int) -> None:
         _LOGGER.warning("MQTT settings change ignored: scheduler not available")
         return
 
-    if key == "ha_polling_interval":
+    if key == "polling_interval":
         settings = _scheduler.update_settings(mqtt_interval_seconds=value)
+        await _history_repo.save_scheduler_settings(settings)
+        _LOGGER.info("MQTT settings applied: %s = %d", key, value)
+        if _mqtt_service and _mqtt_service.is_connected:
+            for v in _vehicles:
+                await _mqtt_service.publish_scheduler_settings(
+                    v.vin, settings.interval_minutes, settings.mqtt_interval_seconds
+                )
+    elif key == "charge_limit":
+        if not _client:
+            _LOGGER.warning("MQTT charge_limit change ignored: no API client")
+            return
+        for v in _vehicles:
+            try:
+                await _client.set_charge_limit(v.vin, value)
+                _LOGGER.info("Charge limit set to %d%% for %s", value, v.vin)
+            except Exception as exc:
+                _LOGGER.exception("Failed to set charge limit for %s: %s", v.vin, exc)
     else:
         _LOGGER.warning("MQTT: unknown setting key '%s'", key)
-        return
-
-    await _history_repo.save_scheduler_settings(settings)
-    _LOGGER.info("MQTT settings applied: %s = %d", key, value)
-
-    # Publish updated value back to HA for all known vehicles
-    if _mqtt_service and _mqtt_service.is_connected:
-        for v in _vehicles:
-            await _mqtt_service.publish_scheduler_settings(
-                v.vin, settings.interval_minutes, settings.mqtt_interval_seconds
-            )
 
 
 def _mqtt_status_response() -> MqttStatusResponse:

@@ -427,6 +427,11 @@ class HomeAssistantMqttService:
                 _bool(status.ignition.bcm_key_position_on1),
                 retain=True,
             )
+            await self._publish(
+                f"{prefix}/ignition_on3",
+                _bool(status.ignition.bcm_key_position_on3),
+                retain=True,
+            )
 
         if status.connectivity:
             await self._publish(
@@ -522,12 +527,6 @@ class HomeAssistantMqttService:
                 "dc": "duration",
                 "unit": "min",
                 "icon": "mdi:timer-outline",
-            },
-            {
-                "key": "charge_soc_setting",
-                "name": "Charge Limit",
-                "unit": "%",
-                "icon": "mdi:battery-lock",
             },
             # Driving
             {
@@ -707,6 +706,12 @@ class HomeAssistantMqttService:
                 "dc": "power",
                 "icon": "mdi:key-variant",
             },
+            {
+                "key": "ignition_on3",
+                "name": "Ignition Ready",
+                "dc": "power",
+                "icon": "mdi:car-key",
+            },
             # Connectivity
             {
                 "key": "bluetooth",
@@ -784,7 +789,22 @@ class HomeAssistantMqttService:
             topic = f"{disc_prefix}/button/{device_id}/{cmd['key']}/config"
             await self._publish(topic, json.dumps(cmd_config), retain=True)
 
-        # ── Number entity (HA polling interval — diagnostic) ──────────────
+        # ── Number entities ────────────────────────────────────────────
+        charge_limit_config = {
+            "name": "Charge Limit",
+            "unique_id": f"{device_id}_charge_limit",
+            "state_topic": f"{prefix}/{vin}/charge_soc_setting",
+            "command_topic": f"{prefix}/{vin}/charge_limit/set",
+            "unit_of_measurement": "%",
+            "min": 50,
+            "max": 100,
+            "step": 5,
+            "mode": "slider",
+            "device": device_info,
+            "icon": "mdi:battery-lock",
+        }
+        topic = f"{disc_prefix}/number/{device_id}/charge_limit/config"
+        await self._publish(topic, json.dumps(charge_limit_config), retain=True)
         ha_poll_config = {
             "name": "Polling Interval",
             "unique_id": f"{device_id}_polling_interval",
@@ -910,7 +930,7 @@ class HomeAssistantMqttService:
                             parts = topic_str.split("/")
                             if len(parts) >= 4:
                                 key = parts[-2]
-                                if key == "polling_interval":
+                                if key in ("polling_interval", "charge_limit"):
                                     try:
                                         value = int(float(message.payload.decode()))
                                         _LOGGER.info(
