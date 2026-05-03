@@ -20,8 +20,9 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-editable
 
 # Copy application code
-COPY main.py ./
+COPY main.py models.py schemas.py ./
 COPY persistence/ ./persistence/
+COPY services/ ./services/
 
 # Copy built frontend from stage 1
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
