@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **HA polling interval exposed as a Home Assistant entity**: you can adjust the polling interval directly from your HA dashboard using a slider (10 s – 3600 s), without opening the webapp
 - **Charge limit controllable from Home Assistant**: a new slider entity (50%–100%) lets you set the charge limit directly from HA — the command is sent to the vehicle via the Leapmotor API
 - Both ignition states are now exposed in Home Assistant: "Ignition" (key on) and "Ignition Ready" (vehicle ready to drive)
+- **About page**: new dedicated "About" section in Settings with app version, GitHub links (source code, star, report issue), and a disclaimer clarifying this is an unofficial project with no affiliation to Leapmotor
 
 ### Changed
 
