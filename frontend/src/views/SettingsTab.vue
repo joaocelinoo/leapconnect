@@ -1,48 +1,211 @@
 <template>
   <div class="settings-tab">
-    <!-- LeapConnect Account -->
-    <SectionCard title="LeapConnect Account" :icon="User">
-      <div class="account-row">
-        <div class="account-avatar">{{ initials }}</div>
-        <div>
-          <div class="account-name">{{ displayName }}</div>
-          <div class="account-role">Local account</div>
-        </div>
-      </div>
-      <button class="action-btn" @click="showUserEdit = !showUserEdit">
-        {{ showUserEdit ? 'Cancel' : 'Edit Account' }}
+    <!-- Section Navigation -->
+    <div class="settings-nav">
+      <button
+        v-for="s in sections"
+        :key="s.key"
+        class="nav-pill"
+        :class="{ active: activeSection === s.key }"
+        @click="activeSection = s.key"
+      >
+        <component :is="s.icon" :size="14" />
+        <span>{{ s.label }}</span>
       </button>
-      <div v-if="showUserEdit" class="edit-panel">
-        <div class="form-group">
-          <label>Display Name</label>
-          <input v-model="userForm.display_name" type="text" placeholder="Your name" />
-        </div>
-        <div class="form-group">
-          <label>New Password</label>
-          <input v-model="userForm.password" type="password" placeholder="Leave empty to keep current" />
-        </div>
-        <div class="form-divider">Verification</div>
-        <div class="form-group">
-          <label>Current Password</label>
-          <input v-model="userForm.current_password" type="password" placeholder="Required to save changes" />
-        </div>
-        <button class="save-btn" :disabled="userSaving" @click="saveUser">
-          {{ userSaving ? 'Saving…' : 'Save Changes' }}
-        </button>
-        <div v-if="userError" class="field-error">{{ userError }}</div>
-        <div v-if="userSuccess" class="field-success">{{ userSuccess }}</div>
-      </div>
-      <InfoRow label="App version" value="v2.5.0" color="#5c6478" />
-    </SectionCard>
+    </div>
 
-    <!-- Leapmotor Credentials -->
-    <SectionCard title="Leapmotor Credentials" :icon="KeyRound">
-      <InfoRow label="Email" :value="leapmotorEmail" color="#e2e6f0" />
-      <InfoRow label="Connection" :value="store.connected ? 'Connected' : 'Offline'" :color="store.connected ? '#00e676' : '#ffab40'" :dot="true" />
-      <button class="save-btn" style="margin-top:12px" @click="showLeapmotorEdit = true">
-        Edit Credentials
-      </button>
-    </SectionCard>
+    <!-- ═══════════════ ACCOUNT ═══════════════ -->
+    <template v-if="activeSection === 'account'">
+      <SectionCard title="LeapConnect Account" :icon="User">
+        <div class="account-row">
+          <div class="account-avatar">{{ initials }}</div>
+          <div>
+            <div class="account-name">{{ displayName }}</div>
+            <div class="account-role">Local account</div>
+          </div>
+        </div>
+        <button class="action-btn" @click="showUserEdit = !showUserEdit">
+          {{ showUserEdit ? 'Cancel' : 'Edit Account' }}
+        </button>
+        <div v-if="showUserEdit" class="edit-panel">
+          <div class="form-group">
+            <label>Display Name</label>
+            <input v-model="userForm.display_name" type="text" placeholder="Your name" />
+          </div>
+          <div class="form-group">
+            <label>New Password</label>
+            <input v-model="userForm.password" type="password" placeholder="Leave empty to keep current" />
+          </div>
+          <div class="form-divider">Verification</div>
+          <div class="form-group">
+            <label>Current Password</label>
+            <input v-model="userForm.current_password" type="password" placeholder="Required to save changes" />
+          </div>
+          <button class="save-btn" :disabled="userSaving" @click="saveUser">
+            {{ userSaving ? 'Saving…' : 'Save Changes' }}
+          </button>
+          <div v-if="userError" class="field-error">{{ userError }}</div>
+          <div v-if="userSuccess" class="field-success">{{ userSuccess }}</div>
+        </div>
+        <InfoRow label="App version" value="v2.5.0" color="#5c6478" />
+      </SectionCard>
+
+      <div class="settings-grid">
+        <SectionCard title="Leapmotor Credentials" :icon="KeyRound">
+          <InfoRow label="Email" :value="leapmotorEmail" color="#e2e6f0" />
+          <InfoRow label="Connection" :value="store.connected ? 'Connected' : 'Offline'" :color="store.connected ? '#00e676' : '#ffab40'" :dot="true" />
+          <button class="save-btn" style="margin-top:12px" @click="showLeapmotorEdit = true">
+            Edit Credentials
+          </button>
+        </SectionCard>
+
+        <SectionCard title="Certificates" :icon="ShieldCheck">
+          <InfoRow label="App Certificate" :value="certsStatus.cert_exists ? 'Installed' : 'Missing'" :color="certsStatus.cert_exists ? '#00e676' : '#ff5252'" :dot="true" />
+          <InfoRow label="Private Key" :value="certsStatus.key_exists ? 'Installed' : 'Missing'" :color="certsStatus.key_exists ? '#00e676' : '#ff5252'" :dot="true" />
+          <button class="save-btn" style="margin-top:12px" @click="showCertEdit = true">
+            Update Certificates
+          </button>
+        </SectionCard>
+      </div>
+    </template>
+
+    <!-- ═══════════════ GENERAL ═══════════════ -->
+    <template v-if="activeSection === 'general'">
+      <SectionCard title="Vehicle" :icon="Car">
+        <InfoRow label="Model" :value="`Leapmotor ${vehicle.car_type || ''} ${vehicle.year || ''}`" color="#e2e6f0" />
+        <InfoRow label="VIN" color="#e2e6f0">
+          <span style="font-family:var(--mono);font-size:11px">{{ vehicle.vin || '—' }}</span>
+        </InfoRow>
+        <InfoRow label="Nickname" :value="vehicle.vehicle_nickname || '—'" color="#00d4ff" />
+      </SectionCard>
+
+      <SectionCard title="Preferences" :icon="SlidersHorizontal">
+        <div class="pref-row">
+          <div class="pref-info">
+            <span class="pref-label">Electricity price</span>
+            <span class="pref-hint">Used to calculate charging cost in History</span>
+          </div>
+          <div class="pref-input-group">
+            <input
+              v-model.number="electricityPrice"
+              type="number"
+              step="0.01"
+              min="0"
+              class="pref-input"
+              @keyup.enter="saveElectricityPrice"
+            />
+            <span class="pref-unit">€/kWh</span>
+            <button
+              class="interval-set-btn"
+              :disabled="electricityPrice === savedElectricityPrice || electricitySaving"
+              @click="saveElectricityPrice"
+            >{{ electricitySaving ? '…' : 'Save' }}</button>
+          </div>
+        </div>
+        <div v-if="electricitySuccess" class="field-success">{{ electricitySuccess }}</div>
+        <div v-if="electricityError" class="field-error">{{ electricityError }}</div>
+        <InfoRow label="Distance unit" value="km" color="#e2e6f0" />
+        <InfoRow label="Pressure unit" value="bar" color="#e2e6f0" />
+        <InfoRow label="Theme" value="Dark" color="#7c6aff" />
+        <InfoRow label="Language" value="English" color="#e2e6f0" />
+      </SectionCard>
+
+      <SectionCard title="Notifications" :icon="Bell">
+        <div v-for="n in notifications" :key="n.key" class="notif-row">
+          <span class="notif-label">{{ n.label }}</span>
+          <ToggleSwitch v-model="n.enabled" />
+        </div>
+      </SectionCard>
+    </template>
+
+    <!-- ═══════════════ SERVICES ═══════════════ -->
+    <template v-if="activeSection === 'services'">
+      <SectionCard title="Data Collection" :icon="BarChart3">
+        <div class="scheduler-service">
+          <div class="service-status">
+            <span class="status-dot" :class="scheduler.is_running ? 'running' : 'stopped'" />
+            <span class="service-text">
+              {{ scheduler.is_running ? 'Running' : 'Stopped' }}
+              <span v-if="scheduler.is_running" class="service-interval">· every {{ scheduler.interval_minutes }} min</span>
+            </span>
+          </div>
+          <button
+            class="service-btn"
+            :class="scheduler.is_running ? 'btn-stop' : 'btn-start'"
+            :disabled="schedulerUpdating"
+            @click="toggleScheduler(!scheduler.enabled)"
+          >
+            {{ scheduler.is_running ? 'Stop' : 'Start' }}
+          </button>
+        </div>
+
+        <div class="interval-row">
+          <span class="interval-label">Collection interval</span>
+          <div class="interval-control">
+            <button class="interval-btn" @click="pendingInterval = Math.max(1, pendingInterval - 5)">−</button>
+            <span class="interval-value">{{ pendingInterval }} min</span>
+            <button class="interval-btn" @click="pendingInterval = Math.min(1440, pendingInterval + 5)">+</button>
+            <button
+              class="interval-set-btn"
+              :disabled="pendingInterval === scheduler.interval_minutes || schedulerUpdating"
+              @click="applyInterval"
+            >Set</button>
+          </div>
+        </div>
+
+        <div class="scheduler-status">
+          <div v-if="scheduler.last_run" class="status-detail">
+            Last update: {{ formatTime(scheduler.last_run) }}
+          </div>
+          <div class="status-detail">
+            Runs: {{ scheduler.total_runs }} · Errors: {{ scheduler.total_errors }}
+          </div>
+          <div v-if="scheduler.last_error" class="status-error">
+            {{ scheduler.last_error }}
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Home Assistant" :icon="Wifi">
+        <div class="scheduler-service">
+          <div class="service-status">
+            <span class="status-dot" :class="mqtt.connected ? 'running' : 'stopped'" />
+            <span class="service-text">
+              {{ mqtt.connected ? 'Connected' : mqtt.enabled ? 'Disconnected' : 'Disabled' }}
+              <span v-if="mqtt.connected" class="service-interval">· {{ mqtt.broker }}</span>
+            </span>
+          </div>
+          <button
+            class="service-btn"
+            :class="mqtt.enabled ? 'btn-stop' : 'btn-start'"
+            :disabled="mqttUpdating || (!mqtt.enabled && !mqttForm.broker)"
+            @click="toggleMqtt(!mqtt.enabled)"
+          >
+            {{ mqtt.enabled ? 'Disable' : 'Enable' }}
+          </button>
+        </div>
+
+        <button class="save-btn" style="margin-top:12px" @click="showMqttEdit = true">
+          Configure MQTT
+        </button>
+
+        <div v-if="mqtt.last_error" class="status-error" style="margin-top:8px">
+          {{ mqtt.last_error }}
+        </div>
+      </SectionCard>
+    </template>
+
+    <!-- ═══════════════ ADVANCED ═══════════════ -->
+    <template v-if="activeSection === 'advanced'">
+      <SectionCard title="Debug" :icon="Code">
+        <p class="section-desc">Inspect raw JSON data returned by the Leapmotor API for troubleshooting.</p>
+        <button class="save-btn" style="margin-top:4px" @click="showRaw = true">
+          Show Raw JSON
+        </button>
+      </SectionCard>
+    </template>
+
+    <!-- ═══════════════ MODALS (always rendered) ═══════════════ -->
 
     <!-- Leapmotor Credentials Modal -->
     <Teleport to="body">
@@ -76,15 +239,6 @@
         </div>
       </Transition>
     </Teleport>
-
-    <!-- Certificates -->
-    <SectionCard title="Certificates" :icon="ShieldCheck">
-      <InfoRow label="App Certificate" :value="certsStatus.cert_exists ? 'Installed' : 'Missing'" :color="certsStatus.cert_exists ? '#00e676' : '#ff5252'" :dot="true" />
-      <InfoRow label="Private Key" :value="certsStatus.key_exists ? 'Installed' : 'Missing'" :color="certsStatus.key_exists ? '#00e676' : '#ff5252'" :dot="true" />
-      <button class="save-btn" style="margin-top:12px" @click="showCertEdit = true">
-        Update Certificates
-      </button>
-    </SectionCard>
 
     <!-- Certificates Modal -->
     <Teleport to="body">
@@ -124,131 +278,6 @@
         </div>
       </Transition>
     </Teleport>
-
-    <!-- Vehicle -->
-    <SectionCard title="Vehicle" :icon="Car">
-      <InfoRow label="Model" :value="`Leapmotor ${vehicle.car_type || ''} ${vehicle.year || ''}`" color="#e2e6f0" />
-      <InfoRow label="VIN" color="#e2e6f0">
-        <span style="font-family:var(--mono);font-size:11px">{{ vehicle.vin || '—' }}</span>
-      </InfoRow>
-      <InfoRow label="Nickname" :value="vehicle.vehicle_nickname || '—'" color="#00d4ff" />
-    </SectionCard>
-
-    <!-- Notifications -->
-    <SectionCard title="Notifications" :icon="Bell">
-      <div v-for="n in notifications" :key="n.key" class="notif-row">
-        <span class="notif-label">{{ n.label }}</span>
-        <ToggleSwitch v-model="n.enabled" />
-      </div>
-    </SectionCard>
-
-    <!-- Preferences -->
-    <SectionCard title="Preferences" :icon="SlidersHorizontal">
-      <div class="pref-row">
-        <div class="pref-info">
-          <span class="pref-label">Electricity price</span>
-          <span class="pref-hint">Used to calculate charging cost in History</span>
-        </div>
-        <div class="pref-input-group">
-          <input
-            v-model.number="electricityPrice"
-            type="number"
-            step="0.01"
-            min="0"
-            class="pref-input"
-            @keyup.enter="saveElectricityPrice"
-          />
-          <span class="pref-unit">€/kWh</span>
-          <button
-            class="interval-set-btn"
-            :disabled="electricityPrice === savedElectricityPrice || electricitySaving"
-            @click="saveElectricityPrice"
-          >{{ electricitySaving ? '…' : 'Save' }}</button>
-        </div>
-      </div>
-      <div v-if="electricitySuccess" class="field-success">{{ electricitySuccess }}</div>
-      <div v-if="electricityError" class="field-error">{{ electricityError }}</div>
-      <InfoRow label="Distance unit" value="km" color="#e2e6f0" />
-      <InfoRow label="Pressure unit" value="bar" color="#e2e6f0" />
-      <InfoRow label="Theme" value="Dark" color="#7c6aff" />
-      <InfoRow label="Language" value="English" color="#e2e6f0" />
-    </SectionCard>
-
-    <!-- Data Collection Scheduler -->
-    <SectionCard title="Data Collection" :icon="BarChart3">
-      <div class="scheduler-service">
-        <div class="service-status">
-          <span class="status-dot" :class="scheduler.is_running ? 'running' : 'stopped'" />
-          <span class="service-text">
-            {{ scheduler.is_running ? 'Running' : 'Stopped' }}
-            <span v-if="scheduler.is_running" class="service-interval">· every {{ scheduler.interval_minutes }} min</span>
-          </span>
-        </div>
-        <button
-          class="service-btn"
-          :class="scheduler.is_running ? 'btn-stop' : 'btn-start'"
-          :disabled="schedulerUpdating"
-          @click="toggleScheduler(!scheduler.enabled)"
-        >
-          {{ scheduler.is_running ? 'Stop' : 'Start' }}
-        </button>
-      </div>
-
-      <div class="interval-row">
-        <span class="interval-label">Collection interval</span>
-        <div class="interval-control">
-          <button class="interval-btn" @click="pendingInterval = Math.max(1, pendingInterval - 5)">−</button>
-          <span class="interval-value">{{ pendingInterval }} min</span>
-          <button class="interval-btn" @click="pendingInterval = Math.min(1440, pendingInterval + 5)">+</button>
-          <button
-            class="interval-set-btn"
-            :disabled="pendingInterval === scheduler.interval_minutes || schedulerUpdating"
-            @click="applyInterval"
-          >Set</button>
-        </div>
-      </div>
-
-      <div class="scheduler-status">
-        <div v-if="scheduler.last_run" class="status-detail">
-          Last update: {{ formatTime(scheduler.last_run) }}
-        </div>
-        <div class="status-detail">
-          Runs: {{ scheduler.total_runs }} · Errors: {{ scheduler.total_errors }}
-        </div>
-        <div v-if="scheduler.last_error" class="status-error">
-          {{ scheduler.last_error }}
-        </div>
-      </div>
-    </SectionCard>
-
-    <!-- Home Assistant MQTT -->
-    <SectionCard title="Home Assistant" :icon="Wifi">
-      <div class="scheduler-service">
-        <div class="service-status">
-          <span class="status-dot" :class="mqtt.connected ? 'running' : 'stopped'" />
-          <span class="service-text">
-            {{ mqtt.connected ? 'Connected' : mqtt.enabled ? 'Disconnected' : 'Disabled' }}
-            <span v-if="mqtt.connected" class="service-interval">· {{ mqtt.broker }}</span>
-          </span>
-        </div>
-        <button
-          class="service-btn"
-          :class="mqtt.enabled ? 'btn-stop' : 'btn-start'"
-          :disabled="mqttUpdating || (!mqtt.enabled && !mqttForm.broker)"
-          @click="toggleMqtt(!mqtt.enabled)"
-        >
-          {{ mqtt.enabled ? 'Disable' : 'Enable' }}
-        </button>
-      </div>
-
-      <button class="save-btn" style="margin-top:12px" @click="showMqttEdit = true">
-        Configure MQTT
-      </button>
-
-      <div v-if="mqtt.last_error" class="status-error" style="margin-top:8px">
-        {{ mqtt.last_error }}
-      </div>
-    </SectionCard>
 
     <!-- MQTT Config Modal -->
     <Teleport to="body">
@@ -309,13 +338,6 @@
       </Transition>
     </Teleport>
 
-    <!-- Debug -->
-    <SectionCard title="Debug" :icon="Code">
-      <button class="save-btn" style="margin-top:4px" @click="showRaw = true">
-        Show Raw JSON
-      </button>
-    </SectionCard>
-
     <!-- Debug Modal -->
     <Teleport to="body">
       <Transition name="modal">
@@ -350,9 +372,17 @@ import InfoRow from '../components/InfoRow.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { api } from '../composables/useApi'
 import { useAppStore } from '../stores/appStore'
-import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi } from 'lucide-vue-next'
+import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings } from 'lucide-vue-next'
 
 const store = useAppStore()
+
+const sections = [
+  { key: 'account', label: 'Account', icon: User },
+  { key: 'general', label: 'General', icon: SlidersHorizontal },
+  { key: 'services', label: 'Services', icon: Wrench },
+  { key: 'advanced', label: 'Advanced', icon: Code },
+]
+const activeSection = ref('account')
 
 const props = defineProps({
   vehicle: { type: Object, required: true },
@@ -734,8 +764,58 @@ onMounted(() => {
   gap: 14px;
   max-width: 100%;
 }
-@media (min-width: 768px) {
-  .settings-tab { max-width: 640px; }
+
+/* Section Navigation */
+.settings-nav {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.settings-nav::-webkit-scrollbar { display: none; }
+.nav-pill {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.nav-pill:hover { color: var(--sub); background: #ffffff06; }
+.nav-pill.active {
+  background: #00d4ff12;
+  color: #00d4ff;
+  box-shadow: 0 0 0 1px #00d4ff22;
+}
+
+/* Grid for compact cards */
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+@media (min-width: 520px) {
+  .settings-grid { grid-template-columns: 1fr 1fr; }
+}
+
+.section-desc {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 8px;
+  line-height: 1.5;
 }
 
 .account-row {
