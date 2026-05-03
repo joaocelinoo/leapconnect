@@ -206,6 +206,42 @@
         <div v-if="mqtt.last_error" class="status-error" style="margin-top:8px">
           {{ mqtt.last_error }}
         </div>
+
+        <div class="form-divider" style="margin-top:14px">Vehicle Remote Control</div>
+        <p class="section-desc" style="margin-bottom:0">Save the operation PIN so HA automations can execute lock, unlock, trunk, etc.</p>
+
+        <div class="interval-row">
+          <span class="interval-label">Operation PIN</span>
+          <div class="interval-control">
+            <div class="pin-input-wrap">
+              <input
+                v-model="vehiclePin"
+                :type="showPin ? 'text' : 'password'"
+                class="pin-input"
+                placeholder="PIN"
+                maxlength="8"
+              />
+              <button class="pin-eye-btn" tabindex="-1" @click="showPin = !showPin" :title="showPin ? 'Hide PIN' : 'Show PIN'">
+                <svg v-if="!showPin" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              </button>
+            </div>
+            <button
+              v-if="vehiclePin"
+              class="interval-btn" style="font-size:11px;width:auto;padding:0 6px;color:#ff5252"
+              :disabled="pinSaving"
+              @click="clearVehiclePin"
+              title="Clear PIN"
+            >✕</button>
+            <button
+              class="interval-set-btn"
+              :disabled="pinSaving || !vehiclePin"
+              @click="saveVehiclePin"
+            >{{ pinSaving ? '…' : 'Set' }}</button>
+          </div>
+        </div>
+        <div v-if="pinSuccess" class="field-success" style="margin-top:4px;text-align:right;font-size:11px">{{ pinSuccess }}</div>
+        <div v-if="pinError" class="field-error" style="margin-top:4px;text-align:right;font-size:11px">{{ pinError }}</div>
       </SectionCard>
     </template>
 
@@ -792,12 +828,47 @@ async function saveElectricityPrice() {
   }
 }
 
+// -- Vehicle PIN state ------------------------------------------------------
+const vehiclePin = ref('')
+const showPin = ref(false)
+const pinSaving = ref(false)
+const pinSuccess = ref('')
+const pinError = ref('')
+
+async function loadVehiclePin() {
+  try {
+    const data = await api('GET', '/api/vehicle-pin')
+    vehiclePin.value = data.pin || ''
+  } catch { /* ignore */ }
+}
+
+async function saveVehiclePin() {
+  pinSaving.value = true
+  pinError.value = ''
+  pinSuccess.value = ''
+  try {
+    await api('PUT', '/api/vehicle-pin', { pin: vehiclePin.value })
+    pinSuccess.value = 'PIN saved'
+    setTimeout(() => { pinSuccess.value = '' }, 3000)
+  } catch (err) {
+    pinError.value = err.message
+  } finally {
+    pinSaving.value = false
+  }
+}
+
+async function clearVehiclePin() {
+  vehiclePin.value = ''
+  await saveVehiclePin()
+}
+
 onMounted(() => {
   loadScheduler()
   loadAccount()
   loadCertsStatus()
   loadPreferences()
   loadMqtt()
+  loadVehiclePin()
 })
 </script>
 
@@ -1160,6 +1231,43 @@ onMounted(() => {
 }
 .interval-set-btn:hover:not(:disabled) { background: #252d50; color: #00d4ff; }
 .interval-set-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.pin-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.pin-input {
+  width: 90px;
+  padding: 4px 28px 4px 8px;
+  background: #0d1018;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 13px;
+  font-family: var(--mono);
+  letter-spacing: 1px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.pin-input:focus { border-color: #00d4ff55; }
+.pin-input::placeholder { color: #444; letter-spacing: 0; }
+.pin-eye-btn {
+  position: absolute;
+  right: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  line-height: 0;
+  padding: 3px;
+  color: var(--sub);
+  opacity: 0.45;
+  transition: opacity 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pin-eye-btn:hover { opacity: 0.85; }
 .scheduler-status {
   margin-top: 12px;
   padding: 10px 12px;

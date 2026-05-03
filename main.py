@@ -180,6 +180,13 @@ async def _auto_connect() -> None:
         _connected = True
         _LOGGER.info("Auto-connect: success, %d vehicle(s)", len(_vehicles))
 
+        # Restore saved vehicle PIN for MQTT commands
+        if _history_repo:
+            saved_pin = await _history_repo.get_setting("mqtt_vehicle_pin")
+            if saved_pin and _sync_client:
+                _sync_client.operation_password = saved_pin
+                _LOGGER.info("Auto-connect: vehicle PIN restored from DB")
+
         # Start scheduler with the connected client
         if _scheduler:
             _scheduler.set_client(_client, _vehicles)
@@ -802,7 +809,34 @@ async def set_pin(request: Request) -> SetPinResponse:
     if not pin:
         raise HTTPException(status_code=422, detail="PIN is required")
     _sync_client.operation_password = pin
+    # Also persist for HA / auto-connect
+    await _save_mqtt_vehicle_pin(pin)
     return SetPinResponse(status="ok", has_pin=True)
+
+
+@app.get("/api/vehicle-pin")
+async def get_vehicle_pin() -> dict:
+    """Get the saved vehicle PIN status and masked value."""
+    saved_pin = None
+    if _history_repo:
+        saved_pin = await _history_repo.get_setting("mqtt_vehicle_pin")
+    runtime_pin = _sync_client.operation_password if _sync_client else None
+    pin = saved_pin or runtime_pin
+    return {
+        "has_pin": bool(pin),
+        "pin": pin or "",
+    }
+
+
+@app.put("/api/vehicle-pin")
+async def update_vehicle_pin(request: Request) -> dict:
+    """Save or clear the vehicle operation PIN."""
+    body = await request.json()
+    pin = str(body.get("pin", "")).strip()
+    await _save_mqtt_vehicle_pin(pin)
+    if _sync_client and pin:
+        _sync_client.operation_password = pin
+    return {"has_pin": bool(pin), "pin": pin}
 
 
 @app.post("/api/logout", response_model=StatusResponse)
@@ -1343,6 +1377,13 @@ async def _save_mqtt_settings(settings: MqttSettings) -> None:
     await _history_repo.save_setting("mqtt_topic_prefix", settings.topic_prefix)
 
 
+async def _save_mqtt_vehicle_pin(pin: str) -> None:
+    """Persist the vehicle operation PIN for MQTT commands."""
+    if not _history_repo:
+        return
+    await _history_repo.save_setting("mqtt_vehicle_pin", pin)
+
+
 async def _handle_mqtt_command(vin: str, command: str) -> None:
     """Handle a command received from Home Assistant via MQTT."""
     if not _client:
@@ -1466,7 +1507,7 @@ async def update_mqtt_settings(request: Request) -> MqttStatusResponse:
         topic_prefix=body.get("topic_prefix"),
     )
 
-    # Persist
+    # Persist MQTT settings
     await _save_mqtt_settings(_mqtt_service.settings)
 
     return _mqtt_status_response()
