@@ -57,7 +57,7 @@ Web dashboard for monitoring and controlling Leapmotor vehicles via the [leapmot
 
 - Docker & Docker Compose (for production)
 - [uv](https://docs.astral.sh/uv/) (for local development)
-- Leapmotor app certificate files (`.pem` and `.key`)
+- Leapmotor app certificate files (`.pem`) — [download here](https://github.com/markoceri/leapmotor-certs/archive/refs/tags/v1.0.0.zip)
 - A valid Leapmotor account
 
 > **⚠️ Strongly recommended:** Create a separate Leapmotor account and share your vehicle with it, rather than using your primary account. This way, if anything goes wrong (e.g. account suspension), your main account remains unaffected.
