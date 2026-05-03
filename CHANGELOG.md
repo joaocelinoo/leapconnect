@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Credentials, Certificates, MQTT configuration, and Debug data now open in clean popup dialogs instead of expanding inline
 - On wider screens, the Credentials and Certificates cards sit side by side in a compact grid
 - Settings now use the full available width instead of being limited to a narrow column
+- The app version shown in Settings is now read automatically from the project configuration, so it always stays up to date
 
 ## [0.3.0] - 2026-05-03
 
