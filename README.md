@@ -6,15 +6,17 @@ Web dashboard for monitoring and controlling Leapmotor vehicles via the [leapmot
 
 ## Features
 
-- **Live vehicle status**: Battery, range, speed, odometer, temperature, lock status
+- **Live vehicle status**: Battery, range, speed, odometer, temperature, lock status and more
 - **Remote controls**: Lock/unlock, trunk, windows, sunshade, climate (A/C, quick cool/heat, defrost), battery preheat, find car
 - **Charge limit**: Adjustable charge limit slider
 - **Vehicle details**: Doors, windows, tire pressure, climate, connectivity, ignition
 - **Location**: OpenStreetMap embedded view with coordinates
 - **Mileage & energy**: Delivery history, total mileage
-- **Car picture**: View link when available
+- **Car picture**: Dinamic image reflecting lock status, doors, windows, sunshade, and lights
 - **Raw data viewer**: Full JSON inspection for debugging
 - **Multi-vehicle**: Tab switching for accounts with multiple vehicles
+- **Home Assistant integration**: Optional MQTT export of all vehicle data for smart home
+- **Local history recording**: Optional SQLite database to track vehicle data over time.
 
 ## Tested Vehicles
 
@@ -23,14 +25,13 @@ Web dashboard for monitoring and controlling Leapmotor vehicles via the [leapmot
 | T03 | ✅ Tested |
 | C10 | 🟡 Should work (same cloud API) |
 | B10 | 🟡 Should work (same cloud API) |
-| C16 | 🟡 Should work (same cloud API) |
 | B05 | 🟡 Should work (same cloud API) |
 
 ## Requirements
 
 - Docker & Docker Compose (for production)
 - [uv](https://docs.astral.sh/uv/) (for local development)
-- Leapmotor app certificate files (`.pem`)
+- Leapmotor app certificate files (`.pem` and `.key`)
 - A valid Leapmotor account
 
 ## Quick Start (Docker)
