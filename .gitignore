@@ -38,4 +38,7 @@ htmlcov/
 
 # Data directory (user data, certs, db — persisted via bind mount)
 data/*
+
+# Traefik generated certificates
+traefik/certs/
 !data/.gitkeep

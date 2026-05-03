@@ -1,16 +1,51 @@
 services:
+  generate-certs:
+    image: alpine:latest
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        if [ -f /certs/traefik.crt ] && [ -f /certs/traefik.key ]; then
+          echo "Certificates already exist, skipping."
+          exit 0
+        fi
+        apk add --no-cache openssl
+        SAN="DNS:localhost,IP:127.0.0.1"
+        for ip in $$(hostname -I 2>/dev/null); do SAN="$$SAN,IP:$$ip"; done
+        echo "Generating certificate with SAN: $$SAN"
+        openssl req -x509 -nodes -days 3650 \
+          -newkey rsa:2048 \
+          -keyout /certs/traefik.key \
+          -out /certs/traefik.crt \
+          -subj "/CN=leapmotor-webapp" \
+          -addext "subjectAltName=$$SAN"
+        echo "Done."
+    volumes:
+      - ./traefik/certs:/certs
+    network_mode: host
+
   traefik:
     image: traefik:latest
+    depends_on:
+      generate-certs:
+        condition: service_completed_successfully
     command:
       - "--api.insecure=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--providers.file.filename=/etc/traefik/dynamic.yml"
     ports:
       - "80:80"
+      - "443:443"
 #      - "8080:8080"   # Traefik dashboard
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
+      - ./traefik/certs:/certs:ro
     restart: unless-stopped
 
   app:
@@ -25,6 +60,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.leapmotor.rule=PathPrefix(`/`)"
-      - "traefik.http.routers.leapmotor.entrypoints=web"
+      - "traefik.http.routers.leapmotor.entrypoints=websecure"
+      - "traefik.http.routers.leapmotor.tls=true"
       - "traefik.http.services.leapmotor.loadbalancer.server.port=8099"
     restart: unless-stopped
