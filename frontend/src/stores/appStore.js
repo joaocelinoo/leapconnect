@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { api } from '../composables/useApi'
 
 export const useAppStore = defineStore('app', () => {
-  // Screen: 'loading' | 'setup-certs' | 'setup-account' | 'vehicles' | 'app'
+  // Screen: 'loading' | 'setup-user' | 'login' | 'setup-certs' | 'setup-account' | 'setup-services' | 'vehicles' | 'app'
   const screen = ref('loading')
   // Active sidebar tab: 'dashboard' | 'details' | 'history' | 'settings'
   const activeTab = ref('dashboard')

@@ -16,6 +16,9 @@
   <!-- Account Setup (Leapmotor credentials) -->
   <AccountSetupView v-else-if="store.screen === 'setup-account'" />
 
+  <!-- Services Setup (HA + History) -->
+  <ServicesSetupView v-else-if="store.screen === 'setup-services'" />
+
   <!-- Vehicle Selector -->
   <VehicleSelectorView
     v-else-if="store.screen === 'vehicles'"
@@ -167,6 +170,7 @@ import { useToast } from './composables/useToast'
 import { setOnUnauthorized } from './composables/useApi'
 import CertificateSetupView from './views/CertificateSetupView.vue'
 import AccountSetupView from './views/AccountSetupView.vue'
+import ServicesSetupView from './views/ServicesSetupView.vue'
 import UserSetupView from './views/UserSetupView.vue'
 import LoginView from './views/LoginView.vue'
 import VehicleSelectorView from './views/VehicleSelectorView.vue'

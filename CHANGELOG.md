@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Services setup wizard step**: after entering Leapmotor credentials, the initial setup now offers an optional step to configure Home Assistant (MQTT) and local data recording (history) before entering the app
+- Users can enable/disable data recording and set the collection interval directly during first-time setup
+- Users can enable Home Assistant, configure MQTT broker settings, and test the connection during first-time setup
+- Both services can be skipped and configured later from Settings → Services
 - **Home Assistant integration**: your vehicle data (battery, doors, climate, tires, location, and more) is now automatically shared with Home Assistant via MQTT, so you can see everything in your smart home dashboard
 - In Settings → Services, you can enable Home Assistant, enter your MQTT broker details, and test the connection before saving
 - All vehicle sensors appear in Home Assistant as ready-to-use entities: battery level, mileage, temperatures, tire pressures, door/window status, GPS position, live car image, and remote control buttons

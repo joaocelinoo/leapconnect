@@ -91,21 +91,14 @@ async function handleSubmit() {
       store.connected = true
       store.vehicles = result.vehicles || []
       toast('Connected successfully', 'success')
-      if (store.vehicles.length === 1) {
-        store.selectedVin = store.vehicles[0].vin
-        store.screen = 'app'
-      } else if (store.vehicles.length > 1) {
-        store.screen = 'vehicles'
-      } else {
-        store.screen = 'app'
-      }
+      store.screen = 'setup-services'
     } else {
-      // Credentials saved but connection failed — go to app in offline mode
+      // Credentials saved but connection failed — proceed to services setup in offline mode
       warning.value = result.connection_error || 'Could not connect to servers. The app will work in offline mode.'
       store.connected = false
-      // After a short delay, proceed to app anyway
+      // After a short delay, proceed to services setup anyway
       setTimeout(() => {
-        store.screen = 'app'
+        store.screen = 'setup-services'
       }, 3000)
     }
   } catch (err) {
