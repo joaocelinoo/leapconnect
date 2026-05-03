@@ -4,10 +4,6 @@
 
 Web dashboard for monitoring and controlling Leapmotor vehicles via the [leapmotor-api](https://github.com/markoceri/leapmotor-api) Python client.
 
-```bash
-docker pull ghcr.io/markoceri/leapconnect:latest
-```
-
 ## Features
 
 - **Live vehicle status**: Battery, range, speed, odometer, temperature, lock status
@@ -39,18 +35,55 @@ docker pull ghcr.io/markoceri/leapconnect:latest
 
 ## Quick Start (Docker)
 
+### Using the pre-built image
+
 ```bash
-# 1. Clone the repository
-git clone https://github.com/markoceri/leapmotor-webapp
-cd leapmotor-webapp
+docker pull ghcr.io/markoceri/leapconnect:latest
+```
 
-# 2. Configure environment
-cp .env.example .env
-# Edit .env and set APP_CERT_PATH and APP_KEY_PATH
+Create a `docker-compose.yml`:
 
-# 3. Build and start
-docker compose build
+```yaml
+services:
+  traefik:
+    image: traefik:latest
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+
+  app:
+    image: ghcr.io/markoceri/leapconnect:latest
+    environment:
+      - HISTORY_DB_PATH=/app/data/history.db
+      - DATA_DIR=/app/data
+    volumes:
+      - ./data:/app/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.leapmotor.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.leapmotor.entrypoints=web"
+      - "traefik.http.services.leapmotor.loadbalancer.server.port=8099"
+    restart: unless-stopped
+```
+
+```bash
 docker compose up -d
+```
+
+The app will be available at **http://localhost**.
+
+### Building from source
+
+```bash
+git clone https://github.com/markoceri/leapconnect
+cd leapconnect
+docker compose up -d --build
 ```
 
 The app is available at **http://localhost**.
