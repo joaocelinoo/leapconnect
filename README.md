@@ -1,6 +1,12 @@
 # LeapConnect
 
+[![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-leapconnect-blue?logo=docker)](https://ghcr.io/markoceri/leapconnect)
+
 Web dashboard for monitoring and controlling Leapmotor vehicles via the [leapmotor-api](https://github.com/markoceri/leapmotor-api) Python client.
+
+```bash
+docker pull ghcr.io/markoceri/leapconnect:latest
+```
 
 ## Features
 
