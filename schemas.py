@@ -396,6 +396,7 @@ class ConnectionStatusResponse(BaseModel):
     display_name: str | None = None
     vehicles: list[VehicleSchema]
     has_pin: bool
+    app_version: str | None = None
 
 
 class UserCreateResponse(BaseModel):

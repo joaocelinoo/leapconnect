@@ -47,7 +47,7 @@
           <div v-if="userError" class="field-error">{{ userError }}</div>
           <div v-if="userSuccess" class="field-success">{{ userSuccess }}</div>
         </div>
-        <InfoRow label="App version" value="v2.5.0" color="#5c6478" />
+        <InfoRow label="App version" :value="appVersion ? `v${appVersion}` : '—'" color="#5c6478" />
       </SectionCard>
 
       <div class="settings-grid">
@@ -399,6 +399,7 @@ const userError = ref('')
 const userSuccess = ref('')
 const userForm = reactive({ display_name: '', password: '', current_password: '' })
 const displayName = ref('User')
+const appVersion = ref('')
 
 // Leapmotor credentials edit
 const showLeapmotorEdit = ref(false)
@@ -627,6 +628,9 @@ async function loadAccount() {
     if (data.display_name) {
       displayName.value = data.display_name
       userForm.display_name = data.display_name
+    }
+    if (data.app_version) {
+      appVersion.value = data.app_version
     }
   } catch { /* ignore */ }
 }

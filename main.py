@@ -14,6 +14,7 @@ import os
 import secrets
 import shutil
 import time
+import tomllib
 import zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -66,6 +67,13 @@ from services.scheduler import VehicleDataScheduler
 
 logging.basicConfig(level=logging.INFO)
 _LOGGER = logging.getLogger(__name__)
+
+try:
+    _APP_VERSION = tomllib.loads(
+        (Path(__file__).parent / "pyproject.toml").read_text()
+    )["project"]["version"]
+except Exception:
+    _APP_VERSION = "dev"
 
 # Data directory — mounted from host for persistence across container restarts
 DATA_DIR = Path(os.environ.get("DATA_DIR", str(Path(__file__).parent / "data")))
@@ -830,6 +838,7 @@ async def connection_status() -> ConnectionStatusResponse:
         display_name=display_name,
         vehicles=[VehicleSchema.from_model(v) for v in _vehicles],
         has_pin=bool(_sync_client and _sync_client.operation_password),
+        app_version=_APP_VERSION,
     )
 
 

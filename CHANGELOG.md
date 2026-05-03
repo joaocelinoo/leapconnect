@@ -9,18 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Home Assistant integration via MQTT**: vehicle data is automatically published to Home Assistant using MQTT Discovery
-- New `HomeAssistantMqttService` in `services/mqtt_ha.py` with auto-reconnect, HA Discovery publishing, and command handling
-- MQTT settings section in Settings → Home Assistant: configure broker host, port, credentials, TLS, discovery prefix, and topic prefix
-- Enable/disable toggle and connection status indicator (Connected / Disconnected / Disabled) in the Settings UI
-- "Test Connection" button to verify MQTT broker reachability before saving
-- `GET /api/mqtt`, `PUT /api/mqtt`, `POST /api/mqtt/test` API endpoints for managing MQTT configuration
-- MQTT settings persisted in the database (app_settings key/value store)
-- Full VehicleStatus coverage: battery, driving, location, climate, doors, windows, tires, connectivity, ignition state published as individual HA entities
-- HA entity types: sensors (SoC, mileage, temperatures, tire pressures, …), binary sensors (doors, windows, locks, charging, …), device tracker (GPS), camera (dynamic car image), buttons (remote commands)
-- Scheduler integration: vehicle status is automatically published to MQTT after each data collection cycle
-- `MqttSettings` dataclass in `models.py` and `MqttStatusResponse` / `MqttTestResponse` Pydantic schemas in `schemas.py`
-- `aiomqtt>=2.0.0` added to project dependencies
+- **Home Assistant integration**: your vehicle data (battery, doors, climate, tires, location, and more) is now automatically shared with Home Assistant via MQTT, so you can see everything in your smart home dashboard
+- In Settings → Services, you can enable Home Assistant, enter your MQTT broker details, and test the connection before saving
+- All vehicle sensors appear in Home Assistant as ready-to-use entities: battery level, mileage, temperatures, tire pressures, door/window status, GPS position, live car image, and remote control buttons
+- Vehicle data is sent to Home Assistant automatically every time the app collects new data
+
+### Changed
+
+- **Settings page redesigned**: instead of a long list of cards, settings are now organized in four tabs — Account, General, Services, and Advanced — making it much easier to find what you need
+- Credentials, Certificates, MQTT configuration, and Debug data now open in clean popup dialogs instead of expanding inline
+- On wider screens, the Credentials and Certificates cards sit side by side in a compact grid
+- Settings now use the full available width instead of being limited to a narrow column
 
 ## [0.3.0] - 2026-05-03
 
