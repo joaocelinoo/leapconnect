@@ -185,6 +185,94 @@
       </div>
     </SectionCard>
 
+    <!-- Home Assistant MQTT -->
+    <SectionCard title="Home Assistant" :icon="Wifi">
+      <div class="scheduler-service">
+        <div class="service-status">
+          <span class="status-dot" :class="mqtt.connected ? 'running' : 'stopped'" />
+          <span class="service-text">
+            {{ mqtt.connected ? 'Connected' : mqtt.enabled ? 'Disconnected' : 'Disabled' }}
+            <span v-if="mqtt.connected" class="service-interval">· {{ mqtt.broker }}</span>
+          </span>
+        </div>
+        <button
+          class="service-btn"
+          :class="mqtt.enabled ? 'btn-stop' : 'btn-start'"
+          :disabled="mqttUpdating || (!mqtt.enabled && !mqttForm.broker)"
+          @click="toggleMqtt(!mqtt.enabled)"
+        >
+          {{ mqtt.enabled ? 'Disable' : 'Enable' }}
+        </button>
+      </div>
+
+      <button class="save-btn" style="margin-top:12px" @click="showMqttEdit = true">
+        Configure MQTT
+      </button>
+
+      <div v-if="mqtt.last_error" class="status-error" style="margin-top:8px">
+        {{ mqtt.last_error }}
+      </div>
+    </SectionCard>
+
+    <!-- MQTT Config Modal -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showMqttEdit" class="mqtt-overlay" @click.self="closeMqttModal">
+          <div class="mqtt-modal">
+            <div class="mqtt-modal-header">
+              <Wifi :size="16" style="color:#00d4ff" />
+              <span class="mqtt-modal-title">MQTT Configuration</span>
+              <button class="mqtt-modal-close" @click="closeMqttModal">&times;</button>
+            </div>
+            <div class="mqtt-modal-body">
+              <div class="form-group">
+                <label>MQTT Broker Host</label>
+                <input v-model="mqttForm.broker" type="text" placeholder="192.168.1.x or hostname" />
+              </div>
+              <div class="form-group">
+                <label>Port</label>
+                <input v-model.number="mqttForm.port" type="number" placeholder="1883" />
+              </div>
+              <div class="form-group">
+                <label>Username</label>
+                <input v-model="mqttForm.username" type="text" placeholder="MQTT username (optional)" />
+              </div>
+              <div class="form-group">
+                <label>Password</label>
+                <input v-model="mqttForm.password" type="password" placeholder="MQTT password (optional)" />
+              </div>
+              <div class="notif-row" style="margin:8px 0 12px">
+                <span class="notif-label">Use TLS</span>
+                <ToggleSwitch v-model="mqttForm.use_tls" />
+              </div>
+              <div class="form-group">
+                <label>Discovery Prefix</label>
+                <input v-model="mqttForm.discovery_prefix" type="text" placeholder="homeassistant" />
+              </div>
+              <div class="form-group">
+                <label>Topic Prefix</label>
+                <input v-model="mqttForm.topic_prefix" type="text" placeholder="leapconnect" />
+              </div>
+
+              <div v-if="mqttTestResult" :class="mqttTestResult.ok ? 'field-success' : 'field-error'" style="margin-bottom:8px">
+                {{ mqttTestResult.message }}
+              </div>
+              <div v-if="mqttError" class="field-error" style="margin-bottom:8px">{{ mqttError }}</div>
+              <div v-if="mqttSuccess" class="field-success" style="margin-bottom:8px">{{ mqttSuccess }}</div>
+            </div>
+            <div class="mqtt-modal-footer">
+              <button class="test-btn" :disabled="mqttTesting || !mqttForm.broker" @click="testMqtt">
+                {{ mqttTesting ? 'Testing…' : 'Test Connection' }}
+              </button>
+              <button class="save-btn" :disabled="mqttUpdating || !mqttForm.broker" @click="saveMqtt">
+                {{ mqttUpdating ? 'Saving…' : 'Save & Connect' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
     <!-- Raw Data toggle -->
     <SectionCard title="Raw Data" :icon="Code">
       <button class="raw-toggle" @click="showRaw = !showRaw">
@@ -211,7 +299,7 @@ import InfoRow from '../components/InfoRow.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { api } from '../composables/useApi'
 import { useAppStore } from '../stores/appStore'
-import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck } from 'lucide-vue-next'
+import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi } from 'lucide-vue-next'
 
 const store = useAppStore()
 
@@ -305,6 +393,128 @@ function toggleScheduler(val) {
 function applyInterval() {
   if (pendingInterval.value !== scheduler.interval_minutes) {
     updateScheduler({ interval_minutes: pendingInterval.value })
+  }
+}
+
+// -- MQTT / Home Assistant state --------------------------------------------
+const mqtt = reactive({
+  enabled: false,
+  connected: false,
+  broker: '',
+  port: 1883,
+  username: '',
+  use_tls: false,
+  discovery_prefix: 'homeassistant',
+  topic_prefix: 'leapconnect',
+  last_error: null,
+})
+
+const showMqttEdit = ref(false)
+const mqttUpdating = ref(false)
+const mqttTesting = ref(false)
+const mqttError = ref('')
+const mqttSuccess = ref('')
+const mqttTestResult = ref(null)
+
+function closeMqttModal() {
+  showMqttEdit.value = false
+  mqttError.value = ''
+  mqttSuccess.value = ''
+  mqttTestResult.value = null
+}
+const mqttForm = reactive({
+  broker: '',
+  port: 1883,
+  username: '',
+  password: '',
+  use_tls: false,
+  discovery_prefix: 'homeassistant',
+  topic_prefix: 'leapconnect',
+})
+
+async function loadMqtt() {
+  try {
+    const data = await api('GET', '/api/mqtt')
+    Object.assign(mqtt, data)
+    mqttForm.broker = data.broker || ''
+    mqttForm.port = data.port || 1883
+    mqttForm.username = data.username || ''
+    mqttForm.password = ''
+    mqttForm.use_tls = data.use_tls || false
+    mqttForm.discovery_prefix = data.discovery_prefix || 'homeassistant'
+    mqttForm.topic_prefix = data.topic_prefix || 'leapconnect'
+  } catch { /* ignore */ }
+}
+
+async function toggleMqtt(val) {
+  mqttUpdating.value = true
+  mqttError.value = ''
+  try {
+    const payload = { enabled: val }
+    if (val && mqttForm.broker) {
+      Object.assign(payload, {
+        broker: mqttForm.broker,
+        port: mqttForm.port,
+        username: mqttForm.username,
+        password: mqttForm.password || undefined,
+        use_tls: mqttForm.use_tls,
+        discovery_prefix: mqttForm.discovery_prefix,
+        topic_prefix: mqttForm.topic_prefix,
+      })
+    }
+    const data = await api('PUT', '/api/mqtt', payload)
+    Object.assign(mqtt, data)
+  } catch (err) {
+    mqttError.value = err.message
+  } finally {
+    mqttUpdating.value = false
+  }
+}
+
+async function saveMqtt() {
+  mqttError.value = ''
+  mqttSuccess.value = ''
+  mqttUpdating.value = true
+  try {
+    const data = await api('PUT', '/api/mqtt', {
+      enabled: true,
+      broker: mqttForm.broker,
+      port: mqttForm.port,
+      username: mqttForm.username,
+      password: mqttForm.password || undefined,
+      use_tls: mqttForm.use_tls,
+      discovery_prefix: mqttForm.discovery_prefix,
+      topic_prefix: mqttForm.topic_prefix,
+    })
+    Object.assign(mqtt, data)
+    mqttSuccess.value = 'Settings saved. Connecting…'
+    setTimeout(() => { mqttSuccess.value = '' }, 4000)
+  } catch (err) {
+    mqttError.value = err.message
+  } finally {
+    mqttUpdating.value = false
+  }
+}
+
+async function testMqtt() {
+  mqttTesting.value = true
+  mqttTestResult.value = null
+  try {
+    const data = await api('POST', '/api/mqtt/test', {
+      broker: mqttForm.broker,
+      port: mqttForm.port,
+      username: mqttForm.username,
+      password: mqttForm.password,
+      use_tls: mqttForm.use_tls,
+    })
+    mqttTestResult.value = {
+      ok: data.status === 'ok',
+      message: data.message,
+    }
+  } catch (err) {
+    mqttTestResult.value = { ok: false, message: err.message }
+  } finally {
+    mqttTesting.value = false
   }
 }
 
@@ -450,6 +660,7 @@ onMounted(() => {
   loadAccount()
   loadCertsStatus()
   loadPreferences()
+  loadMqtt()
 })
 </script>
 
@@ -837,4 +1048,88 @@ onMounted(() => {
   font-size: 11px;
   color: var(--muted);
 }
+
+/* MQTT Modal */
+.mqtt-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+.mqtt-modal {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 420px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.mqtt-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.mqtt-modal-title {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.mqtt-modal-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 22px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  transition: color 0.2s;
+}
+.mqtt-modal-close:hover { color: var(--fg); }
+.mqtt-modal-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+.mqtt-modal-footer {
+  display: flex;
+  gap: 8px;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--border);
+}
+.mqtt-modal-footer .test-btn,
+.mqtt-modal-footer .save-btn {
+  flex: 1;
+}
+/* Modal transition */
+.modal-enter-active, .modal-leave-active { transition: opacity 0.2s ease; }
+.modal-enter-from, .modal-leave-to { opacity: 0; }
+.modal-enter-active .mqtt-modal, .modal-leave-active .mqtt-modal { transition: transform 0.2s ease; }
+.modal-enter-from .mqtt-modal { transform: scale(0.95); }
+.modal-leave-to .mqtt-modal { transform: scale(0.95); }
+
+.test-btn {
+  flex: 1;
+  padding: 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.test-btn:hover:not(:disabled) { color: #00d4ff; border-color: #00d4ff44; }
+.test-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

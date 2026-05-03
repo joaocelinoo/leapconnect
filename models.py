@@ -68,3 +68,17 @@ class SchedulerSettings:
 
     enabled: bool = False
     interval_minutes: int = DEFAULT_INTERVAL_MINUTES
+
+
+@dataclass
+class MqttSettings:
+    """MQTT connection settings for Home Assistant integration."""
+
+    enabled: bool = False
+    broker: str = ""
+    port: int = 1883
+    username: str = ""
+    password: str = ""
+    use_tls: bool = False
+    discovery_prefix: str = "homeassistant"
+    topic_prefix: str = "leapconnect"

@@ -1,0 +1,905 @@
+"""Home Assistant MQTT integration service.
+
+Publishes vehicle state, commands, messages, and dynamic car image
+to an MQTT broker using Home Assistant's MQTT Discovery protocol.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import contextlib
+import json
+import logging
+from typing import TYPE_CHECKING, Any
+
+import aiomqtt
+
+from models import MqttSettings
+
+if TYPE_CHECKING:
+    from leapmotor_api.image import CarImagePackage
+    from leapmotor_api.models import Vehicle, VehicleStatus
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class HomeAssistantMqttService:
+    """Manages MQTT connection and publishes vehicle data to Home Assistant."""
+
+    def __init__(self) -> None:
+        self._settings = MqttSettings()
+        self._client: aiomqtt.Client | None = None
+        self._connected: bool = False
+        self._task: asyncio.Task | None = None
+        self._stop_event = asyncio.Event()
+        self._publish_queue: asyncio.Queue[tuple[str, str, bool]] = asyncio.Queue()
+        self._last_error: str | None = None
+        self._discovery_sent: set[str] = set()
+
+    @property
+    def settings(self) -> MqttSettings:
+        return self._settings
+
+    @property
+    def is_connected(self) -> bool:
+        return self._connected
+
+    @property
+    def last_error(self) -> str | None:
+        return self._last_error
+
+    def update_settings(self, **kwargs: Any) -> MqttSettings:
+        """Update MQTT settings and reconnect if needed."""
+        changed = False
+        for key, value in kwargs.items():
+            if value is not None and hasattr(self._settings, key):
+                if getattr(self._settings, key) != value:
+                    setattr(self._settings, key, value)
+                    changed = True
+
+        if changed or kwargs.get("enabled") is not None:
+            if self._settings.enabled and self._settings.broker:
+                self._restart()
+            else:
+                self._request_stop()
+
+        return self._settings
+
+    def start(self) -> None:
+        """Start the MQTT connection if enabled."""
+        if self._settings.enabled and self._settings.broker:
+            self._ensure_running()
+
+    async def stop(self) -> None:
+        """Stop the MQTT connection."""
+        self._request_stop()
+        if self._task and not self._task.done():
+            with contextlib.suppress(TimeoutError, asyncio.CancelledError):
+                await asyncio.wait_for(self._task, timeout=5)
+        self._task = None
+        self._connected = False
+
+    async def publish_vehicle_status(
+        self,
+        vehicle: Vehicle,
+        status: VehicleStatus,
+        image_package: CarImagePackage | None = None,
+    ) -> None:
+        """Publish full vehicle state to MQTT with HA discovery."""
+        if not self._connected or not self._settings.enabled:
+            return
+
+        vin = vehicle.vin
+        device_name = vehicle.vehicle_nickname or f"Leapmotor {vehicle.car_type}"
+        device_id = f"leapconnect_{vin.lower()}"
+
+        # Ensure discovery configs are published
+        if vin not in self._discovery_sent:
+            await self._publish_discovery(vehicle, device_id, device_name)
+            self._discovery_sent.add(vin)
+
+        # Publish state values
+        prefix = f"{self._settings.topic_prefix}/{vin}"
+
+        state_data = self._build_state_payload(status)
+        await self._publish(f"{prefix}/state", json.dumps(state_data), retain=True)
+
+        # Publish individual sensor values for HA
+        await self._publish_sensors(prefix, status)
+
+        # Publish location
+        if status.location and status.location.latitude and status.location.longitude:
+            location = json.dumps(
+                {
+                    "latitude": status.location.latitude,
+                    "longitude": status.location.longitude,
+                    "gps_accuracy": 10,
+                }
+            )
+            await self._publish(f"{prefix}/location", location, retain=True)
+
+        # Publish dynamic car image
+        if image_package:
+            try:
+                img_bytes = image_package.compose(status, format="PNG")
+                img_b64 = base64.b64encode(img_bytes).decode()
+                await self._publish(f"{prefix}/image", img_b64, retain=True)
+            except Exception:
+                _LOGGER.debug("Failed to compose car image for MQTT")
+
+    async def publish_messages(self, vin: str, messages: list[dict]) -> None:
+        """Publish vehicle messages to MQTT."""
+        if not self._connected or not self._settings.enabled:
+            return
+        prefix = f"{self._settings.topic_prefix}/{vin}"
+        payload = json.dumps(messages[:20])  # Limit to last 20
+        await self._publish(f"{prefix}/messages", payload, retain=True)
+
+    async def publish_command_result(
+        self, vin: str, command: str, result: dict
+    ) -> None:
+        """Publish a command result to MQTT."""
+        if not self._connected or not self._settings.enabled:
+            return
+        prefix = f"{self._settings.topic_prefix}/{vin}"
+        payload = json.dumps({"command": command, "result": result})
+        await self._publish(f"{prefix}/command_result", payload, retain=False)
+
+    # -- Private methods -----------------------------------------------------
+
+    def _build_state_payload(self, status: VehicleStatus) -> dict:
+        """Build a comprehensive JSON payload from all VehicleStatus fields."""
+        data: dict[str, Any] = {}
+
+        # Battery
+        if status.battery:
+            b = status.battery
+            data["battery_soc"] = b.soc
+            data["battery_voltage"] = b.battery_voltage
+            data["battery_current"] = b.battery_current
+            data["battery_expected_mileage"] = b.expected_mileage
+            data["battery_dump_energy"] = b.dump_energy
+            data["battery_dump_energy_kwh"] = b.dump_energy_kwh
+            data["battery_power_kw"] = b.battery_power
+            data["battery_charging_power_kw"] = b.charging_power_kw
+            data["battery_discharging_power_kw"] = b.discharging_power_kw
+            data["battery_charge_state"] = (
+                b.charge_state.value if b.charge_state is not None else None
+            )
+            data["battery_charge_remain_time"] = b.charge_remain_time
+            data["battery_charge_soc_setting"] = b.charge_soc_setting
+            data["battery_charge_time_setting"] = b.charge_time_setting
+            data["battery_dc_input_fast_charge"] = b.dc_input_fast_charge
+            data["battery_is_charging"] = b.is_charging
+            data["battery_is_discharging"] = b.is_discharging
+
+        # Driving
+        if status.driving:
+            d = status.driving
+            data["speed"] = d.speed
+            data["total_mileage"] = d.total_mileage
+            data["gear_status"] = d.gear_status
+
+        # Location
+        if status.location:
+            data["latitude"] = status.location.latitude
+            data["longitude"] = status.location.longitude
+
+        # Climate
+        if status.climate:
+            c = status.climate
+            data["outdoor_temp"] = c.outdoor_temp
+            data["ac_switch"] = c.ac_switch
+            data["ac_setting"] = c.ac_setting
+            data["ac_air_volume"] = c.ac_air_volume
+            data["ac_air_volume_setting"] = c.ac_air_volume_setting
+            data["ac_wind_direction"] = c.ac_wind_direction
+            data["ac_temp_mode"] = c.ac_temp_mode
+            data["ac_circle_mode"] = c.ac_circle_mode
+            data["ac_cooling_and_heating"] = c.ac_cooling_and_heating
+            data["min_single_temp"] = c.min_single_temp
+            data["ptc_state"] = c.ptc_state
+            data["ptc_power_setting_value"] = c.ptc_power_setting_value
+
+        # Doors
+        if status.doors:
+            dr = status.doors
+            data["driver_door_lock_status"] = dr.driver_door_lock_status
+            data["lbcm_driver_door_status"] = dr.lbcm_driver_door_status
+            data["rbcm_driver_door_status"] = dr.rbcm_driver_door_status
+            data["lbcm_left_rear_door_status"] = dr.lbcm_left_rear_door_status
+            data["rbcm_right_rear_door_status"] = dr.rbcm_right_rear_door_status
+            data["bbcm_back_door_status"] = dr.bbcm_back_door_status
+            data["bcm_door_ctrl_allow"] = dr.bcm_door_ctrl_allow
+
+        # Windows
+        if status.windows:
+            w = status.windows
+            data["left_front_window_percent"] = w.left_front_window_percent
+            data["right_front_window_percent"] = w.right_front_window_percent
+            data["left_rear_window_percent"] = w.left_rear_window_percent
+            data["right_rear_window_percent"] = w.right_rear_window_percent
+            data["driver_window_status"] = w.driver_window_status
+            data["right_front_window_status"] = w.right_front_window_status
+            data["left_rear_window_status"] = w.left_rear_window_status
+            data["right_rear_window_status"] = w.right_rear_window_status
+            data["sun_shade"] = w.sun_shade
+
+        # Tires (kPa + bar)
+        if status.tires:
+            t = status.tires
+            data["tire_front_left_kpa"] = t.front_left_kpa
+            data["tire_front_right_kpa"] = t.front_right_kpa
+            data["tire_rear_left_kpa"] = t.rear_left_kpa
+            data["tire_rear_right_kpa"] = t.rear_right_kpa
+            data["tire_front_left_bar"] = t.front_left_bar
+            data["tire_front_right_bar"] = t.front_right_bar
+            data["tire_rear_left_bar"] = t.rear_left_bar
+            data["tire_rear_right_bar"] = t.rear_right_bar
+            data["tire_front_left_state"] = t.front_left_state
+            data["tire_front_right_state"] = t.front_right_state
+            data["tire_rear_left_state"] = t.rear_left_state
+            data["tire_rear_right_state"] = t.rear_right_state
+            data["tires_all_ok"] = t.all_ok
+
+        # Connectivity
+        if status.connectivity:
+            cn = status.connectivity
+            data["bluetooth_state"] = cn.bluetooth_state
+            data["bluetooth_addr"] = cn.bluetooth_addr
+            data["hotspot_state"] = cn.hotspot_state
+
+        # Ignition
+        if status.ignition:
+            data["ignition_on1"] = status.ignition.bcm_key_position_on1
+            data["ignition_on3"] = status.ignition.bcm_key_position_on3
+
+        # Top-level convenience properties
+        data["is_charging"] = status.is_charging
+        data["is_regening"] = status.is_regening
+        data["is_locked"] = status.is_locked
+        data["is_parked"] = status.is_parked
+
+        # Timestamps
+        if status.collect_time:
+            data["collect_time"] = status.collect_time.isoformat()
+        if status.create_time:
+            data["create_time"] = status.create_time.isoformat()
+
+        return data
+
+    async def _publish_sensors(self, prefix: str, status: VehicleStatus) -> None:
+        """Publish individual sensor topics for HA entities."""
+        _str = lambda v: str(v) if v is not None else ""  # noqa: E731
+        _bool = lambda v: "ON" if v else "OFF"  # noqa: E731
+
+        # -- Numeric sensors --
+        if status.battery:
+            b = status.battery
+            await self._publish(f"{prefix}/battery_soc", _str(b.soc), retain=True)
+            await self._publish(
+                f"{prefix}/range", _str(b.expected_mileage), retain=True
+            )
+            await self._publish(
+                f"{prefix}/battery_voltage", _str(b.battery_voltage), retain=True
+            )
+            await self._publish(
+                f"{prefix}/battery_current", _str(b.battery_current), retain=True
+            )
+            await self._publish(
+                f"{prefix}/battery_power", _str(b.battery_power), retain=True
+            )
+            await self._publish(
+                f"{prefix}/charging_power", _str(b.charging_power_kw), retain=True
+            )
+            await self._publish(
+                f"{prefix}/discharging_power", _str(b.discharging_power_kw), retain=True
+            )
+            await self._publish(
+                f"{prefix}/dump_energy_kwh", _str(b.dump_energy_kwh), retain=True
+            )
+            await self._publish(
+                f"{prefix}/charge_remain_time", _str(b.charge_remain_time), retain=True
+            )
+            await self._publish(
+                f"{prefix}/charge_soc_setting", _str(b.charge_soc_setting), retain=True
+            )
+
+        if status.driving:
+            await self._publish(
+                f"{prefix}/odometer", _str(status.driving.total_mileage), retain=True
+            )
+            await self._publish(
+                f"{prefix}/speed", _str(status.driving.speed), retain=True
+            )
+            await self._publish(
+                f"{prefix}/gear_status", _str(status.driving.gear_status), retain=True
+            )
+
+        if status.climate:
+            c = status.climate
+            await self._publish(
+                f"{prefix}/outdoor_temp", _str(c.outdoor_temp), retain=True
+            )
+            await self._publish(f"{prefix}/ac_setting", _str(c.ac_setting), retain=True)
+            await self._publish(
+                f"{prefix}/ac_air_volume", _str(c.ac_air_volume), retain=True
+            )
+
+        # Tires (bar)
+        if status.tires:
+            t = status.tires
+            await self._publish(
+                f"{prefix}/tire_fl_bar", _str(t.front_left_bar), retain=True
+            )
+            await self._publish(
+                f"{prefix}/tire_fr_bar", _str(t.front_right_bar), retain=True
+            )
+            await self._publish(
+                f"{prefix}/tire_rl_bar", _str(t.rear_left_bar), retain=True
+            )
+            await self._publish(
+                f"{prefix}/tire_rr_bar", _str(t.rear_right_bar), retain=True
+            )
+
+        # Windows (percent)
+        if status.windows:
+            w = status.windows
+            await self._publish(
+                f"{prefix}/window_fl", _str(w.left_front_window_percent), retain=True
+            )
+            await self._publish(
+                f"{prefix}/window_fr", _str(w.right_front_window_percent), retain=True
+            )
+            await self._publish(
+                f"{prefix}/window_rl", _str(w.left_rear_window_percent), retain=True
+            )
+            await self._publish(
+                f"{prefix}/window_rr", _str(w.right_rear_window_percent), retain=True
+            )
+            await self._publish(f"{prefix}/sun_shade", _str(w.sun_shade), retain=True)
+
+        # -- Binary sensors --
+        await self._publish(
+            f"{prefix}/charging", _bool(status.is_charging), retain=True
+        )
+        await self._publish(
+            f"{prefix}/regening", _bool(status.is_regening), retain=True
+        )
+        await self._publish(f"{prefix}/locked", _bool(status.is_locked), retain=True)
+        await self._publish(f"{prefix}/parked", _bool(status.is_parked), retain=True)
+
+        if status.battery:
+            await self._publish(
+                f"{prefix}/battery_charging",
+                _bool(status.battery.is_charging),
+                retain=True,
+            )
+            await self._publish(
+                f"{prefix}/battery_discharging",
+                _bool(status.battery.is_discharging),
+                retain=True,
+            )
+
+        if status.climate:
+            await self._publish(
+                f"{prefix}/ac_switch", _bool(status.climate.ac_switch), retain=True
+            )
+
+        if status.doors:
+            dr = status.doors
+            await self._publish(
+                f"{prefix}/door_driver_left",
+                _bool(dr.lbcm_driver_door_status),
+                retain=True,
+            )
+            await self._publish(
+                f"{prefix}/door_driver_right",
+                _bool(dr.rbcm_driver_door_status),
+                retain=True,
+            )
+            await self._publish(
+                f"{prefix}/door_rear_left",
+                _bool(dr.lbcm_left_rear_door_status),
+                retain=True,
+            )
+            await self._publish(
+                f"{prefix}/door_rear_right",
+                _bool(dr.rbcm_right_rear_door_status),
+                retain=True,
+            )
+            await self._publish(
+                f"{prefix}/door_trunk", _bool(dr.bbcm_back_door_status), retain=True
+            )
+
+        if status.ignition:
+            await self._publish(
+                f"{prefix}/ignition",
+                _bool(status.ignition.bcm_key_position_on1),
+                retain=True,
+            )
+
+        if status.connectivity:
+            await self._publish(
+                f"{prefix}/bluetooth",
+                _bool(status.connectivity.bluetooth_state),
+                retain=True,
+            )
+            await self._publish(
+                f"{prefix}/hotspot",
+                _bool(status.connectivity.hotspot_state),
+                retain=True,
+            )
+
+    async def _publish_discovery(
+        self, vehicle: Vehicle, device_id: str, device_name: str
+    ) -> None:
+        """Publish Home Assistant MQTT discovery configs for all entities."""
+        vin = vehicle.vin
+        prefix = self._settings.topic_prefix
+        disc_prefix = self._settings.discovery_prefix
+
+        device_info = {
+            "identifiers": [device_id],
+            "name": device_name,
+            "manufacturer": "Leapmotor",
+            "model": vehicle.car_type or "Unknown",
+            "sw_version": "LeapConnect",
+        }
+        if vehicle.year:
+            device_info["hw_version"] = str(vehicle.year)
+
+        # ── Sensors ────────────────────────────────────────────────────────
+        sensors: list[dict[str, Any]] = [
+            # Battery
+            {
+                "key": "battery_soc",
+                "name": "Battery",
+                "dc": "battery",
+                "unit": "%",
+                "icon": "mdi:battery",
+            },
+            {
+                "key": "range",
+                "name": "Range",
+                "unit": "km",
+                "icon": "mdi:map-marker-distance",
+            },
+            {
+                "key": "battery_voltage",
+                "name": "Battery Voltage",
+                "dc": "voltage",
+                "unit": "V",
+                "icon": "mdi:flash",
+            },
+            {
+                "key": "battery_current",
+                "name": "Battery Current",
+                "dc": "current",
+                "unit": "A",
+                "icon": "mdi:current-ac",
+            },
+            {
+                "key": "battery_power",
+                "name": "Battery Power",
+                "dc": "power",
+                "unit": "kW",
+                "icon": "mdi:lightning-bolt",
+            },
+            {
+                "key": "charging_power",
+                "name": "Charging Power",
+                "dc": "power",
+                "unit": "kW",
+                "icon": "mdi:ev-station",
+            },
+            {
+                "key": "discharging_power",
+                "name": "Discharging Power",
+                "dc": "power",
+                "unit": "kW",
+                "icon": "mdi:battery-arrow-down",
+            },
+            {
+                "key": "dump_energy_kwh",
+                "name": "Available Energy",
+                "dc": "energy",
+                "unit": "kWh",
+                "icon": "mdi:battery-heart",
+            },
+            {
+                "key": "charge_remain_time",
+                "name": "Charge Remaining Time",
+                "dc": "duration",
+                "unit": "min",
+                "icon": "mdi:timer-outline",
+            },
+            {
+                "key": "charge_soc_setting",
+                "name": "Charge Limit",
+                "unit": "%",
+                "icon": "mdi:battery-lock",
+            },
+            # Driving
+            {
+                "key": "odometer",
+                "name": "Odometer",
+                "dc": "distance",
+                "unit": "km",
+                "icon": "mdi:counter",
+            },
+            {
+                "key": "speed",
+                "name": "Speed",
+                "dc": "speed",
+                "unit": "km/h",
+                "icon": "mdi:speedometer",
+            },
+            {"key": "gear_status", "name": "Gear", "icon": "mdi:car-shift-pattern"},
+            # Climate
+            {
+                "key": "outdoor_temp",
+                "name": "Outdoor Temperature",
+                "dc": "temperature",
+                "unit": "°C",
+                "icon": "mdi:thermometer",
+            },
+            {
+                "key": "ac_setting",
+                "name": "AC Set Temperature",
+                "dc": "temperature",
+                "unit": "°C",
+                "icon": "mdi:air-conditioner",
+            },
+            {"key": "ac_air_volume", "name": "AC Fan Speed", "icon": "mdi:fan"},
+            # Tires (bar)
+            {
+                "key": "tire_fl_bar",
+                "name": "Tire FL Pressure",
+                "dc": "pressure",
+                "unit": "bar",
+                "icon": "mdi:tire",
+            },
+            {
+                "key": "tire_fr_bar",
+                "name": "Tire FR Pressure",
+                "dc": "pressure",
+                "unit": "bar",
+                "icon": "mdi:tire",
+            },
+            {
+                "key": "tire_rl_bar",
+                "name": "Tire RL Pressure",
+                "dc": "pressure",
+                "unit": "bar",
+                "icon": "mdi:tire",
+            },
+            {
+                "key": "tire_rr_bar",
+                "name": "Tire RR Pressure",
+                "dc": "pressure",
+                "unit": "bar",
+                "icon": "mdi:tire",
+            },
+            # Windows
+            {
+                "key": "window_fl",
+                "name": "Window Front Left",
+                "unit": "%",
+                "icon": "mdi:car-door",
+            },
+            {
+                "key": "window_fr",
+                "name": "Window Front Right",
+                "unit": "%",
+                "icon": "mdi:car-door",
+            },
+            {
+                "key": "window_rl",
+                "name": "Window Rear Left",
+                "unit": "%",
+                "icon": "mdi:car-door",
+            },
+            {
+                "key": "window_rr",
+                "name": "Window Rear Right",
+                "unit": "%",
+                "icon": "mdi:car-door",
+            },
+            {
+                "key": "sun_shade",
+                "name": "Sunshade Position",
+                "unit": "%",
+                "icon": "mdi:blinds",
+            },
+        ]
+
+        for s in sensors:
+            config: dict[str, Any] = {
+                "name": s["name"],
+                "unique_id": f"{device_id}_{s['key']}",
+                "state_topic": f"{prefix}/{vin}/{s['key']}",
+                "device": device_info,
+                "icon": s.get("icon"),
+            }
+            if s.get("unit"):
+                config["unit_of_measurement"] = s["unit"]
+            if s.get("dc"):
+                config["device_class"] = s["dc"]
+
+            topic = f"{disc_prefix}/sensor/{device_id}/{s['key']}/config"
+            await self._publish(topic, json.dumps(config), retain=True)
+
+        # ── Binary sensors ─────────────────────────────────────────────────
+        binary_sensors: list[dict[str, Any]] = [
+            # Vehicle state
+            {
+                "key": "charging",
+                "name": "Charging",
+                "dc": "battery_charging",
+                "icon": "mdi:ev-station",
+            },
+            {"key": "regening", "name": "Regenerating", "icon": "mdi:battery-sync"},
+            {"key": "locked", "name": "Locked", "dc": "lock", "icon": "mdi:lock"},
+            {"key": "parked", "name": "Parked", "icon": "mdi:parking"},
+            # Battery state
+            {
+                "key": "battery_charging",
+                "name": "Battery Charging",
+                "dc": "battery_charging",
+                "icon": "mdi:battery-charging",
+            },
+            {
+                "key": "battery_discharging",
+                "name": "Battery Discharging",
+                "icon": "mdi:battery-arrow-down",
+            },
+            # Climate
+            {
+                "key": "ac_switch",
+                "name": "Air Conditioning",
+                "icon": "mdi:air-conditioner",
+            },
+            # Doors
+            {
+                "key": "door_driver_left",
+                "name": "Door Driver Left",
+                "dc": "door",
+                "icon": "mdi:car-door",
+            },
+            {
+                "key": "door_driver_right",
+                "name": "Door Driver Right",
+                "dc": "door",
+                "icon": "mdi:car-door",
+            },
+            {
+                "key": "door_rear_left",
+                "name": "Door Rear Left",
+                "dc": "door",
+                "icon": "mdi:car-door",
+            },
+            {
+                "key": "door_rear_right",
+                "name": "Door Rear Right",
+                "dc": "door",
+                "icon": "mdi:car-door",
+            },
+            {
+                "key": "door_trunk",
+                "name": "Trunk",
+                "dc": "door",
+                "icon": "mdi:car-back",
+            },
+            # Ignition
+            {
+                "key": "ignition",
+                "name": "Ignition",
+                "dc": "power",
+                "icon": "mdi:key-variant",
+            },
+            # Connectivity
+            {
+                "key": "bluetooth",
+                "name": "Bluetooth",
+                "dc": "connectivity",
+                "icon": "mdi:bluetooth",
+            },
+            {
+                "key": "hotspot",
+                "name": "WiFi Hotspot",
+                "dc": "connectivity",
+                "icon": "mdi:wifi",
+            },
+        ]
+
+        for bs in binary_sensors:
+            config = {
+                "name": bs["name"],
+                "unique_id": f"{device_id}_{bs['key']}",
+                "state_topic": f"{prefix}/{vin}/{bs['key']}",
+                "payload_on": "ON",
+                "payload_off": "OFF",
+                "device": device_info,
+                "icon": bs.get("icon"),
+            }
+            if bs.get("dc"):
+                config["device_class"] = bs["dc"]
+
+            topic = f"{disc_prefix}/binary_sensor/{device_id}/{bs['key']}/config"
+            await self._publish(topic, json.dumps(config), retain=True)
+
+        # ── Device tracker (GPS) ───────────────────────────────────────────
+        tracker_config = {
+            "name": f"{device_name} Location",
+            "unique_id": f"{device_id}_location",
+            "json_attributes_topic": f"{prefix}/{vin}/location",
+            "state_topic": f"{prefix}/{vin}/location",
+            "value_template": "{{ 'home' if value_json.latitude else 'not_home' }}",
+            "device": device_info,
+            "icon": "mdi:car-connected",
+            "source_type": "gps",
+        }
+        topic = f"{disc_prefix}/device_tracker/{device_id}/config"
+        await self._publish(topic, json.dumps(tracker_config), retain=True)
+
+        # ── Camera (dynamic car image) ─────────────────────────────────────
+        camera_config = {
+            "name": f"{device_name} Image",
+            "unique_id": f"{device_id}_image",
+            "topic": f"{prefix}/{vin}/image",
+            "image_encoding": "b64",
+            "device": device_info,
+            "icon": "mdi:car",
+        }
+        topic = f"{disc_prefix}/camera/{device_id}/image/config"
+        await self._publish(topic, json.dumps(camera_config), retain=True)
+
+        # Buttons (commands)
+        commands = [
+            {"key": "lock", "name": "Lock", "icon": "mdi:lock"},
+            {"key": "unlock", "name": "Unlock", "icon": "mdi:lock-open"},
+            {"key": "trunk_open", "name": "Open Trunk", "icon": "mdi:car-back"},
+            {"key": "find", "name": "Find Vehicle", "icon": "mdi:car-search"},
+        ]
+
+        for cmd in commands:
+            cmd_config = {
+                "name": cmd["name"],
+                "unique_id": f"{device_id}_cmd_{cmd['key']}",
+                "command_topic": f"{prefix}/{vin}/command",
+                "payload_press": cmd["key"],
+                "device": device_info,
+                "icon": cmd["icon"],
+            }
+            topic = f"{disc_prefix}/button/{device_id}/{cmd['key']}/config"
+            await self._publish(topic, json.dumps(cmd_config), retain=True)
+
+        _LOGGER.info("MQTT discovery published for %s (%s)", device_name, vin)
+
+    async def _publish(self, topic: str, payload: str, *, retain: bool = False) -> None:
+        """Queue a message for publishing."""
+        if self._connected and self._client:
+            try:
+                await self._client.publish(topic, payload, retain=retain)
+            except Exception as exc:
+                _LOGGER.debug("MQTT publish failed: %s", exc)
+
+    def _ensure_running(self) -> None:
+        if self._task and not self._task.done():
+            self._stop_event.set()
+            return
+        self._stop_event.clear()
+        self._task = asyncio.create_task(self._connection_loop(), name="mqtt-ha")
+
+    def _request_stop(self) -> None:
+        self._connected = False
+        self._stop_event.set()
+
+    def _restart(self) -> None:
+        """Stop and restart the connection."""
+        self._discovery_sent.clear()
+        if self._task and not self._task.done():
+            self._request_stop()
+            # Schedule a new start after current task ends
+            asyncio.get_event_loop().call_soon(self._ensure_running)
+        else:
+            self._ensure_running()
+
+    async def _connection_loop(self) -> None:
+        """Main connection loop with reconnection logic."""
+        _LOGGER.info(
+            "MQTT connecting to %s:%d", self._settings.broker, self._settings.port
+        )
+        while self._settings.enabled:
+            try:
+                tls_params = aiomqtt.TLSParameters() if self._settings.use_tls else None
+                async with aiomqtt.Client(
+                    hostname=self._settings.broker,
+                    port=self._settings.port,
+                    username=self._settings.username or None,
+                    password=self._settings.password or None,
+                    tls_params=tls_params,
+                    keepalive=60,
+                ) as client:
+                    self._client = client
+                    self._connected = True
+                    self._last_error = None
+                    _LOGGER.info(
+                        "MQTT connected to %s:%d",
+                        self._settings.broker,
+                        self._settings.port,
+                    )
+
+                    # Subscribe to command topics
+                    await client.subscribe(f"{self._settings.topic_prefix}/+/command")
+
+                    # Process incoming messages and wait for stop
+                    async for message in client.messages:
+                        if self._stop_event.is_set():
+                            break
+                        # Handle command messages
+                        topic_str = str(message.topic)
+                        if topic_str.endswith("/command"):
+                            parts = topic_str.split("/")
+                            if len(parts) >= 3:
+                                vin = parts[-2]
+                                cmd = (
+                                    message.payload.decode() if message.payload else ""
+                                )
+                                _LOGGER.info(
+                                    "MQTT command received: %s for %s", cmd, vin
+                                )
+                                # Commands are handled by the callback set by main.py
+                                if self._command_callback:
+                                    asyncio.create_task(
+                                        self._handle_command_safe(vin, cmd)
+                                    )
+
+            except aiomqtt.MqttError as exc:
+                self._connected = False
+                self._client = None
+                self._last_error = str(exc)
+                _LOGGER.warning("MQTT connection error: %s", exc)
+                if not self._settings.enabled:
+                    break
+                # Wait before reconnecting
+                try:
+                    await asyncio.wait_for(self._stop_event.wait(), timeout=30)
+                    break  # stop was requested
+                except TimeoutError:
+                    pass  # retry connection
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                self._connected = False
+                self._client = None
+                self._last_error = str(exc)
+                _LOGGER.exception("MQTT unexpected error")
+                if not self._settings.enabled:
+                    break
+                try:
+                    await asyncio.wait_for(self._stop_event.wait(), timeout=30)
+                    break
+                except TimeoutError:
+                    pass
+
+        self._connected = False
+        self._client = None
+        _LOGGER.info("MQTT disconnected")
+
+    # Command handling
+    _command_callback = None
+
+    def set_command_callback(self, callback) -> None:
+        """Set callback for handling incoming commands from HA."""
+        self._command_callback = callback
+
+    async def _handle_command_safe(self, vin: str, command: str) -> None:
+        """Execute command callback safely."""
+        try:
+            if self._command_callback:
+                await self._command_callback(vin, command)
+        except Exception as exc:
+            _LOGGER.exception("MQTT command handler error: %s", exc)

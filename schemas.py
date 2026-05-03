@@ -510,3 +510,20 @@ class UnreadCountResponse(BaseModel):
 
 class PreferencesResponse(BaseModel):
     electricity_price_kwh: float = 0.25
+
+
+class MqttStatusResponse(BaseModel):
+    enabled: bool = False
+    connected: bool = False
+    broker: str = ""
+    port: int = 1883
+    username: str = ""
+    use_tls: bool = False
+    discovery_prefix: str = "homeassistant"
+    topic_prefix: str = "leapconnect"
+    last_error: str | None = None
+
+
+class MqttTestResponse(BaseModel):
+    status: str
+    message: str

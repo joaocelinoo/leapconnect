@@ -29,7 +29,7 @@ from leapmotor_api.image import CarImagePackage
 from leapmotor_api.models import MessageList, Vehicle, VehicleStatus
 from pydantic import BaseModel
 
-from models import UserPreferences, VehicleSnapshot
+from models import MqttSettings, UserPreferences, VehicleSnapshot
 from persistence.sqlite_adapter import SQLAlchemyVehicleHistoryRepository
 from schemas import (
     AccountSetupResponse,
@@ -42,6 +42,8 @@ from schemas import (
     LoginResponse,
     MessageListResponse,
     MessageSchema,
+    MqttStatusResponse,
+    MqttTestResponse,
     PreferencesResponse,
     ReconnectResponse,
     SchedulerStatusResponse,
@@ -59,6 +61,7 @@ from schemas import (
     VehicleStatusResponse,
     VehicleStatusSchema,
 )
+from services.mqtt_ha import HomeAssistantMqttService
 from services.scheduler import VehicleDataScheduler
 
 logging.basicConfig(level=logging.INFO)
@@ -79,6 +82,7 @@ _picture_cache: dict[str, dict[str, str]] = {}  # vin -> {filename: data-URI}
 _image_packages: dict[str, CarImagePackage] = {}  # vin -> CarImagePackage
 _history_repo: SQLAlchemyVehicleHistoryRepository | None = None
 _scheduler: VehicleDataScheduler | None = None
+_mqtt_service: HomeAssistantMqttService | None = None
 
 # Session management — in-memory token store
 SESSION_COOKIE_NAME = "leapconnect_session"
@@ -182,7 +186,7 @@ async def _auto_connect() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _history_repo, _scheduler
+    global _history_repo, _scheduler, _mqtt_service
     db_path = os.environ.get(
         "HISTORY_DB_PATH", str(Path(__file__).parent / "history.db")
     )
@@ -203,11 +207,37 @@ async def lifespan(app: FastAPI):
         saved.interval_minutes,
     )
 
+    # Initialize MQTT Home Assistant service
+    _mqtt_service = HomeAssistantMqttService()
+    _mqtt_service.set_command_callback(_handle_mqtt_command)
+    mqtt_settings = await _load_mqtt_settings()
+    _mqtt_service.update_settings(
+        enabled=mqtt_settings.enabled,
+        broker=mqtt_settings.broker,
+        port=mqtt_settings.port,
+        username=mqtt_settings.username,
+        password=mqtt_settings.password,
+        use_tls=mqtt_settings.use_tls,
+        discovery_prefix=mqtt_settings.discovery_prefix,
+        topic_prefix=mqtt_settings.topic_prefix,
+    )
+    _LOGGER.info("MQTT HA service initialised: enabled=%s", mqtt_settings.enabled)
+
+    # Wire scheduler → MQTT publishing
+    async def _on_scheduler_status(vehicle, status):
+        if _mqtt_service and _mqtt_service.is_connected:
+            image_pkg = _image_packages.get(vehicle.vin)
+            await _mqtt_service.publish_vehicle_status(vehicle, status, image_pkg)
+
+    _scheduler.set_on_status_callback(_on_scheduler_status)
+
     # Auto-connect using saved credentials
     await _auto_connect()
 
     yield
 
+    if _mqtt_service:
+        await _mqtt_service.stop()
     if _scheduler:
         await _scheduler.stop()
     if _history_repo:
@@ -871,6 +901,14 @@ async def get_vehicle_status(vin: str) -> VehicleStatusResponse:
         )
         asyncio.create_task(_save_snapshot_safe(snapshot))
 
+    # Publish to MQTT / Home Assistant
+    if (
+        _mqtt_service
+        and _mqtt_service.is_connected
+        and isinstance(status, VehicleStatus)
+    ):
+        asyncio.create_task(_mqtt_publish_status(vin, status))
+
     return VehicleStatusResponse(status=VehicleStatusSchema.from_model(status))
 
 
@@ -1232,6 +1270,172 @@ async def update_scheduler_settings(request: Request) -> SchedulerStatusResponse
     await _history_repo.save_scheduler_settings(settings)
 
     return _scheduler.status_dict()
+
+
+# ---------------------------------------------------------------------------
+# Routes — MQTT / Home Assistant
+# ---------------------------------------------------------------------------
+
+
+async def _load_mqtt_settings() -> MqttSettings:
+    """Load MQTT settings from the database."""
+    if not _history_repo:
+        return MqttSettings()
+    settings = MqttSettings()
+    enabled = await _history_repo.get_setting("mqtt_enabled")
+    settings.enabled = enabled == "1" if enabled else False
+    settings.broker = await _history_repo.get_setting("mqtt_broker") or ""
+    port_str = await _history_repo.get_setting("mqtt_port")
+    settings.port = int(port_str) if port_str else 1883
+    settings.username = await _history_repo.get_setting("mqtt_username") or ""
+    settings.password = await _history_repo.get_setting("mqtt_password") or ""
+    use_tls = await _history_repo.get_setting("mqtt_use_tls")
+    settings.use_tls = use_tls == "1" if use_tls else False
+    settings.discovery_prefix = (
+        await _history_repo.get_setting("mqtt_discovery_prefix") or "homeassistant"
+    )
+    settings.topic_prefix = (
+        await _history_repo.get_setting("mqtt_topic_prefix") or "leapconnect"
+    )
+    return settings
+
+
+async def _save_mqtt_settings(settings: MqttSettings) -> None:
+    """Persist MQTT settings to the database."""
+    if not _history_repo:
+        return
+    await _history_repo.save_setting("mqtt_enabled", "1" if settings.enabled else "0")
+    await _history_repo.save_setting("mqtt_broker", settings.broker)
+    await _history_repo.save_setting("mqtt_port", str(settings.port))
+    await _history_repo.save_setting("mqtt_username", settings.username)
+    await _history_repo.save_setting("mqtt_password", settings.password)
+    await _history_repo.save_setting("mqtt_use_tls", "1" if settings.use_tls else "0")
+    await _history_repo.save_setting("mqtt_discovery_prefix", settings.discovery_prefix)
+    await _history_repo.save_setting("mqtt_topic_prefix", settings.topic_prefix)
+
+
+async def _handle_mqtt_command(vin: str, command: str) -> None:
+    """Handle a command received from Home Assistant via MQTT."""
+    if not _client:
+        _LOGGER.warning("MQTT command %s for %s ignored: no client", command, vin)
+        return
+
+    result = None
+    try:
+        if command == "lock":
+            result = await _client.lock_vehicle(vin)
+        elif command == "unlock":
+            result = await _client.unlock_vehicle(vin)
+        elif command == "trunk_open":
+            result = await _client.open_trunk(vin)
+        elif command == "find":
+            result = await _client.find_vehicle(vin)
+        else:
+            _LOGGER.warning("MQTT: unknown command '%s' for %s", command, vin)
+            return
+    except Exception as exc:
+        _LOGGER.exception("MQTT command %s failed for %s", command, vin)
+        result = {"error": str(exc)}
+
+    if _mqtt_service and result:
+        await _mqtt_service.publish_command_result(vin, command, result)
+
+
+async def _mqtt_publish_status(vin: str, status) -> None:
+    """Publish vehicle status to MQTT if enabled."""
+    if not _mqtt_service or not _mqtt_service.is_connected:
+        return
+    vehicle = _find_vehicle(vin)
+    image_pkg = _image_packages.get(vin)
+    await _mqtt_service.publish_vehicle_status(vehicle, status, image_pkg)
+
+
+def _mqtt_status_response() -> MqttStatusResponse:
+    """Build a MqttStatusResponse from the service's settings + runtime state."""
+    s = _mqtt_service.settings
+    return MqttStatusResponse(
+        enabled=s.enabled,
+        connected=_mqtt_service.is_connected,
+        broker=s.broker,
+        port=s.port,
+        username=s.username,
+        use_tls=s.use_tls,
+        discovery_prefix=s.discovery_prefix,
+        topic_prefix=s.topic_prefix,
+        last_error=_mqtt_service.last_error,
+    )
+
+
+@app.get("/api/mqtt", response_model=MqttStatusResponse)
+async def get_mqtt_status() -> MqttStatusResponse:
+    """Get current MQTT / Home Assistant integration status."""
+    if not _mqtt_service:
+        return MqttStatusResponse()
+    return _mqtt_status_response()
+
+
+@app.put("/api/mqtt", response_model=MqttStatusResponse)
+async def update_mqtt_settings(request: Request) -> MqttStatusResponse:
+    """Update MQTT connection settings and reconnect."""
+    if not _mqtt_service or not _history_repo:
+        raise HTTPException(status_code=503, detail="MQTT service not available")
+
+    body = await request.json()
+
+    # Validate
+    if "port" in body:
+        try:
+            body["port"] = int(body["port"])
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=422, detail="'port' must be an integer"
+            ) from exc
+
+    _mqtt_service.update_settings(
+        enabled=body.get("enabled"),
+        broker=body.get("broker"),
+        port=body.get("port"),
+        username=body.get("username"),
+        password=body.get("password"),
+        use_tls=body.get("use_tls"),
+        discovery_prefix=body.get("discovery_prefix"),
+        topic_prefix=body.get("topic_prefix"),
+    )
+
+    # Persist
+    await _save_mqtt_settings(_mqtt_service.settings)
+
+    return _mqtt_status_response()
+
+
+@app.post("/api/mqtt/test", response_model=MqttTestResponse)
+async def test_mqtt_connection(request: Request) -> MqttTestResponse:
+    """Test MQTT connection with provided settings (without saving)."""
+    import aiomqtt
+
+    body = await request.json()
+    broker = body.get("broker", "").strip()
+    port = int(body.get("port", 1883))
+    username = body.get("username", "").strip() or None
+    password = body.get("password", "").strip() or None
+    use_tls = body.get("use_tls", False)
+
+    if not broker:
+        raise HTTPException(status_code=422, detail="'broker' is required")
+
+    try:
+        tls_params = aiomqtt.TLSParameters() if use_tls else None
+        async with aiomqtt.Client(
+            hostname=broker,
+            port=port,
+            username=username,
+            password=password,
+            tls_params=tls_params,
+            timeout=10,
+        ):
+            return MqttTestResponse(status="ok", message="Connection successful")
+    except Exception as exc:
+        return MqttTestResponse(status="error", message=str(exc))
 
 
 # ---------------------------------------------------------------------------

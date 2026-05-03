@@ -47,6 +47,9 @@ class VehicleDataScheduler:
         self._client: AsyncLeapmotorApiClient | None = None
         self._vehicles: list[Vehicle] = []
 
+        # Optional callback for publishing status (e.g. MQTT)
+        self._on_status_callback = None
+
     # -- public API ----------------------------------------------------------
 
     @property
@@ -73,6 +76,10 @@ class VehicleDataScheduler:
     ) -> None:
         self._client = client
         self._vehicles = vehicles
+
+    def set_on_status_callback(self, callback) -> None:
+        """Set a callback invoked with (vehicle, status) after each poll."""
+        self._on_status_callback = callback
 
     def update_settings(
         self, *, enabled: bool | None = None, interval_minutes: int | None = None
@@ -194,6 +201,12 @@ class VehicleDataScheduler:
                     vehicle.vin,
                     status.battery.soc,
                 )
+                # Notify listeners (e.g. MQTT)
+                if self._on_status_callback:
+                    try:
+                        await self._on_status_callback(vehicle, status)
+                    except Exception:
+                        _LOGGER.debug("Scheduler: on_status callback failed")
             except Exception as exc:
                 self._total_errors += 1
                 self._last_error = f"{vehicle.vin}: {exc}"

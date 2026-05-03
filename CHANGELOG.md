@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Home Assistant integration via MQTT**: vehicle data is automatically published to Home Assistant using MQTT Discovery
+- New `HomeAssistantMqttService` in `services/mqtt_ha.py` with auto-reconnect, HA Discovery publishing, and command handling
+- MQTT settings section in Settings → Home Assistant: configure broker host, port, credentials, TLS, discovery prefix, and topic prefix
+- Enable/disable toggle and connection status indicator (Connected / Disconnected / Disabled) in the Settings UI
+- "Test Connection" button to verify MQTT broker reachability before saving
+- `GET /api/mqtt`, `PUT /api/mqtt`, `POST /api/mqtt/test` API endpoints for managing MQTT configuration
+- MQTT settings persisted in the database (app_settings key/value store)
+- Full VehicleStatus coverage: battery, driving, location, climate, doors, windows, tires, connectivity, ignition state published as individual HA entities
+- HA entity types: sensors (SoC, mileage, temperatures, tire pressures, …), binary sensors (doors, windows, locks, charging, …), device tracker (GPS), camera (dynamic car image), buttons (remote commands)
+- Scheduler integration: vehicle status is automatically published to MQTT after each data collection cycle
+- `MqttSettings` dataclass in `models.py` and `MqttStatusResponse` / `MqttTestResponse` Pydantic schemas in `schemas.py`
+- `aiomqtt>=2.0.0` added to project dependencies
+
 ## [0.3.0] - 2026-05-03
 
 ### Added
