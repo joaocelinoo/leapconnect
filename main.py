@@ -221,6 +221,7 @@ async def lifespan(app: FastAPI):
     # Initialize MQTT Home Assistant service
     _mqtt_service = HomeAssistantMqttService()
     _mqtt_service.set_command_callback(_handle_mqtt_command)
+    _mqtt_service.set_settings_callback(_handle_mqtt_settings)
     mqtt_settings = await _load_mqtt_settings()
     _mqtt_service.update_settings(
         enabled=mqtt_settings.enabled,
@@ -233,6 +234,9 @@ async def lifespan(app: FastAPI):
         topic_prefix=mqtt_settings.topic_prefix,
     )
     _LOGGER.info("MQTT HA service initialised: enabled=%s", mqtt_settings.enabled)
+
+    # Sync the MQTT polling interval so discovery publishes the correct value
+    _mqtt_service._mqtt_interval_seconds = saved.mqtt_interval_seconds
 
     # Wire scheduler → MQTT publishing
     async def _on_scheduler_status(vehicle, status):
@@ -1373,6 +1377,35 @@ async def _mqtt_publish_status(vin: str, status) -> None:
     vehicle = _find_vehicle(vin)
     image_pkg = _image_packages.get(vin)
     await _mqtt_service.publish_vehicle_status(vehicle, status, image_pkg)
+    # Also publish current scheduler intervals
+    if _scheduler:
+        s = _scheduler.settings
+        await _mqtt_service.publish_scheduler_settings(
+            vin, s.interval_minutes, s.mqtt_interval_seconds
+        )
+
+
+async def _handle_mqtt_settings(key: str, value: int) -> None:
+    """Handle a polling interval change received from Home Assistant via MQTT."""
+    if not _scheduler or not _history_repo:
+        _LOGGER.warning("MQTT settings change ignored: scheduler not available")
+        return
+
+    if key == "ha_polling_interval":
+        settings = _scheduler.update_settings(mqtt_interval_seconds=value)
+    else:
+        _LOGGER.warning("MQTT: unknown setting key '%s'", key)
+        return
+
+    await _history_repo.save_scheduler_settings(settings)
+    _LOGGER.info("MQTT settings applied: %s = %d", key, value)
+
+    # Publish updated value back to HA for all known vehicles
+    if _mqtt_service and _mqtt_service.is_connected:
+        for v in _vehicles:
+            await _mqtt_service.publish_scheduler_settings(
+                v.vin, settings.interval_minutes, settings.mqtt_interval_seconds
+            )
 
 
 def _mqtt_status_response() -> MqttStatusResponse:

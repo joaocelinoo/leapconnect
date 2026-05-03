@@ -35,6 +35,7 @@ class HomeAssistantMqttService:
         self._publish_queue: asyncio.Queue[tuple[str, str, bool]] = asyncio.Queue()
         self._last_error: str | None = None
         self._discovery_sent: set[str] = set()
+        self._mqtt_interval_seconds: int = 60
 
     @property
     def settings(self) -> MqttSettings:
@@ -783,7 +784,44 @@ class HomeAssistantMqttService:
             topic = f"{disc_prefix}/button/{device_id}/{cmd['key']}/config"
             await self._publish(topic, json.dumps(cmd_config), retain=True)
 
+        # ── Number entity (HA polling interval — diagnostic) ──────────────
+        ha_poll_config = {
+            "name": "Polling Interval",
+            "unique_id": f"{device_id}_polling_interval",
+            "state_topic": f"{prefix}/{vin}/polling_interval",
+            "command_topic": f"{prefix}/{vin}/polling_interval/set",
+            "unit_of_measurement": "s",
+            "min": 10,
+            "max": 3600,
+            "step": 10,
+            "mode": "slider",
+            "device": device_info,
+            "icon": "mdi:home-clock",
+            "entity_category": "config",
+        }
+        topic = f"{disc_prefix}/number/{device_id}/polling_interval/config"
+        await self._publish(topic, json.dumps(ha_poll_config), retain=True)
+
+        # Publish initial value for number entity
+        await self._publish(
+            f"{prefix}/{vin}/polling_interval",
+            str(self._mqtt_interval_seconds),
+            retain=True,
+        )
+
         _LOGGER.info("MQTT discovery published for %s (%s)", device_name, vin)
+
+    async def publish_scheduler_settings(
+        self, vin: str, interval_minutes: int, mqtt_interval_seconds: int
+    ) -> None:
+        """Publish current scheduler intervals to MQTT state topics."""
+        if not self._connected or not self._settings.enabled:
+            return
+        self._mqtt_interval_seconds = mqtt_interval_seconds
+        prefix = f"{self._settings.topic_prefix}/{vin}"
+        await self._publish(
+            f"{prefix}/polling_interval", str(mqtt_interval_seconds), retain=True
+        )
 
     async def _publish(
         self, topic: str, payload: str | bytes, *, retain: bool = False
@@ -841,15 +879,17 @@ class HomeAssistantMqttService:
                         self._settings.port,
                     )
 
-                    # Subscribe to command topics
+                    # Subscribe to command topics and number set topics
                     await client.subscribe(f"{self._settings.topic_prefix}/+/command")
+                    await client.subscribe(f"{self._settings.topic_prefix}/+/+/set")
 
                     # Process incoming messages and wait for stop
                     async for message in client.messages:
                         if self._stop_event.is_set():
                             break
-                        # Handle command messages
                         topic_str = str(message.topic)
+
+                        # Handle command messages
                         if topic_str.endswith("/command"):
                             parts = topic_str.split("/")
                             if len(parts) >= 3:
@@ -860,11 +900,32 @@ class HomeAssistantMqttService:
                                 _LOGGER.info(
                                     "MQTT command received: %s for %s", cmd, vin
                                 )
-                                # Commands are handled by the callback set by main.py
                                 if self._command_callback:
                                     asyncio.create_task(
                                         self._handle_command_safe(vin, cmd)
                                     )
+
+                        # Handle number set messages (e.g. .../vin/polling_interval/set)
+                        elif topic_str.endswith("/set"):
+                            parts = topic_str.split("/")
+                            if len(parts) >= 4:
+                                key = parts[-2]
+                                if key == "polling_interval":
+                                    try:
+                                        value = int(float(message.payload.decode()))
+                                        _LOGGER.info(
+                                            "MQTT setting change: %s = %d", key, value
+                                        )
+                                        if self._settings_callback:
+                                            asyncio.create_task(
+                                                self._handle_settings_safe(key, value)
+                                            )
+                                    except (ValueError, TypeError):
+                                        _LOGGER.warning(
+                                            "MQTT invalid number value for %s: %s",
+                                            key,
+                                            message.payload,
+                                        )
 
             except aiomqtt.MqttError as exc:
                 self._connected = False
@@ -900,10 +961,19 @@ class HomeAssistantMqttService:
 
     # Command handling
     _command_callback = None
+    _settings_callback = None
 
     def set_command_callback(self, callback) -> None:
         """Set callback for handling incoming commands from HA."""
         self._command_callback = callback
+
+    def set_settings_callback(self, callback) -> None:
+        """Set callback for handling interval changes from HA.
+
+        Callback signature: async def cb(key: str, value: int) -> None
+        key is 'polling_interval'.
+        """
+        self._settings_callback = callback
 
     async def _handle_command_safe(self, vin: str, command: str) -> None:
         """Execute command callback safely."""
@@ -912,3 +982,11 @@ class HomeAssistantMqttService:
                 await self._command_callback(vin, command)
         except Exception as exc:
             _LOGGER.exception("MQTT command handler error: %s", exc)
+
+    async def _handle_settings_safe(self, key: str, value: int) -> None:
+        """Execute settings callback safely."""
+        try:
+            if self._settings_callback:
+                await self._settings_callback(key, value)
+        except Exception as exc:
+            _LOGGER.exception("MQTT settings handler error: %s", exc)

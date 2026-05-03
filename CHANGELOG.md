@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Vehicle data is sent to Home Assistant automatically every time the app collects new data
 - **Separate polling timers**: history collection and Home Assistant updates now run on independent schedules — you can collect history every 15 minutes while pushing updates to HA every 30 seconds, for example
 - The Home Assistant polling interval supports sub-minute values (10 sec, 30 sec, etc.) for near-real-time updates in your smart home dashboard
+- **HA polling interval exposed as a Home Assistant entity**: you can adjust the polling interval directly from your HA dashboard using a slider (10 s – 3600 s), without opening the webapp
 
 ### Changed
 
@@ -24,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Settings now use the full available width instead of being limited to a narrow column
 - The app version shown in Settings is now read automatically from the project configuration, so it always stays up to date
 - The Home Assistant section in Services now includes a polling interval control with +/− stepper (10 sec steps below 1 min, 1 min steps above)
+
+### Fixed
+
+- "Battery Charging" entity in Home Assistant no longer shows true when the car is idle — the check now uses actual charging power instead of a flag that was incorrectly set by the API library
 
 ## [0.3.0] - 2026-05-03
 
