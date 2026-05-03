@@ -47,7 +47,6 @@
           <div v-if="userError" class="field-error">{{ userError }}</div>
           <div v-if="userSuccess" class="field-success">{{ userSuccess }}</div>
         </div>
-        <InfoRow label="App version" :value="appVersion ? `v${appVersion}` : '—'" color="#5c6478" />
       </SectionCard>
 
       <div class="settings-grid">
@@ -255,6 +254,77 @@
       </SectionCard>
     </template>
 
+    <!-- ═══════════════ ABOUT ═══════════════ -->
+    <template v-if="activeSection === 'about'">
+      <SectionCard title="About LeapConnect" :icon="Info">
+        <div class="about-header">
+          <div class="about-logo">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#00d4ff" stroke-width="2">
+              <path d="M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v9a2 2 0 01-2 2h-2" />
+              <circle cx="9" cy="17" r="2" /><circle cx="17" cy="17" r="2" />
+            </svg>
+          </div>
+          <div>
+            <div class="about-app-name">LeapConnect</div>
+            <div class="about-version">{{ appVersion ? `v${appVersion}` : '—' }}</div>
+          </div>
+        </div>
+        <p class="about-desc">
+          Open-source web dashboard for monitoring and controlling Leapmotor vehicles.
+          Built on top of the <a href="https://github.com/markoceri/leapmotor-api" target="_blank" rel="noopener">leapmotor-api</a> Python client.
+        </p>
+      </SectionCard>
+
+      <SectionCard title="GitHub" :icon="Github">
+        <div class="about-links">
+          <a href="https://github.com/markoceri/leapmotor-webapp" target="_blank" rel="noopener" class="about-link-card">
+            <Github :size="18" />
+            <div>
+              <div class="about-link-title">Source Code</div>
+              <div class="about-link-hint">markoceri/leapmotor-webapp</div>
+            </div>
+            <ExternalLink :size="14" class="about-link-arrow" />
+          </a>
+          <a href="https://github.com/markoceri/leapmotor-webapp/stargazers" target="_blank" rel="noopener" class="about-link-card star">
+            <Star :size="18" />
+            <div>
+              <div class="about-link-title">Star the project</div>
+              <div class="about-link-hint">If you find LeapConnect useful, a star helps the project grow!</div>
+            </div>
+            <ExternalLink :size="14" class="about-link-arrow" />
+          </a>
+          <a href="https://github.com/markoceri/leapmotor-webapp/issues" target="_blank" rel="noopener" class="about-link-card">
+            <AlertTriangle :size="18" />
+            <div>
+              <div class="about-link-title">Report an Issue</div>
+              <div class="about-link-hint">Found a bug or have a suggestion? Open an issue on GitHub.</div>
+            </div>
+            <ExternalLink :size="14" class="about-link-arrow" />
+          </a>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Disclaimer" :icon="AlertTriangle">
+        <div class="about-disclaimer">
+          <p><strong>This is NOT an official Leapmotor product.</strong></p>
+          <p>
+            LeapConnect is an independent, community-driven project with no affiliation to
+            Leapmotor International or its subsidiaries. It interacts with Leapmotor's cloud
+            services through unofficial, reverse-engineered APIs.
+          </p>
+          <p>
+            By using this software you acknowledge that:
+          </p>
+          <ul>
+            <li>You use LeapConnect <strong>entirely at your own risk</strong>.</li>
+            <li>The author(s) accept <strong>no responsibility</strong> for any consequences, including but not limited to account suspension or ban by Leapmotor.</li>
+            <li>Vehicle commands are sent over unofficial channels — <strong>use remote controls with caution</strong>.</li>
+            <li>The project may stop working at any time if Leapmotor changes its APIs.</li>
+          </ul>
+        </div>
+      </SectionCard>
+    </template>
+
     <!-- ═══════════════ MODALS (always rendered) ═══════════════ -->
 
     <!-- Leapmotor Credentials Modal -->
@@ -422,7 +492,7 @@ import InfoRow from '../components/InfoRow.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { api } from '../composables/useApi'
 import { useAppStore } from '../stores/appStore'
-import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings } from 'lucide-vue-next'
+import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink } from 'lucide-vue-next'
 
 const store = useAppStore()
 
@@ -431,6 +501,7 @@ const sections = [
   { key: 'general', label: 'General', icon: SlidersHorizontal },
   { key: 'services', label: 'Services', icon: Wrench },
   { key: 'advanced', label: 'Advanced', icon: Code },
+  { key: 'about', label: 'About', icon: Info },
 ]
 const activeSection = ref('account')
 
@@ -1427,4 +1498,58 @@ onMounted(() => {
 }
 .test-btn:hover:not(:disabled) { color: #00d4ff; border-color: #00d4ff44; }
 .test-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── About ── */
+.about-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.about-logo {
+  width: 48px; height: 48px;
+  border-radius: 12px;
+  background: rgba(0,212,255,0.08);
+  display: flex; align-items: center; justify-content: center;
+}
+.about-app-name { font-size: 18px; font-weight: 700; color: #e2e6f0; }
+.about-version { font-size: 12px; color: #5c6478; font-family: var(--mono); margin-top: 2px; }
+.about-desc {
+  font-size: 13px; color: #8a90a0; line-height: 1.6; margin: 0;
+}
+.about-desc a {
+  color: #00d4ff; text-decoration: none;
+}
+.about-desc a:hover { text-decoration: underline; }
+.about-links {
+  display: flex; flex-direction: column; gap: 8px;
+}
+.about-link-card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  color: #c8cdd8;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.about-link-card:hover {
+  background: rgba(0,212,255,0.06);
+  border-color: rgba(0,212,255,0.2);
+}
+.about-link-card.star { color: #fbbf24; }
+.about-link-card.star:hover { background: rgba(251,191,36,0.06); border-color: rgba(251,191,36,0.2); }
+.about-link-title { font-size: 13px; font-weight: 600; }
+.about-link-hint { font-size: 11px; color: #5c6478; margin-top: 2px; }
+.about-link-arrow { margin-left: auto; color: #5c6478; flex-shrink: 0; }
+.about-disclaimer {
+  font-size: 13px; color: #8a90a0; line-height: 1.7;
+}
+.about-disclaimer p { margin: 0 0 10px; }
+.about-disclaimer strong { color: #ffab40; }
+.about-disclaimer ul {
+  margin: 8px 0 0; padding-left: 20px;
+}
+.about-disclaimer li { margin-bottom: 6px; }
 </style>
