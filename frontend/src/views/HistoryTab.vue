@@ -916,6 +916,7 @@ onBeforeUnmount(destroyCharts)
 .history-header {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 12px;
 }
 @media (min-width: 640px) {
