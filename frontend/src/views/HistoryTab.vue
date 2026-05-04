@@ -26,16 +26,29 @@
       </div>
     </div>
 
+    <!-- KPI skeleton -->
+    <HistorySkeleton v-if="loadingKpi && !kpiCards.length" :show-kpi="true" :show-charts="false" />
+
     <!-- KPI cards -->
-    <div class="summary-grid">
-      <div v-for="s in kpiCards" :key="s.label" class="summary-card">
-        <div class="summary-value" :style="{ color: s.color }">{{ s.value }}</div>
-        <div class="summary-label">{{ s.label }}</div>
+    <transition name="fade">
+      <div v-if="kpiCards.length" class="summary-grid">
+        <div v-for="s in kpiCards" :key="s.label" class="summary-card">
+          <div class="summary-value" :style="{ color: s.color }">{{ s.value }}</div>
+          <div class="summary-label">{{ s.label }}</div>
+        </div>
       </div>
+    </transition>
+
+    <!-- Stale indicator -->
+    <div v-if="isStale" class="stale-banner">
+      <span class="stale-dot"></span> Updating data...
     </div>
 
+    <!-- Charts skeleton -->
+    <HistorySkeleton v-if="loadingCharts && viewMode === 'chart' && !data.length" :show-kpi="false" :show-charts="true" :chart-count="4" />
+
     <!-- Charts -->
-    <template v-if="viewMode === 'chart'">
+    <template v-if="viewMode === 'chart' && chartsReady">
       <!-- Existing core charts -->
       <h3 class="section-title">Battery & Energy</h3>
       <div class="charts-grid">
@@ -151,8 +164,24 @@
     </template>
 
     <!-- Table view -->
-    <div v-else class="data-table-wrapper">
-      <div class="data-table-scroll">
+    <div v-else-if="viewMode === 'table'" class="data-table-wrapper">
+      <!-- Table skeleton -->
+      <div v-if="loadingCharts && !tableData.length" class="data-table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th v-for="i in 7" :key="i"><div class="skeleton-line skeleton-th"></div></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="i in 8" :key="i">
+              <td v-for="j in 7" :key="j"><div class="skeleton-line skeleton-td"></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <!-- Real table -->
+      <div v-else class="data-table-scroll">
         <table class="data-table">
           <thead>
             <tr>
@@ -194,6 +223,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { Chart, registerables } from 'chart.js'
 import { api } from '../composables/useApi'
 import { Battery, Map, Zap, Route, Thermometer, BarChart3, Table2, Gauge, Clock, CircleDot, MapPin, Circle, BatteryWarning } from 'lucide-vue-next'
+import HistorySkeleton from '../components/HistorySkeleton.vue'
 
 Chart.register(...registerables)
 
@@ -213,6 +243,42 @@ const period = ref(0)
 const viewMode = ref('chart')
 
 // ---------------------------------------------------------------------------
+// Loading & caching states
+// ---------------------------------------------------------------------------
+const loadingKpi = ref(true)
+const loadingCharts = ref(true)
+const chartsReady = ref(false)
+const isStale = ref(false)
+
+const CACHE_KEY_PREFIX = 'history_cache_'
+const CACHE_MAX_AGE_MS = 5 * 60 * 1000 // 5 minutes
+
+function getCacheKey() {
+  return `${CACHE_KEY_PREFIX}${props.vin}`
+}
+
+function loadFromCache() {
+  try {
+    const raw = sessionStorage.getItem(getCacheKey())
+    if (!raw) return null
+    const cached = JSON.parse(raw)
+    if (Date.now() - cached.timestamp > CACHE_MAX_AGE_MS * 12) return null // discard if older than 1 hour
+    return cached
+  } catch { return null }
+}
+
+function saveToCache(dailyData, snapshots, allSnaps) {
+  try {
+    sessionStorage.setItem(getCacheKey(), JSON.stringify({
+      timestamp: Date.now(),
+      dailyData,
+      snapshots,
+      allSnaps,
+    }))
+  } catch { /* quota exceeded, ignore */ }
+}
+
+// ---------------------------------------------------------------------------
 // Data source
 // ---------------------------------------------------------------------------
 const allSnapshots = ref([])
@@ -220,8 +286,53 @@ const allData = ref([])
 const todaySnapshots = ref([])
 const electricityPriceKwh = ref(0.25)
 
+function applyData(daily, snaps, allSnaps) {
+  allSnapshots.value = allSnaps
+
+  todaySnapshots.value = snaps.map(s => ({
+    date: formatTimestamp(s.timestamp),
+    battery: s.battery_soc ?? 0,
+    range: s.battery_expected_mileage ?? 0,
+    kmDriven: 0,
+    batteryEnergy: (s.battery_dump_energy ?? 0) / 1000.0,
+    chargingPower: s.battery_charging_power_kw ?? 0,
+    dischargingPower: s.battery_discharge_power_kw ?? 0,
+    temp: s.climate_outdoor_temp ?? 0,
+    chargeSessions: s.battery_is_charging ? 1 : 0,
+    sampleCount: 1,
+  }))
+
+  if (daily.length > 0) {
+    allData.value = daily.map(d => ({
+      date: formatDate(d.date),
+      battery: d.avg_soc ?? 0,
+      range: d.max_range ?? 0,
+      kmDriven: d.km_driven ?? 0,
+      batteryEnergy: d.energy_delta ?? 0,
+      chargingPower: 0,
+      dischargingPower: 0,
+      temp: d.avg_temp ?? 0,
+      chargeSessions: d.charge_sessions ?? 0,
+      sampleCount: d.sample_count ?? 0,
+    }))
+  }
+}
+
 async function fetchHistory() {
   if (!props.vin) return
+
+  // Stale-while-revalidate: load cache first
+  const cached = loadFromCache()
+  if (cached) {
+    applyData(cached.dailyData, cached.snapshots, cached.allSnaps)
+    loadingKpi.value = false
+    isStale.value = (Date.now() - cached.timestamp) > CACHE_MAX_AGE_MS
+    // If cache is fresh enough, show charts immediately
+    await nextTick()
+    chartsReady.value = true
+    loadingCharts.value = false
+  }
+
   try {
     const [dailyRes, snapshotRes, allSnapshotRes] = await Promise.all([
       api('GET', `/api/vehicles/${props.vin}/history/daily?days=3650`),
@@ -232,37 +343,23 @@ async function fetchHistory() {
     const snaps = snapshotRes.snapshots || []
     const allSnaps = allSnapshotRes.snapshots || []
 
-    allSnapshots.value = allSnaps
+    // Progressive loading: KPI first
+    applyData(daily, snaps, allSnaps)
+    loadingKpi.value = false
+    isStale.value = false
 
-    todaySnapshots.value = snaps.map(s => ({
-      date: formatTimestamp(s.timestamp),
-      battery: s.battery_soc ?? 0,
-      range: s.battery_expected_mileage ?? 0,
-      kmDriven: 0,
-      batteryEnergy: (s.battery_dump_energy ?? 0) / 1000.0,
-      chargingPower: s.battery_charging_power_kw ?? 0,
-      dischargingPower: s.battery_discharge_power_kw ?? 0,
-      temp: s.climate_outdoor_temp ?? 0,
-      chargeSessions: s.battery_is_charging ? 1 : 0,
-      sampleCount: 1,
-    }))
+    // Save to cache
+    saveToCache(daily, snaps, allSnaps)
 
-    if (daily.length > 0) {
-      allData.value = daily.map(d => ({
-        date: formatDate(d.date),
-        battery: d.avg_soc ?? 0,
-        range: d.max_range ?? 0,
-        kmDriven: d.km_driven ?? 0,
-        batteryEnergy: d.energy_delta ?? 0,
-        chargingPower: 0,
-        dischargingPower: 0,
-        temp: d.avg_temp ?? 0,
-        chargeSessions: d.charge_sessions ?? 0,
-        sampleCount: d.sample_count ?? 0,
-      }))
-    }
+    // Charts slightly deferred for progressive feel
+    await nextTick()
+    chartsReady.value = true
+    loadingCharts.value = false
   } catch (err) {
     console.error('[HistoryTab] fetchHistory failed:', err)
+    loadingKpi.value = false
+    loadingCharts.value = false
+    chartsReady.value = true
   }
 }
 
@@ -900,10 +997,11 @@ function buildCharts() {
   }
 }
 
-watch(data, () => { if (viewMode.value === 'chart') nextTick(buildCharts) })
-watch(filteredSnapshots, () => { if (viewMode.value === 'chart') nextTick(buildCharts) })
-watch(viewMode, (v) => { if (v === 'chart') nextTick(buildCharts) })
-onMounted(() => { nextTick(buildCharts) })
+watch(data, () => { if (viewMode.value === 'chart' && chartsReady.value) nextTick(buildCharts) })
+watch(filteredSnapshots, () => { if (viewMode.value === 'chart' && chartsReady.value) nextTick(buildCharts) })
+watch(viewMode, (v) => { if (v === 'chart' && chartsReady.value) nextTick(buildCharts) })
+watch(chartsReady, (v) => { if (v && viewMode.value === 'chart') nextTick(buildCharts) })
+onMounted(() => { if (chartsReady.value) nextTick(buildCharts) })
 onBeforeUnmount(destroyCharts)
 </script>
 
@@ -913,6 +1011,37 @@ onBeforeUnmount(destroyCharts)
   flex-direction: column;
   gap: 16px;
 }
+
+/* Stale indicator */
+.stale-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 6px 12px;
+  background: #1c224040;
+  border-radius: 8px;
+  width: fit-content;
+  margin: 0 auto;
+}
+.stale-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ffab40;
+  animation: blink 1.2s infinite;
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* Fade transition */
+.fade-enter-active { transition: opacity 0.3s ease; }
+.fade-leave-active { transition: opacity 0.15s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
 .history-header {
   display: flex;
   flex-direction: column;
@@ -1168,5 +1297,25 @@ onBeforeUnmount(destroyCharts)
   color: var(--c);
   font-weight: 600;
   font-size: 11px;
+}
+
+/* Table skeleton */
+.skeleton-line {
+  border-radius: 4px;
+  background: linear-gradient(90deg, #1c2240 25%, #252d4a 50%, #1c2240 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+.skeleton-th {
+  width: 60px;
+  height: 10px;
+}
+.skeleton-td {
+  width: 50px;
+  height: 14px;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 </style>

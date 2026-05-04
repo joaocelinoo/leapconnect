@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **History tab UX improvements**: skeleton screens, progressive loading, and stale-while-revalidate caching
+  - Skeleton placeholders (shimmer animation) shown for KPI cards, charts, and table while data loads
+  - Progressive loading: KPI cards appear immediately, charts render after data is ready
+  - Stale-while-revalidate: cached data from sessionStorage is shown instantly on revisit while fresh data is fetched in background, with a subtle "Updating data..." indicator
+
 ## [0.4.1] - 2026-05-04
 
 ### Fixed
