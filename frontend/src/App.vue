@@ -45,20 +45,17 @@
           <span class="connection-dot" :class="{ offline: !store.connected }" />
           <span>{{ store.connected ? 'CONNECTED' : 'OFFLINE' }}</span>
         </div>
-        <div v-if="dataAgeLabel" class="data-age-badge" :class="dataAgeClass">
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          <span>{{ dataAgeLabel }}</span>
-        </div>
         <!-- <div class="connection-dot sm:hidden" :class="{ offline: !store.connected }" style="width:8px;height:8px;border-radius:50%" /> -->
-        <MessageDropdown />
         <button v-if="!store.connected" class="nav-btn" @click="handleReconnect">
           <RefreshCw :size="14" />
           <span class="hidden sm:inline">Reconnect</span>
         </button>
-        <button v-else class="nav-btn" @click="handleRefresh">
-          <RefreshCw :size="14" :class="{ spinning: store.refreshing }" />
-          <span class="hidden sm:inline">Refresh</span>
+        <button v-else class="refresh-age-btn" :class="dataAgeClass" @click="handleRefresh">
+          <RefreshCw :size="13" :class="{ spinning: store.refreshing }" />
+          <span v-if="dataAgeLabel">{{ dataAgeLabel }}</span>
+          <span v-else class="hidden sm:inline">Refresh</span>
         </button>
+        <MessageDropdown />
         <button class="nav-btn" @click="handleLogout">
           <LogOut :size="14" />
           <span class="hidden sm:inline">Logout</span>
@@ -304,6 +301,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   if (unreadInterval) clearInterval(unreadInterval)
   if (dataAgeInterval) clearInterval(dataAgeInterval)
+  store.disconnectWebSocket()
 })
 </script>
 
@@ -376,21 +374,25 @@ onBeforeUnmount(() => {
 .connection-dot.offline {
   background: #ff5252; box-shadow: 0 0 6px #ff5252;
 }
-.data-age-badge {
+.refresh-age-btn {
   display: flex; align-items: center; gap: 5px;
-  border-radius: 20px; padding: 4px 10px;
+  border-radius: 20px; padding: 4px 12px;
   font-size: 11px; font-weight: 600;
   letter-spacing: 0.02em;
   white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #1c224044; border: 1px solid #1c2240; color: var(--label);
 }
-.data-age-badge.fresh {
-  background: #00e67614; border: 1px solid #00e67644; color: #00e676;
+.refresh-age-btn:hover { filter: brightness(1.3); }
+.refresh-age-btn.fresh {
+  background: #00e67614; border-color: #00e67644; color: #00e676;
 }
-.data-age-badge.stale {
-  background: #ffab4014; border: 1px solid #ffab4044; color: #ffab40;
+.refresh-age-btn.stale {
+  background: #ffab4014; border-color: #ffab4044; color: #ffab40;
 }
-.data-age-badge.old {
-  background: #ff525214; border: 1px solid #ff525244; color: #ff5252;
+.refresh-age-btn.old {
+  background: #ff525214; border-color: #ff525244; color: #ff5252;
 }
 .nav-btn {
   background: none; border: 1px solid #1c2240;

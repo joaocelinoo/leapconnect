@@ -66,6 +66,7 @@ export const useAppStore = defineStore('app', () => {
     } catch {
       // ignore
     }
+    disconnectWebSocket()
     connected.value = false
     vehicles.value = []
     selectedVin.value = null
@@ -134,6 +135,7 @@ export const useAppStore = defineStore('app', () => {
       const data = await api('GET', `/api/vehicles/${vin}/full`)
       data._fetchedAt = Date.now()
       vehicleData.value[vin] = data
+      connectWebSocket(vin)
     } finally {
       loading.value = false
     }
@@ -187,10 +189,76 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  // --- WebSocket real-time updates ---
+  let _ws = null
+  let _wsReconnectTimer = null
+  const WS_RECONNECT_DELAY = 5000
+
+  function _buildWsUrl(vin) {
+    const loc = window.location
+    const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:'
+    const base = `${proto}//${loc.host}${loc.pathname.replace(/\/$/, '')}`
+    return `${base}/ws/vehicle/${vin}`
+  }
+
+  function connectWebSocket(vin) {
+    disconnectWebSocket()
+    if (!vin) return
+
+    const url = _buildWsUrl(vin)
+    const ws = new WebSocket(url)
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data)
+        if (msg.type === 'status_update' && msg.vin) {
+          const existing = vehicleData.value[msg.vin]
+          if (existing) {
+            vehicleData.value[msg.vin] = {
+              ...existing,
+              status: msg.status,
+              cache_age_seconds: msg.cache_age_seconds,
+              _fetchedAt: Date.now(),
+            }
+          }
+        }
+      } catch {
+        // ignore invalid messages
+      }
+    }
+
+    ws.onclose = () => {
+      _ws = null
+      // Auto-reconnect if we're still in the app and have a selected vin
+      if (screen.value === 'app' && selectedVin.value === vin && connected.value) {
+        _wsReconnectTimer = setTimeout(() => connectWebSocket(vin), WS_RECONNECT_DELAY)
+      }
+    }
+
+    ws.onerror = () => {
+      // onclose will fire after this
+    }
+
+    _ws = ws
+  }
+
+  function disconnectWebSocket() {
+    if (_wsReconnectTimer) {
+      clearTimeout(_wsReconnectTimer)
+      _wsReconnectTimer = null
+    }
+    if (_ws) {
+      _ws.onclose = null // prevent auto-reconnect on intentional close
+      _ws.close()
+      _ws = null
+    }
+  }
+
   function selectVehicle(vin) {
     selectedVin.value = vin
     activeTab.value = 'dashboard'
     screen.value = 'app'
+    connectWebSocket(vin)
   }
 
   function goToVehicleSelector() {
@@ -251,5 +319,7 @@ export const useAppStore = defineStore('app', () => {
     loadPicturePackage,
     unreadMessages,
     loadUnreadCount,
+    connectWebSocket,
+    disconnectWebSocket,
   }
 })

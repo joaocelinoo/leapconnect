@@ -20,7 +20,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -29,6 +29,7 @@ from leapmotor_api.async_client import AsyncLeapmotorApiClient
 from leapmotor_api.image import CarImagePackage
 from leapmotor_api.models import MessageList, Vehicle, VehicleStatus
 from pydantic import BaseModel
+from starlette.websockets import WebSocketDisconnect
 
 from models import MqttSettings, UserPreferences, VehicleSnapshot
 from persistence.sqlite_adapter import SQLAlchemyVehicleHistoryRepository
@@ -93,6 +94,42 @@ _history_repo: SQLAlchemyVehicleHistoryRepository | None = None
 _scheduler: VehicleDataScheduler | None = None
 _mqtt_service: HomeAssistantMqttService | None = None
 _vehicle_cache: VehicleStatusCache | None = None
+
+# ---------------------------------------------------------------------------
+# WebSocket connection manager
+# ---------------------------------------------------------------------------
+_ws_connections: dict[str, set[WebSocket]] = {}  # vin -> set of WebSocket
+
+
+async def _ws_broadcast(vin: str, data: dict) -> None:
+    """Send a JSON message to all WebSocket clients subscribed to a VIN."""
+    clients = _ws_connections.get(vin, set())
+    dead: list[WebSocket] = []
+    for ws in clients:
+        try:
+            await ws.send_json(data)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        clients.discard(ws)
+
+
+async def _on_cache_update(
+    vin: str,
+    status: VehicleStatus,
+    cache_age: float,
+) -> None:
+    """Called by VehicleStatusCache when fresh data is fetched from API."""
+    payload = {
+        "type": "status_update",
+        "vin": vin,
+        "status": VehicleStatusSchema.from_model(status).model_dump(
+            mode="json",
+        ),
+        "cache_age_seconds": round(cache_age, 1),
+    }
+    await _ws_broadcast(vin, payload)
+
 
 # Session management — in-memory token store
 SESSION_COOKIE_NAME = "leapconnect_session"
@@ -217,6 +254,7 @@ async def lifespan(app: FastAPI):
 
     # Initialize shared vehicle status cache
     _vehicle_cache = VehicleStatusCache(rate_limit_seconds=saved.rate_limit_seconds)
+    _vehicle_cache.set_on_update(_on_cache_update)
 
     _scheduler = VehicleDataScheduler(_history_repo, cache=_vehicle_cache)
     _scheduler.update_settings(
@@ -890,6 +928,41 @@ async def connection_status() -> ConnectionStatusResponse:
         has_pin=bool(_sync_client and _sync_client.operation_password),
         app_version=_APP_VERSION,
     )
+
+
+# ---------------------------------------------------------------------------
+# WebSocket — real-time vehicle status push
+# ---------------------------------------------------------------------------
+
+
+@app.websocket("/ws/vehicle/{vin}")
+async def ws_vehicle_status(websocket: WebSocket, vin: str) -> None:
+    """Push real-time status updates to the frontend for a vehicle."""
+    # Validate session from query param or cookie
+    token = websocket.query_params.get(
+        "token",
+    ) or websocket.cookies.get(SESSION_COOKIE_NAME)
+    if not _validate_session(token):
+        await websocket.close(code=4401, reason="Unauthorized")
+        return
+
+    await websocket.accept()
+
+    # Register this connection
+    if vin not in _ws_connections:
+        _ws_connections[vin] = set()
+    _ws_connections[vin].add(websocket)
+
+    _LOGGER.info("WebSocket connected for VIN %s", vin)
+    try:
+        # Keep connection alive — read messages (pings / close)
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        _ws_connections.get(vin, set()).discard(websocket)
+        _LOGGER.info("WebSocket disconnected for VIN %s", vin)
 
 
 # ---------------------------------------------------------------------------

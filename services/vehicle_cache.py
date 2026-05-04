@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -20,6 +21,9 @@ _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_RATE_LIMIT_SECONDS = 10
 
+# Type alias for the on-update callback: (vin, status, cache_age_seconds)
+OnUpdateCallback = Callable[[str, "VehicleStatus", float], Awaitable[None]]
+
 
 class VehicleStatusCache:
     """Rate-limited, single-flight cache for vehicle status requests."""
@@ -29,6 +33,7 @@ class VehicleStatusCache:
         self._client: AsyncLeapmotorApiClient | None = None
         self._cache: dict[str, tuple[VehicleStatus, float]] = {}
         self._locks: dict[str, asyncio.Lock] = {}
+        self._on_update: OnUpdateCallback | None = None
 
     # -- Configuration -------------------------------------------------------
 
@@ -42,6 +47,19 @@ class VehicleStatusCache:
 
     def set_client(self, client: AsyncLeapmotorApiClient | None) -> None:
         self._client = client
+
+    def set_on_update(self, callback: OnUpdateCallback | None) -> None:
+        """Register a callback invoked when fresh data is fetched from API."""
+        self._on_update = callback
+
+    async def _notify_update(self, vin: str, status: VehicleStatus) -> None:
+        """Fire the on-update callback if registered."""
+        if self._on_update:
+            try:
+                age = self.cache_age(vin) or 0.0
+                await self._on_update(vin, status, age)
+            except Exception:
+                _LOGGER.debug("on_update callback error for %s", vin)
 
     # -- Public API ----------------------------------------------------------
 
@@ -80,6 +98,7 @@ class VehicleStatusCache:
             _LOGGER.debug("Cache MISS for %s — fetching from API", vin)
             status = await self._client.get_vehicle_status(vehicle)
             self._cache[vin] = (status, time.time())
+            await self._notify_update(vin, status)
             return status
 
     async def force_refresh(self, vehicle: Vehicle) -> VehicleStatus:
@@ -96,6 +115,7 @@ class VehicleStatusCache:
             _LOGGER.debug("Force refresh for %s", vin)
             status = await self._client.get_vehicle_status(vehicle)
             self._cache[vin] = (status, time.time())
+            await self._notify_update(vin, status)
             return status
 
     def get_cached(self, vin: str) -> VehicleStatus | None:
