@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-04
+
 ### Fixed
 
+- **Reverse proxy / subpath support**: the app now works correctly behind Home Assistant Ingress or any reverse proxy that adds a path prefix — all asset and API paths are relative instead of absolute
 - History page: period selector and chart/table toggle are now centered on mobile screens
 
 ## [0.4.0] - 2026-05-03
