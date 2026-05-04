@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from leapmotor_api.models import Vehicle
 
     from persistence.repository import VehicleHistoryRepository
+    from services.vehicle_cache import VehicleStatusCache
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,8 +36,10 @@ class VehicleDataScheduler:
     def __init__(
         self,
         repo: VehicleHistoryRepository,
+        cache: VehicleStatusCache | None = None,
     ) -> None:
         self._repo = repo
+        self._cache = cache
         self._settings = SchedulerSettings()
         self._history_task: asyncio.Task | None = None
         self._mqtt_task: asyncio.Task | None = None
@@ -73,6 +76,7 @@ class VehicleDataScheduler:
             "enabled": self._settings.enabled,
             "interval_minutes": self._settings.interval_minutes,
             "mqtt_interval_seconds": self._settings.mqtt_interval_seconds,
+            "rate_limit_seconds": self._settings.rate_limit_seconds,
             "is_running": self.is_running,
             "last_run": self._last_run.isoformat() if self._last_run else None,
             "last_error": self._last_error,
@@ -85,6 +89,8 @@ class VehicleDataScheduler:
     ) -> None:
         self._client = client
         self._vehicles = vehicles
+        if self._cache:
+            self._cache.set_client(client)
 
     def set_on_status_callback(self, callback) -> None:
         """Set a callback invoked with (vehicle, status) after each MQTT poll."""
@@ -96,6 +102,7 @@ class VehicleDataScheduler:
         enabled: bool | None = None,
         interval_minutes: int | None = None,
         mqtt_interval_seconds: int | None = None,
+        rate_limit_seconds: int | None = None,
     ) -> SchedulerSettings:
         if interval_minutes is not None:
             interval_minutes = max(
@@ -108,6 +115,14 @@ class VehicleDataScheduler:
                 min(MAX_MQTT_INTERVAL_SECONDS, mqtt_interval_seconds),
             )
             self._settings.mqtt_interval_seconds = mqtt_interval_seconds
+        if rate_limit_seconds is not None:
+            rate_limit_seconds = max(
+                1, min(MAX_MQTT_INTERVAL_SECONDS, rate_limit_seconds)
+            )
+            self._settings.rate_limit_seconds = rate_limit_seconds
+            # Sync with cache
+            if self._cache:
+                self._cache.rate_limit_seconds = rate_limit_seconds
         if enabled is not None:
             self._settings.enabled = enabled
 
@@ -213,7 +228,10 @@ class VehicleDataScheduler:
 
         for vehicle in self._vehicles:
             try:
-                status = await self._client.get_vehicle_status(vehicle)
+                if self._cache:
+                    status = await self._cache.get(vehicle)
+                else:
+                    status = await self._client.get_vehicle_status(vehicle)
                 snapshot = VehicleSnapshot(
                     vin=vehicle.vin,
                     timestamp=status.collect_time or datetime.utcnow(),
@@ -272,7 +290,10 @@ class VehicleDataScheduler:
 
         for vehicle in self._vehicles:
             try:
-                status = await self._client.get_vehicle_status(vehicle)
+                if self._cache:
+                    status = await self._cache.get(vehicle)
+                else:
+                    status = await self._client.get_vehicle_status(vehicle)
                 await self._on_status_callback(vehicle, status)
             except Exception:
                 _LOGGER.debug("Scheduler: MQTT poll failed for %s", vehicle.vin)

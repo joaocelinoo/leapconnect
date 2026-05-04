@@ -69,6 +69,7 @@ class SchedulerSettings:
     enabled: bool = False
     interval_minutes: int = DEFAULT_INTERVAL_MINUTES
     mqtt_interval_seconds: int = 60
+    rate_limit_seconds: int = 10
 
 
 @dataclass

@@ -1,0 +1,117 @@
+"""Shared vehicle status cache with single-flight and rate limiting.
+
+Ensures that only one request to the Leapmotor API is made at a time per
+vehicle, regardless of how many consumers (MQTT scheduler, history scheduler,
+frontend API) request the status concurrently.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from leapmotor_api.async_client import AsyncLeapmotorApiClient
+    from leapmotor_api.models import Vehicle, VehicleStatus
+
+_LOGGER = logging.getLogger(__name__)
+
+DEFAULT_RATE_LIMIT_SECONDS = 10
+
+
+class VehicleStatusCache:
+    """Rate-limited, single-flight cache for vehicle status requests."""
+
+    def __init__(self, rate_limit_seconds: int = DEFAULT_RATE_LIMIT_SECONDS) -> None:
+        self._rate_limit_seconds = rate_limit_seconds
+        self._client: AsyncLeapmotorApiClient | None = None
+        self._cache: dict[str, tuple[VehicleStatus, float]] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
+
+    # -- Configuration -------------------------------------------------------
+
+    @property
+    def rate_limit_seconds(self) -> int:
+        return self._rate_limit_seconds
+
+    @rate_limit_seconds.setter
+    def rate_limit_seconds(self, value: int) -> None:
+        self._rate_limit_seconds = max(1, value)
+
+    def set_client(self, client: AsyncLeapmotorApiClient | None) -> None:
+        self._client = client
+
+    # -- Public API ----------------------------------------------------------
+
+    async def get(self, vehicle: Vehicle) -> VehicleStatus:
+        """Get vehicle status, returning cached value if within rate limit.
+
+        Uses single-flight: concurrent callers for the same VIN will wait for
+        a single in-progress request rather than issuing duplicate requests.
+        """
+        if not self._client:
+            raise RuntimeError("VehicleStatusCache: no API client configured")
+
+        vin = vehicle.vin
+
+        # Fast path: cache hit within rate limit
+        cached = self._cache.get(vin)
+        if cached and (time.time() - cached[1]) < self._rate_limit_seconds:
+            _LOGGER.debug("Cache HIT for %s (age=%.1fs)", vin, time.time() - cached[1])
+            return cached[0]
+
+        # Slow path: single-flight fetch
+        if vin not in self._locks:
+            self._locks[vin] = asyncio.Lock()
+
+        async with self._locks[vin]:
+            # Double-check after acquiring lock (another coroutine may have fetched)
+            cached = self._cache.get(vin)
+            if cached and (time.time() - cached[1]) < self._rate_limit_seconds:
+                _LOGGER.debug(
+                    "Cache HIT (post-lock) for %s (age=%.1fs)",
+                    vin,
+                    time.time() - cached[1],
+                )
+                return cached[0]
+
+            _LOGGER.debug("Cache MISS for %s — fetching from API", vin)
+            status = await self._client.get_vehicle_status(vehicle)
+            self._cache[vin] = (status, time.time())
+            return status
+
+    async def force_refresh(self, vehicle: Vehicle) -> VehicleStatus:
+        """Invalidate cache and fetch fresh data, ignoring rate limit."""
+        if not self._client:
+            raise RuntimeError("VehicleStatusCache: no API client configured")
+
+        vin = vehicle.vin
+
+        if vin not in self._locks:
+            self._locks[vin] = asyncio.Lock()
+
+        async with self._locks[vin]:
+            _LOGGER.debug("Force refresh for %s", vin)
+            status = await self._client.get_vehicle_status(vehicle)
+            self._cache[vin] = (status, time.time())
+            return status
+
+    def get_cached(self, vin: str) -> VehicleStatus | None:
+        """Return the cached status without fetching, or None if not cached."""
+        cached = self._cache.get(vin)
+        return cached[0] if cached else None
+
+    def cache_age(self, vin: str) -> float | None:
+        """Return the age in seconds of the cached value, or None."""
+        cached = self._cache.get(vin)
+        return (time.time() - cached[1]) if cached else None
+
+    def invalidate(self, vin: str) -> None:
+        """Remove a VIN from the cache."""
+        self._cache.pop(vin, None)
+
+    def clear(self) -> None:
+        """Clear all cached entries."""
+        self._cache.clear()

@@ -153,6 +153,20 @@
         </div>
 
         <div class="scheduler-status">
+          <div class="interval-row">
+            <span class="interval-label">API rate limit</span>
+            <div class="interval-control">
+              <button class="interval-btn" @click="pendingRateLimit = Math.max(5, pendingRateLimit - 5)">−</button>
+              <span class="interval-value">{{ pendingRateLimit }}s</span>
+              <button class="interval-btn" @click="pendingRateLimit = Math.min(300, pendingRateLimit + 5)">+</button>
+              <button
+                class="interval-set-btn"
+                :disabled="pendingRateLimit === scheduler.rate_limit_seconds || schedulerUpdating"
+                @click="applyRateLimit"
+              >Set</button>
+            </div>
+          </div>
+          <p class="rate-limit-hint">Minimum seconds between API calls to Leapmotor servers per vehicle</p>
           <div v-if="scheduler.last_run" class="status-detail">
             Last update: {{ formatTime(scheduler.last_run) }}
           </div>
@@ -568,6 +582,7 @@ const scheduler = reactive({
   enabled: false,
   interval_minutes: 15,
   mqtt_interval_seconds: 60,
+  rate_limit_seconds: 10,
   is_running: false,
   last_run: null,
   last_error: null,
@@ -577,6 +592,7 @@ const scheduler = reactive({
 
 const pendingInterval = ref(15)
 const pendingMqttInterval = ref(60)
+const pendingRateLimit = ref(10)
 const schedulerUpdating = ref(false)
 
 async function loadScheduler() {
@@ -585,6 +601,7 @@ async function loadScheduler() {
     Object.assign(scheduler, data)
     pendingInterval.value = data.interval_minutes
     pendingMqttInterval.value = data.mqtt_interval_seconds
+    pendingRateLimit.value = data.rate_limit_seconds ?? 10
   } catch {
     // scheduler not available yet
   }
@@ -598,6 +615,7 @@ async function updateScheduler(patch) {
     Object.assign(scheduler, data)
     pendingInterval.value = data.interval_minutes
     pendingMqttInterval.value = data.mqtt_interval_seconds
+    pendingRateLimit.value = data.rate_limit_seconds ?? 10
   } catch {
     await loadScheduler()
   } finally {
@@ -618,6 +636,12 @@ function applyInterval(key, value) {
 function applyMqttInterval() {
   if (pendingMqttInterval.value !== scheduler.mqtt_interval_seconds) {
     updateScheduler({ mqtt_interval_seconds: pendingMqttInterval.value })
+  }
+}
+
+function applyRateLimit() {
+  if (pendingRateLimit.value !== scheduler.rate_limit_seconds) {
+    updateScheduler({ rate_limit_seconds: pendingRateLimit.value })
   }
 }
 
@@ -1390,6 +1414,11 @@ onMounted(() => {
 .pref-hint {
   font-size: 11px;
   color: var(--muted);
+}
+.rate-limit-hint {
+  font-size: 11px;
+  color: var(--muted);
+  margin: -4px 0 8px 0;
 }
 .pref-input-group {
   display: flex;

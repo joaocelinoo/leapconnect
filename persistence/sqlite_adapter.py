@@ -272,6 +272,7 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                             "scheduler_enabled",
                             "scheduler_interval",
                             "scheduler_mqtt_interval_seconds",
+                            "scheduler_rate_limit_seconds",
                         ]
                     )
                 )
@@ -284,6 +285,7 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
             mqtt_interval_seconds=int(
                 rows.get("scheduler_mqtt_interval_seconds", "60")
             ),
+            rate_limit_seconds=int(rows.get("scheduler_rate_limit_seconds", "10")),
         )
 
     async def save_scheduler_settings(self, settings: SchedulerSettings) -> None:
@@ -292,6 +294,7 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
             "scheduler_enabled": "1" if settings.enabled else "0",
             "scheduler_interval": str(settings.interval_minutes),
             "scheduler_mqtt_interval_seconds": str(settings.mqtt_interval_seconds),
+            "scheduler_rate_limit_seconds": str(settings.rate_limit_seconds),
         }
         async with self._session_factory() as session:
             for key, value in pairs.items():

@@ -492,6 +492,7 @@ class SchedulerStatusResponse(BaseModel):
     enabled: bool
     interval_minutes: int
     mqtt_interval_seconds: int
+    rate_limit_seconds: int = 10
     is_running: bool
     last_run: str | None = None
     last_error: str | None = None

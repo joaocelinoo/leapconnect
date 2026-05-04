@@ -64,6 +64,7 @@ from schemas import (
 )
 from services.mqtt_ha import HomeAssistantMqttService
 from services.scheduler import VehicleDataScheduler
+from services.vehicle_cache import VehicleStatusCache
 
 logging.basicConfig(level=logging.INFO)
 _LOGGER = logging.getLogger(__name__)
@@ -91,6 +92,7 @@ _image_packages: dict[str, CarImagePackage] = {}  # vin -> CarImagePackage
 _history_repo: SQLAlchemyVehicleHistoryRepository | None = None
 _scheduler: VehicleDataScheduler | None = None
 _mqtt_service: HomeAssistantMqttService | None = None
+_vehicle_cache: VehicleStatusCache | None = None
 
 # Session management — in-memory token store
 SESSION_COOKIE_NAME = "leapconnect_session"
@@ -201,7 +203,7 @@ async def _auto_connect() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _history_repo, _scheduler, _mqtt_service
+    global _history_repo, _scheduler, _mqtt_service, _vehicle_cache
     db_path = os.environ.get(
         "HISTORY_DB_PATH", str(Path(__file__).parent / "history.db")
     )
@@ -211,18 +213,25 @@ async def lifespan(app: FastAPI):
     _LOGGER.info("History DB initialised at %s", db_path)
 
     # Restore scheduler settings from DB
-    _scheduler = VehicleDataScheduler(_history_repo)
     saved = await _history_repo.load_scheduler_settings()
+
+    # Initialize shared vehicle status cache
+    _vehicle_cache = VehicleStatusCache(rate_limit_seconds=saved.rate_limit_seconds)
+
+    _scheduler = VehicleDataScheduler(_history_repo, cache=_vehicle_cache)
     _scheduler.update_settings(
         enabled=saved.enabled,
         interval_minutes=saved.interval_minutes,
         mqtt_interval_seconds=saved.mqtt_interval_seconds,
+        rate_limit_seconds=saved.rate_limit_seconds,
     )
     _LOGGER.info(
-        "Scheduler settings loaded: enabled=%s, history=%d min, mqtt=%d sec",
+        "Scheduler settings loaded: enabled=%s, history=%d min,"
+        " mqtt=%d sec, rate_limit=%d sec",
         saved.enabled,
         saved.interval_minutes,
         saved.mqtt_interval_seconds,
+        saved.rate_limit_seconds,
     )
 
     # Initialize MQTT Home Assistant service
@@ -903,7 +912,12 @@ async def get_vehicle_status(vin: str) -> VehicleStatusResponse:
     """Get the current real-time status of a vehicle."""
     client = _get_client()
     vehicle = _find_vehicle(vin)
-    status = await client.get_vehicle_status(vehicle)
+
+    # Use shared cache if available (respects rate limit + single-flight)
+    if _vehicle_cache:
+        status = await _vehicle_cache.get(vehicle)
+    else:
+        status = await client.get_vehicle_status(vehicle)
 
     # Persist snapshot for historical tracking
     if _history_repo and isinstance(status, VehicleStatus):
@@ -1121,10 +1135,16 @@ async def get_dynamic_picture(vin: str, charge_frame: int = 0) -> Response:
     client = _get_client()
     vehicle = _find_vehicle(vin)
 
-    pkg, status_raw = await asyncio.gather(
-        _get_image_package(vin),
-        client.get_vehicle_status(vehicle),
-    )
+    if _vehicle_cache:
+        pkg, status_raw = await asyncio.gather(
+            _get_image_package(vin),
+            _vehicle_cache.get(vehicle),
+        )
+    else:
+        pkg, status_raw = await asyncio.gather(
+            _get_image_package(vin),
+            client.get_vehicle_status(vehicle),
+        )
 
     status = status_raw if isinstance(status_raw, VehicleStatus) else None
     img_bytes = await asyncio.to_thread(
@@ -1144,7 +1164,11 @@ async def get_full_vehicle_data(vin: str) -> FullVehicleDataResponse:
     client = _get_client()
     vehicle = _find_vehicle(vin)
 
-    status_task = client.get_vehicle_status(vehicle)
+    status_task = (
+        _vehicle_cache.get(vehicle)
+        if _vehicle_cache
+        else client.get_vehicle_status(vehicle)
+    )
     mileage_task = client.get_mileage_energy_detail(vehicle)
     picture_task = client.get_car_picture(vehicle)
 
@@ -1303,6 +1327,7 @@ async def update_scheduler_settings(request: Request) -> SchedulerStatusResponse
     enabled = body.get("enabled")
     interval = body.get("interval_minutes")
     mqtt_interval = body.get("mqtt_interval_seconds")
+    rate_limit = body.get("rate_limit_seconds")
 
     if enabled is not None and not isinstance(enabled, bool):
         raise HTTPException(status_code=422, detail="'enabled' must be a boolean")
@@ -1322,11 +1347,20 @@ async def update_scheduler_settings(request: Request) -> SchedulerStatusResponse
                 status_code=422,
                 detail="'mqtt_interval_seconds' must be an integer",
             ) from exc
+    if rate_limit is not None:
+        try:
+            rate_limit = int(rate_limit)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail="'rate_limit_seconds' must be an integer",
+            ) from exc
 
     settings = _scheduler.update_settings(
         enabled=enabled,
         interval_minutes=interval,
         mqtt_interval_seconds=mqtt_interval,
+        rate_limit_seconds=rate_limit,
     )
 
     # Persist to DB
