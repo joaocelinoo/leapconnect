@@ -16,38 +16,57 @@
 
     <!-- ═══════════════ ACCOUNT ═══════════════ -->
     <template v-if="activeSection === 'account'">
-      <SectionCard title="LeapConnect Account" :icon="User">
-        <div class="account-row">
-          <div class="account-avatar">{{ initials }}</div>
-          <div>
-            <div class="account-name">{{ displayName }}</div>
-            <div class="account-role">Local account</div>
+      <div class="settings-grid">
+        <SectionCard title="LeapConnect Account" :icon="User">
+          <div class="account-row">
+            <div class="account-avatar">{{ initials }}</div>
+            <div>
+              <div class="account-name">{{ displayName }}</div>
+              <div class="account-role">Local account</div>
+            </div>
           </div>
-        </div>
-        <button class="action-btn" @click="showUserEdit = !showUserEdit">
-          {{ showUserEdit ? 'Cancel' : 'Edit Account' }}
-        </button>
-        <div v-if="showUserEdit" class="edit-panel">
-          <div class="form-group">
-            <label>Display Name</label>
-            <input v-model="userForm.display_name" type="text" placeholder="Your name" />
-          </div>
-          <div class="form-group">
-            <label>New Password</label>
-            <input v-model="userForm.password" type="password" placeholder="Leave empty to keep current" />
-          </div>
-          <div class="form-divider">Verification</div>
-          <div class="form-group">
-            <label>Current Password</label>
-            <input v-model="userForm.current_password" type="password" placeholder="Required to save changes" />
-          </div>
-          <button class="save-btn" :disabled="userSaving" @click="saveUser">
-            {{ userSaving ? 'Saving…' : 'Save Changes' }}
+          <button class="action-btn" @click="showUserEdit = !showUserEdit">
+            {{ showUserEdit ? 'Cancel' : 'Edit Account' }}
           </button>
-          <div v-if="userError" class="field-error">{{ userError }}</div>
-          <div v-if="userSuccess" class="field-success">{{ userSuccess }}</div>
-        </div>
-      </SectionCard>
+          <div v-if="showUserEdit" class="edit-panel">
+            <div class="form-group">
+              <label>Display Name</label>
+              <input v-model="userForm.display_name" type="text" placeholder="Your name" />
+            </div>
+            <div class="form-group">
+              <label>New Password</label>
+              <input v-model="userForm.password" type="password" placeholder="Leave empty to keep current" />
+            </div>
+            <div class="form-divider">Verification</div>
+            <div class="form-group">
+              <label>Current Password</label>
+              <input v-model="userForm.current_password" type="password" placeholder="Required to save changes" />
+            </div>
+            <button class="save-btn" :disabled="userSaving" @click="saveUser">
+              {{ userSaving ? 'Saving…' : 'Save Changes' }}
+            </button>
+            <div v-if="userError" class="field-error">{{ userError }}</div>
+            <div v-if="userSuccess" class="field-success">{{ userSuccess }}</div>
+          </div>
+        </SectionCard>
+
+        <SectionCard title="API Rate Limit" :icon="AlertTriangle">
+          <p class="rate-limit-hint" style="margin-bottom:10px">Minimum seconds between API calls to Leapmotor servers per vehicle</p>
+          <div class="interval-row">
+            <span class="interval-label">Rate limit</span>
+            <div class="interval-control">
+              <button class="interval-btn" @click="pendingRateLimit = Math.max(5, pendingRateLimit - 5)">−</button>
+              <span class="interval-value">{{ pendingRateLimit }}s</span>
+              <button class="interval-btn" @click="pendingRateLimit = Math.min(300, pendingRateLimit + 5)">+</button>
+              <button
+                class="interval-set-btn"
+                :disabled="pendingRateLimit === scheduler.rate_limit_seconds || schedulerUpdating"
+                @click="applyRateLimit"
+              >Set</button>
+            </div>
+          </div>
+        </SectionCard>
+      </div>
 
       <div class="settings-grid">
         <SectionCard title="Leapmotor Credentials" :icon="KeyRound">
@@ -66,23 +85,6 @@
           </button>
         </SectionCard>
       </div>
-
-      <SectionCard title="API Rate Limit" :icon="AlertTriangle">
-        <p class="rate-limit-hint" style="margin-bottom:10px">Minimum seconds between API calls to Leapmotor servers per vehicle</p>
-        <div class="interval-row">
-          <span class="interval-label">Rate limit</span>
-          <div class="interval-control">
-            <button class="interval-btn" @click="pendingRateLimit = Math.max(5, pendingRateLimit - 5)">−</button>
-            <span class="interval-value">{{ pendingRateLimit }}s</span>
-            <button class="interval-btn" @click="pendingRateLimit = Math.min(300, pendingRateLimit + 5)">+</button>
-            <button
-              class="interval-set-btn"
-              :disabled="pendingRateLimit === scheduler.rate_limit_seconds || schedulerUpdating"
-              @click="applyRateLimit"
-            >Set</button>
-          </div>
-        </div>
-      </SectionCard>
     </template>
 
     <!-- ═══════════════ GENERAL ═══════════════ -->
