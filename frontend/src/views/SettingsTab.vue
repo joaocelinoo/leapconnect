@@ -66,6 +66,23 @@
           </button>
         </SectionCard>
       </div>
+
+      <SectionCard title="API Rate Limit" :icon="AlertTriangle">
+        <p class="rate-limit-hint" style="margin-bottom:10px">Minimum seconds between API calls to Leapmotor servers per vehicle</p>
+        <div class="interval-row">
+          <span class="interval-label">Rate limit</span>
+          <div class="interval-control">
+            <button class="interval-btn" @click="pendingRateLimit = Math.max(5, pendingRateLimit - 5)">−</button>
+            <span class="interval-value">{{ pendingRateLimit }}s</span>
+            <button class="interval-btn" @click="pendingRateLimit = Math.min(300, pendingRateLimit + 5)">+</button>
+            <button
+              class="interval-set-btn"
+              :disabled="pendingRateLimit === scheduler.rate_limit_seconds || schedulerUpdating"
+              @click="applyRateLimit"
+            >Set</button>
+          </div>
+        </div>
+      </SectionCard>
     </template>
 
     <!-- ═══════════════ GENERAL ═══════════════ -->
@@ -153,20 +170,6 @@
         </div>
 
         <div class="scheduler-status">
-          <div class="interval-row">
-            <span class="interval-label">API rate limit</span>
-            <div class="interval-control">
-              <button class="interval-btn" @click="pendingRateLimit = Math.max(5, pendingRateLimit - 5)">−</button>
-              <span class="interval-value">{{ pendingRateLimit }}s</span>
-              <button class="interval-btn" @click="pendingRateLimit = Math.min(300, pendingRateLimit + 5)">+</button>
-              <button
-                class="interval-set-btn"
-                :disabled="pendingRateLimit === scheduler.rate_limit_seconds || schedulerUpdating"
-                @click="applyRateLimit"
-              >Set</button>
-            </div>
-          </div>
-          <p class="rate-limit-hint">Minimum seconds between API calls to Leapmotor servers per vehicle</p>
           <div v-if="scheduler.last_run" class="status-detail">
             Last update: {{ formatTime(scheduler.last_run) }}
           </div>
