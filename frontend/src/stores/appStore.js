@@ -18,6 +18,7 @@ export const useAppStore = defineStore('app', () => {
   const picturePackages = ref({})
   const tempSetup = ref(null)
   const unreadMessages = ref(0)
+  const displayName = ref('')
 
   const selectedVehicle = computed(() =>
     vehicles.value.find((v) => v.vin === selectedVin.value) || null,
@@ -33,6 +34,7 @@ export const useAppStore = defineStore('app', () => {
     const result = await api('POST', '/api/login', credentials)
     connected.value = true
     vehicles.value = result.vehicles || []
+    displayName.value = result.display_name || ''
     hasPin.value = false
     if (vehicles.value.length === 1) {
       selectedVin.value = vehicles.value[0].vin
@@ -110,6 +112,7 @@ export const useAppStore = defineStore('app', () => {
       if (setup.connected && setup.vehicles?.length > 0) {
         connected.value = true
         vehicles.value = setup.vehicles
+        displayName.value = setup.display_name || ''
         if (vehicles.value.length === 1) {
           selectedVin.value = vehicles.value[0].vin
         }
@@ -120,6 +123,7 @@ export const useAppStore = defineStore('app', () => {
       // Account exists but not connected — go to app in offline mode
       connected.value = false
       vehicles.value = setup.vehicles || []
+      displayName.value = setup.display_name || ''
       screen.value = 'app'
       return false
     } catch {
@@ -319,6 +323,7 @@ export const useAppStore = defineStore('app', () => {
     loadPicturePackage,
     unreadMessages,
     loadUnreadCount,
+    displayName,
     connectWebSocket,
     disconnectWebSocket,
   }

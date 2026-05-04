@@ -409,6 +409,7 @@ async def setup_status(request: Request) -> SetupStatusResponse:
         authenticated=authenticated,
         connected=_connected,
         vehicles=[VehicleSchema.from_model(v) for v in _vehicles],
+        display_name=user.get("display_name") if user else None,
     )
 
 
@@ -835,6 +836,11 @@ async def login(request: Request) -> LoginResponse:
             status="ok",
             user_id=_sync_client.user_id,
             vehicles=[VehicleSchema.from_model(v) for v in _vehicles],
+            display_name=(
+                (await _history_repo.get_user() or {}).get("display_name")
+                if _history_repo
+                else None
+            ),
         )
     except Exception as exc:
         _connected = False

@@ -41,25 +41,46 @@
         <span class="navbar-title sm:hidden">LeapConnect</span>
       </div>
       <div class="navbar-right">
-        <div class="connection-badge hidden sm:flex" :class="{ offline: !store.connected }">
-          <span class="connection-dot" :class="{ offline: !store.connected }" />
-          <span>{{ store.connected ? 'CONNECTED' : 'OFFLINE' }}</span>
+        <!-- Cloud connection badge (always visible) -->
+        <div class="connection-badge" :class="{ offline: !store.connected }">
+          <component :is="store.connected ? Cloud : CloudOff" :size="12" />
+          <span class="connection-label">{{ store.connected ? 'CLOUD' : 'OFFLINE' }}</span>
         </div>
-        <!-- <div class="connection-dot sm:hidden" :class="{ offline: !store.connected }" style="width:8px;height:8px;border-radius:50%" /> -->
-        <button v-if="!store.connected" class="nav-btn" @click="handleReconnect">
-          <RefreshCw :size="14" />
-          <span class="hidden sm:inline">Reconnect</span>
+        <!-- Refresh / data age pill -->
+        <button v-if="!store.connected" class="reconnect-btn" @click="handleReconnect">
+          <RefreshCw :size="13" />
+          <span class="reconnect-label">Reconnect</span>
         </button>
         <button v-else class="refresh-age-btn" :class="dataAgeClass" @click="handleRefresh">
           <RefreshCw :size="13" :class="{ spinning: store.refreshing }" />
           <span v-if="dataAgeLabel">{{ dataAgeLabel }}</span>
-          <span v-else class="hidden sm:inline">Refresh</span>
+          <span v-else class="reconnect-label">Refresh</span>
         </button>
+        <!-- Notifications -->
         <MessageDropdown />
-        <button class="nav-btn" @click="handleLogout">
-          <LogOut :size="14" />
-          <span class="hidden sm:inline">Logout</span>
-        </button>
+        <!-- User menu (always visible) -->
+        <div class="user-menu-wrap">
+          <button class="user-avatar-btn" @click="showUserMenu = !showUserMenu">
+            <span>{{ userInitials }}</span>
+          </button>
+          <Transition name="menu-fade">
+            <div v-if="showUserMenu" class="user-menu-dropdown" @click.stop>
+              <div class="user-menu-header">
+                <span class="user-menu-name">{{ store.displayName || 'User' }}</span>
+                <span class="user-menu-role">LeapConnect</span>
+              </div>
+              <button v-if="!store.connected" class="user-menu-item user-menu-action" @click="handleReconnect(); showUserMenu = false">
+                <RefreshCw :size="14" />
+                <span>Reconnect to Cloud</span>
+              </button>
+              <div class="user-menu-divider" />
+              <button class="user-menu-item user-menu-action user-menu-logout" @click="handleLogout">
+                <LogOut :size="14" />
+                <span>Logout</span>
+              </button>
+            </div>
+          </Transition>
+        </div>
       </div>
     </div>
 
@@ -182,12 +203,20 @@ import MessagesTab from './views/MessagesTab.vue'
 import SettingsTab from './views/SettingsTab.vue'
 import ToastContainer from './components/ToastContainer.vue'
 import MessageDropdown from './components/MessageDropdown.vue'
-import { LayoutDashboard, List, TrendingUp, Mail, Settings, RefreshCw, LogOut } from 'lucide-vue-next'
+import { LayoutDashboard, List, TrendingUp, Mail, Settings, RefreshCw, LogOut, Cloud, CloudOff } from 'lucide-vue-next'
 
 const store = useAppStore()
 const { toast } = useToast()
 
 const errorMsg = ref('')
+const showUserMenu = ref(false)
+
+const userInitials = computed(() => {
+  const name = store.displayName || ''
+  const parts = name.trim().split(/\s+/)
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+  return name.slice(0, 2).toUpperCase() || '?'
+})
 
 const tabs = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -281,7 +310,13 @@ const dataAgeClass = computed(() => {
 
 let unreadInterval = null
 
+function onClickOutsideMenu(e) {
+  const wrap = document.querySelector('.user-menu-wrap')
+  if (wrap && !wrap.contains(e.target)) showUserMenu.value = false
+}
+
 onMounted(async () => {
+  document.addEventListener('click', onClickOutsideMenu)
   setOnUnauthorized(() => { store.screen = 'login' })
   const restored = await store.checkStatus()
   if (restored) {
@@ -299,6 +334,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener('click', onClickOutsideMenu)
   if (unreadInterval) clearInterval(unreadInterval)
   if (dataAgeInterval) clearInterval(dataAgeInterval)
   store.disconnectWebSocket()
@@ -358,22 +394,55 @@ onBeforeUnmount(() => {
 .connection-badge {
   display: flex; align-items: center; gap: 6px;
   background: #00e67614; border: 1px solid #00e67644;
-  border-radius: 20px; padding: 4px 12px;
+  border-radius: 20px; padding: 4px 10px;
   font-size: 11px; font-weight: 700; color: #00e676;
   letter-spacing: 0.06em;
 }
+@media (min-width: 640px) { .connection-badge { padding: 4px 12px; } }
 .connection-badge.offline {
   background: #ff525214; border-color: #ff525244; color: #ff5252;
 }
-.connection-dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: #00e676; display: inline-block;
-  box-shadow: 0 0 6px #00e676;
-  animation: lm-pulse 2s infinite;
+/* User menu */
+.user-menu-wrap { position: relative; }
+.user-avatar-btn {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: #00e67618; border: 1.5px solid #00e67644;
+  color: #00e676; font-size: 11px; font-weight: 700;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  position: relative; transition: all 0.2s;
 }
-.connection-dot.offline {
-  background: #ff5252; box-shadow: 0 0 6px #ff5252;
+.user-avatar-btn.offline {
+  background: #ff525214; border-color: #ff525244; color: #ff5252;
 }
+
+.user-menu-dropdown {
+  position: absolute; top: 40px; right: 0;
+  background: var(--bg2); border: 1px solid var(--border2);
+  border-radius: 12px; min-width: 200px;
+  box-shadow: 0 8px 24px #0006; z-index: 1100;
+  overflow: hidden;
+}
+.user-menu-header {
+  padding: 12px 14px 8px; border-bottom: 1px solid var(--border2);
+}
+.user-menu-name {
+  font-size: 13px; font-weight: 700; color: var(--text);
+}
+.user-menu-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; font-size: 12px; color: var(--label);
+  width: 100%; background: none; border: none; cursor: default;
+}
+.user-menu-action {
+  cursor: pointer; transition: background 0.15s;
+}
+.user-menu-action:hover { background: #ffffff08; color: var(--text); }
+.user-menu-divider { height: 1px; background: var(--border2); margin: 2px 0; }
+.user-menu-logout { color: #ff5252; }
+.user-menu-logout:hover { color: #ff5252; background: #ff525210; }
+
+.menu-fade-enter-active, .menu-fade-leave-active { transition: opacity 0.15s, transform 0.15s; }
+.menu-fade-enter-from, .menu-fade-leave-to { opacity: 0; transform: translateY(-4px); }
 .refresh-age-btn {
   display: flex; align-items: center; gap: 5px;
   border-radius: 20px; padding: 4px 12px;
@@ -394,15 +463,20 @@ onBeforeUnmount(() => {
 .refresh-age-btn.old {
   background: #ff525214; border-color: #ff525244; color: #ff5252;
 }
-.nav-btn {
-  background: none; border: 1px solid #1c2240;
-  border-radius: 8px; padding: 6px 8px;
-  color: var(--label); font-size: 12px; cursor: pointer;
+.reconnect-btn {
   display: flex; align-items: center; gap: 5px;
-  transition: all 0.2s;
+  border-radius: 20px; padding: 4px 12px;
+  font-size: 11px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s;
+  background: #ff525214; border: 1px solid #ff525244; color: #ff5252;
 }
-@media (min-width: 640px) { .nav-btn { padding: 5px 12px; } }
-.nav-btn:hover { background: #1c224044; color: var(--text); }
+.reconnect-btn:hover { filter: brightness(1.3); }
+.reconnect-label { display: none; }
+@media (min-width: 640px) { .reconnect-label { display: inline; } }
+.user-menu-role {
+  display: block; font-size: 11px; color: var(--label); margin-top: 2px;
+}
+.connection-label { display: inline; }
 .spinning { display: inline-block; animation: lm-spin 0.7s linear infinite; }
 
 /* Vehicle tabs bar — horizontal scrollable */

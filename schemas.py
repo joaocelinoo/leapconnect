@@ -350,6 +350,7 @@ class SetupStatusResponse(BaseModel):
     authenticated: bool = False
     connected: bool
     vehicles: list[VehicleSchema]
+    display_name: str | None = None
 
 
 class CertificateUploadResponse(BaseModel):
@@ -380,6 +381,7 @@ class LoginResponse(BaseModel):
     status: str = "ok"
     user_id: str | None = None
     vehicles: list[VehicleSchema]
+    display_name: str | None = None
 
 
 class SetPinResponse(BaseModel):

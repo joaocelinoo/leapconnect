@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Data freshness indicator**: the top navigation bar now shows how old the displayed data is (e.g. "32s ago", "5m ago"), with color coding — green for fresh (< 2 min), yellow for stale (< 10 min), red for old data. Updates every 10 seconds
 - **Real-time updates via WebSocket**: when the backend fetches fresh data from Leapmotor (via scheduler, MQTT polling, or any API call), it pushes the new vehicle status to the frontend instantly over a WebSocket connection — no manual refresh needed. The data age badge resets automatically on each push. Auto-reconnects if the connection drops
 
+### Changed
+
+- **Navbar refactored**: the connection badge now shows a cloud icon with "CLOUD" / "OFFLINE" to clearly indicate it refers to the Leapmotor cloud connection. The refresh button and data freshness indicator are merged into a single color-coded pill. On mobile, the cloud status and logout are collapsed into a compact user avatar menu (initials + colored dot) that opens a dropdown — freeing up navbar space
+
 ## [0.4.1] - 2026-05-04
 
 ### Fixed
