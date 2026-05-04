@@ -20,29 +20,13 @@ Web dashboard for monitoring and controlling Leapmotor vehicles via the [leapmot
 
 ## Screenshots
 
-### Login
+| Login | Dashboard | Details |
+|:---:|:---:|:---:|
+| [![Login](docs/screenshots/login.png)](docs/screenshots/login.png) | [![Dashboard](docs/screenshots/dashboard.png)](docs/screenshots/dashboard.png) | [![Details](docs/screenshots/details.png)](docs/screenshots/details.png) |
 
-![Login](docs/screenshots/login.png)
-
-### Dashboard
-
-![Dashboard](docs/screenshots/dashboard.png)
-
-### Details
-
-![Details](docs/screenshots/details.png)
-
-### History
-
-![History](docs/screenshots/history.png)
-
-### Messages
-
-![Messages](docs/screenshots/messages.png)
-
-### Settings
-
-![Settings](docs/screenshots/settings.png)
+| History | Messages | Settings |
+|:---:|:---:|:---:|
+| [![History](docs/screenshots/history.png)](docs/screenshots/history.png) | [![Messages](docs/screenshots/messages.png)](docs/screenshots/messages.png) | [![Settings](docs/screenshots/settings.png)](docs/screenshots/settings.png) |
 
 ## Tested Vehicles
 
