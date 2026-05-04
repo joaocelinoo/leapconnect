@@ -273,7 +273,7 @@ async function applyCustom() {
   position: relative;
   width: 100%;
   height: 40px;
-  background: #0d1422;
+  background: var(--elevated);
   border: 1px solid var(--border2);
   border-radius: 20px;
   overflow: visible;

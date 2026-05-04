@@ -19,6 +19,26 @@ export const useAppStore = defineStore('app', () => {
   const tempSetup = ref(null)
   const unreadMessages = ref(0)
   const displayName = ref('')
+  const theme = ref('dark')
+
+  function applyTheme(t) {
+    theme.value = t
+    document.documentElement.setAttribute('data-theme', t)
+  }
+
+  async function setTheme(t) {
+    applyTheme(t)
+    try {
+      await api('PUT', '/api/preferences', { theme: t })
+    } catch { /* ignore */ }
+  }
+
+  async function loadThemeFromPrefs() {
+    try {
+      const data = await api('GET', '/api/preferences')
+      applyTheme(data.theme || 'dark')
+    } catch { /* ignore */ }
+  }
 
   const selectedVehicle = computed(() =>
     vehicles.value.find((v) => v.vin === selectedVin.value) || null,
@@ -134,6 +154,7 @@ export const useAppStore = defineStore('app', () => {
           selectedVin.value = vehicles.value[0].vin
         }
         screen.value = 'app'
+        await loadThemeFromPrefs()
         return true
       }
 
@@ -142,6 +163,7 @@ export const useAppStore = defineStore('app', () => {
       vehicles.value = setup.vehicles || []
       displayName.value = setup.display_name || ''
       screen.value = 'app'
+      await loadThemeFromPrefs()
       return false
     } catch {
       // API not reachable
@@ -342,6 +364,9 @@ export const useAppStore = defineStore('app', () => {
     unreadMessages,
     loadUnreadCount,
     displayName,
+    theme,
+    applyTheme,
+    setTheme,
     mqttStatus,
     loadMqttStatus,
     connectWebSocket,

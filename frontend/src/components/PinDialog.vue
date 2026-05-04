@@ -141,7 +141,7 @@ defineExpose({ setError })
   width: 100%;
   padding: 13px 16px;
   background: var(--input, #0d1019);
-  border: 1px solid #1c2240;
+  border: 1px solid var(--btn-border);
   border-radius: 10px;
   color: var(--text, #e2e6f0);
   font-size: 16px;

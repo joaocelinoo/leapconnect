@@ -353,7 +353,7 @@ async function handleContinue() {
   width: 40px;
   height: 22px;
   border-radius: 12px;
-  background: #1c2240;
+  background: var(--btn-bg);
   position: relative;
   transition: background 0.25s;
 }

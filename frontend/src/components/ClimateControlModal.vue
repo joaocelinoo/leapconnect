@@ -245,7 +245,7 @@ async function applyCustom() {
   overflow-y: auto;
   box-shadow: 0 16px 48px #00000088;
   scrollbar-width: thin;
-  scrollbar-color: #1c2240 transparent;
+  scrollbar-color: var(--btn-bg) transparent;
 }
 
 @media (max-width: 400px) {

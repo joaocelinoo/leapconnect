@@ -257,7 +257,7 @@ async function handleSubmit() {
   gap: 10px;
   padding: 13px 16px;
   background: var(--input);
-  border: 1px dashed #1c2240;
+  border: 1px dashed var(--btn-border);
   border-radius: 10px;
   color: var(--muted2);
   font-size: 13px;

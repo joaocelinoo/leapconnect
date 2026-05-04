@@ -16,8 +16,8 @@ defineEmits(['update:modelValue'])
   width: 38px;
   height: 22px;
   border-radius: 11px;
-  background: #1c2240;
-  border: 1px solid #2a3050;
+  background: var(--toggle-bg);
+  border: 1px solid var(--toggle-border);
   position: relative;
   cursor: pointer;
   transition: all 0.2s;
@@ -34,7 +34,7 @@ defineEmits(['update:modelValue'])
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #3a4468;
+  background: var(--toggle-knob);
   transition: left 0.2s;
 }
 .toggle.on .toggle-knob {

@@ -159,7 +159,7 @@ onBeforeUnmount(() => {
 
 .msg-trigger {
   background: none;
-  border: 1px solid #1c2240;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 6px 8px;
   color: var(--label);
@@ -170,7 +170,7 @@ onBeforeUnmount(() => {
   transition: all 0.2s;
 }
 .msg-trigger:hover {
-  background: #1c224044;
+  background: var(--elevated);
   color: var(--text);
 }
 
@@ -256,7 +256,7 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   max-height: 320px;
   scrollbar-width: thin;
-  scrollbar-color: #1c2240 transparent;
+  scrollbar-color: var(--btn-bg) transparent;
 }
 
 .msg-item {
@@ -347,7 +347,7 @@ onBeforeUnmount(() => {
 .spinner-sm {
   width: 16px;
   height: 16px;
-  border: 2px solid #1c2240;
+  border: 2px solid var(--border);
   border-top-color: #00d4ff;
   border-radius: 50%;
   animation: lm-spin 0.7s linear infinite;

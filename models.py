@@ -60,6 +60,7 @@ class UserPreferences:
     """User-configurable preferences."""
 
     electricity_price_kwh: float = 0.25
+    theme: str = "dark"
 
 
 @dataclass

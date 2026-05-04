@@ -62,7 +62,7 @@ defineProps({
 
 .skeleton-line {
   border-radius: 6px;
-  background: linear-gradient(90deg, #1c2240 25%, #252d4a 50%, #1c2240 75%);
+  background: var(--skeleton);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }
@@ -81,7 +81,7 @@ defineProps({
   width: 160px;
   height: 14px;
   border-radius: 4px;
-  background: linear-gradient(90deg, #1c2240 25%, #252d4a 50%, #1c2240 75%);
+  background: var(--skeleton);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
   margin-bottom: 8px;
@@ -121,13 +121,13 @@ defineProps({
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  background: #0d1018;
+  background: var(--elevated);
 }
 
 .skeleton-wave {
   width: 80%;
   height: 60%;
-  color: #1c2240;
+  color: var(--muted);
   opacity: 0.6;
   animation: pulse 2s ease-in-out infinite;
 }

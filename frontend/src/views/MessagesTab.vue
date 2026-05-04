@@ -158,7 +158,7 @@ onMounted(() => {
   cursor: pointer;
   transition: all 0.2s;
 }
-.refresh-btn:hover { background: #1c224044; color: var(--text); }
+.refresh-btn:hover { background: var(--elevated); color: var(--text); }
 .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .spinning { animation: lm-spin 0.7s linear infinite; }
@@ -289,7 +289,7 @@ onMounted(() => {
   cursor: pointer;
   transition: all 0.2s;
 }
-.page-btn:hover:not(:disabled) { background: #1c224044; color: var(--text); }
+.page-btn:hover:not(:disabled) { background: var(--elevated); color: var(--text); }
 .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .page-info {

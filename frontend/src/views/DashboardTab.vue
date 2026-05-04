@@ -28,20 +28,20 @@
         :icon="battIcon" :pulse="!!s.is_charging"
       />
       <StatCard
-        label="Range" :value="s.battery?.expected_mileage ?? '—'" unit="km" color="#00d4ff"
+        label="Range" :value="s.battery?.expected_mileage ?? '—'" unit="km" color="var(--cyan)"
         :sub="s.battery?.dump_energy_kwh != null ? `${s.battery.dump_energy_kwh} kWh available` : ''"
       />
       <StatCard
-        label="Speed" :value="s.driving?.speed ?? 0" unit="km/h" color="#e2e6f0"
+        label="Speed" :value="s.driving?.speed ?? 0" unit="km/h" color="var(--text)"
         :sub="s.driving?.is_parked ? 'Parked' : 'Moving'"
       />
       <StatCard
         label="Odometer"
         :value="s.driving?.total_mileage != null ? s.driving.total_mileage.toLocaleString() : '—'"
-        unit="km" color="#ffab40"
+        unit="km" color="var(--amber)"
       />
       <StatCard
-        label="Outside Temp" :value="s.climate?.outdoor_temp ?? '—'" unit="°C" color="#7c6aff"
+        label="Outside Temp" :value="s.climate?.outdoor_temp ?? '—'" unit="°C" color="var(--purple)"
         :sub="s.climate?.ac_switch ? 'A/C on' : 'A/C off'"
       />
     </div>
@@ -365,7 +365,7 @@ async function doSetChargeLimit() {
 
 /* Hero */
 .hero {
-  background: linear-gradient(160deg, #0d1422, #111826);
+  background: var(--hero-bg);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 16px 16px 14px;
@@ -497,7 +497,7 @@ async function doSetChargeLimit() {
 
 .ctrl-btn {
   background: var(--elevated);
-  border: 1px solid #1c2240;
+  border: 1px solid var(--btn-border);
   border-radius: 12px;
   padding: 16px 8px;
   display: flex;
@@ -585,8 +585,8 @@ async function doSetChargeLimit() {
 }
 .charge-val { font-size: 15px; font-weight: 700; color: var(--text); }
 .charge-set-btn {
-  background: #1c2240;
-  border: 1px solid #2a3060;
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
   border-radius: 7px;
   padding: 5px 12px;
   color: var(--sub);
@@ -594,7 +594,7 @@ async function doSetChargeLimit() {
   cursor: pointer;
   font-weight: 600;
 }
-.charge-set-btn:hover { background: #252d50; }
+.charge-set-btn:hover { background: var(--btn-hover); }
 
 
 </style>

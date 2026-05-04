@@ -23,6 +23,7 @@ defineProps({
   padding: 14px 16px;
   min-width: 0;
   overflow: hidden;
+  box-shadow: var(--shadow-card);
 }
 @media (min-width: 640px) {
   .section-card { padding: 18px 20px; }

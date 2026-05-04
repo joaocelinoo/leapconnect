@@ -205,9 +205,9 @@ function formatOdo(vin) {
 }
 .vs-card-badge {
   font-size: 11px;
-  background: #1c2240;
+  background: var(--btn-bg);
   color: var(--muted3);
-  border: 1px solid #1c2240;
+  border: 1px solid var(--btn-border);
   border-radius: 20px;
   padding: 3px 9px;
   font-weight: 600;

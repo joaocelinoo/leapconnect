@@ -85,6 +85,12 @@
                 <component :is="store.connected ? CloudOff : Cloud" :size="14" />
                 <span>{{ store.connected ? 'Disconnect Leapmotor Cloud' : 'Connect Leapmotor Cloud' }}</span>
               </button>
+              <!-- Theme toggle -->
+              <button class="user-menu-item user-menu-action" @click="store.setTheme(store.theme === 'dark' ? 'light' : 'dark')">
+                <component :is="store.theme === 'dark' ? Sun : Moon" :size="14" />
+                <span>{{ store.theme === 'dark' ? 'Light Mode' : 'Dark Mode' }}</span>
+              </button>
+              <div class="user-menu-divider" />
               <button class="user-menu-item user-menu-action user-menu-logout" @click="handleLogout">
                 <LogOut :size="14" />
                 <span>Logout</span>
@@ -214,7 +220,7 @@ import MessagesTab from './views/MessagesTab.vue'
 import SettingsTab from './views/SettingsTab.vue'
 import ToastContainer from './components/ToastContainer.vue'
 import MessageDropdown from './components/MessageDropdown.vue'
-import { LayoutDashboard, List, TrendingUp, Mail, Settings, RefreshCw, LogOut, Cloud, CloudOff } from 'lucide-vue-next'
+import { LayoutDashboard, List, TrendingUp, Mail, Settings, RefreshCw, LogOut, Cloud, CloudOff, Sun, Moon } from 'lucide-vue-next'
 
 const store = useAppStore()
 const { toast } = useToast()
@@ -451,7 +457,7 @@ onBeforeUnmount(() => {
   position: absolute; top: 44px; right: 0;
   background: var(--bg2); border: 1px solid var(--border2);
   border-radius: 14px; min-width: 220px;
-  box-shadow: 0 12px 32px #000a, 0 2px 8px #0004; z-index: 1100;
+  box-shadow: var(--shadow-menu); z-index: 1100;
   overflow: hidden; backdrop-filter: blur(12px);
 }
 .user-menu-header {
@@ -485,7 +491,7 @@ onBeforeUnmount(() => {
 .user-menu-action {
   cursor: pointer;
 }
-.user-menu-action:hover { background: #ffffff0a; color: var(--text); }
+.user-menu-action:hover { background: var(--elevated); color: var(--text); }
 .user-menu-divider { height: 1px; background: var(--border2); margin: 4px 12px; }
 .user-menu-logout { color: #ff5252; }
 .user-menu-logout:hover { color: #ff5252; background: #ff525210; }
@@ -500,7 +506,7 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   cursor: pointer;
   transition: all 0.2s;
-  background: #1c224044; border: 1px solid #1c2240; color: var(--label);
+  background: var(--elevated); border: 1px solid var(--border); color: var(--label);
 }
 .refresh-age-btn:hover { filter: brightness(1.3); }
 .refresh-age-btn.fresh {
@@ -560,8 +566,8 @@ onBeforeUnmount(() => {
   color: #00d4ff;
 }
 .vtab-name { font-size: 12px; font-weight: 700; }
-.vtab-id { font-size: 10px; color: #2a3045; font-family: var(--mono); }
-.vtab-add { font-size: 12px; color: #2a3045; align-self: center; margin-left: 4px; }
+.vtab-id { font-size: 10px; color: var(--muted); font-family: var(--mono); }
+.vtab-add { font-size: 12px; color: var(--muted); align-self: center; margin-left: 4px; }
 
 /* Content area */
 .content-area {
@@ -585,7 +591,7 @@ onBeforeUnmount(() => {
 .sidebar-btn {
   width: 40px; height: 40px; border-radius: 10px;
   border: none; cursor: pointer; font-size: 16px;
-  background: transparent; color: #3a4468;
+  background: transparent; color: var(--muted2);
   transition: all 0.2s; position: relative;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
@@ -662,7 +668,7 @@ onBeforeUnmount(() => {
   background: none;
   border: none;
   cursor: pointer;
-  color: #3a4468;
+  color: var(--muted2);
   transition: color 0.2s;
   padding: 6px 12px;
   -webkit-tap-highlight-color: transparent;

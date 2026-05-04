@@ -122,9 +122,26 @@
         </div>
         <div v-if="electricitySuccess" class="field-success">{{ electricitySuccess }}</div>
         <div v-if="electricityError" class="field-error">{{ electricityError }}</div>
+        <div class="pref-row">
+          <div class="pref-info">
+            <span class="pref-label">Theme</span>
+            <span class="pref-hint">Switch between dark and light mode</span>
+          </div>
+          <div class="pref-input-group">
+            <button
+              class="theme-btn"
+              :class="{ active: store.theme === 'dark' }"
+              @click="store.setTheme('dark')"
+            ><Moon :size="13" /> Dark</button>
+            <button
+              class="theme-btn"
+              :class="{ active: store.theme === 'light' }"
+              @click="store.setTheme('light')"
+            ><Sun :size="13" /> Light</button>
+          </div>
+        </div>
         <InfoRow label="Distance unit" value="km" color="#e2e6f0" />
         <InfoRow label="Pressure unit" value="bar" color="#e2e6f0" />
-        <InfoRow label="Theme" value="Dark" color="#7c6aff" />
         <InfoRow label="Language" value="English" color="#e2e6f0" />
       </SectionCard>
 
@@ -511,7 +528,7 @@ import InfoRow from '../components/InfoRow.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { api } from '../composables/useApi'
 import { useAppStore } from '../stores/appStore'
-import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink } from 'lucide-vue-next'
+import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun } from 'lucide-vue-next'
 
 const store = useAppStore()
 
@@ -1078,7 +1095,7 @@ onMounted(() => {
 
 .edit-panel {
   padding: 12px 0;
-  border-top: 1px solid #181d2c;
+  border-top: 1px solid var(--divider);
   margin-bottom: 12px;
 }
 .form-group { margin-bottom: 0.9rem; }
@@ -1095,7 +1112,7 @@ onMounted(() => {
   width: 100%;
   padding: 10px 14px;
   background: var(--input);
-  border: 1px solid #1c2240;
+  border: 1px solid var(--btn-border);
   border-radius: 8px;
   color: var(--text);
   font-size: 13px;
@@ -1113,7 +1130,7 @@ onMounted(() => {
   letter-spacing: 0.06em;
   margin: 1rem 0 0.7rem;
   padding-top: 0.8rem;
-  border-top: 1px solid #181d2c;
+  border-top: 1px solid var(--divider);
 }
 
 .file-upload {
@@ -1122,7 +1139,7 @@ onMounted(() => {
   gap: 10px;
   padding: 10px 14px;
   background: var(--input);
-  border: 1px dashed #1c2240;
+  border: 1px dashed var(--btn-border);
   border-radius: 8px;
   color: var(--muted2);
   font-size: 12px;
@@ -1170,7 +1187,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 10px 0;
-  border-bottom: 1px solid #181d2c;
+  border-bottom: 1px solid var(--divider);
 }
 .notif-row:last-child { border-bottom: none; }
 .notif-label { font-size: 13px; color: var(--sub); }
@@ -1191,7 +1208,7 @@ onMounted(() => {
 .raw-panel {
   max-height: 400px;
   overflow: auto;
-  background: #0d1018;
+  background: var(--elevated);
   border-radius: 0 0 8px 8px;
   padding: 12px;
   margin-top: 0;
@@ -1221,7 +1238,7 @@ onMounted(() => {
   transition: background 0.2s, color 0.2s;
 }
 .raw-tab.active {
-  background: #0d1018;
+  background: var(--elevated);
   color: #7c6aff;
 }
 
@@ -1231,7 +1248,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 12px 0;
-  border-bottom: 1px solid #181d2c;
+  border-bottom: 1px solid var(--divider);
 }
 .service-status {
   display: flex;
@@ -1275,7 +1292,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 10px 0;
-  border-bottom: 1px solid #181d2c;
+  border-bottom: 1px solid var(--divider);
 }
 .interval-label {
   font-size: 13px;
@@ -1319,8 +1336,8 @@ onMounted(() => {
 }
 .interval-set-btn {
   padding: 4px 12px;
-  background: #1c2240;
-  border: 1px solid #2a3060;
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
   border-radius: 6px;
   color: var(--sub);
   font-size: 12px;
@@ -1329,7 +1346,7 @@ onMounted(() => {
   transition: all 0.15s;
   margin-left: 4px;
 }
-.interval-set-btn:hover:not(:disabled) { background: #252d50; color: #00d4ff; }
+.interval-set-btn:hover:not(:disabled) { background: var(--btn-hover); color: #00d4ff; }
 .interval-set-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
 .pin-input-wrap {
@@ -1340,7 +1357,7 @@ onMounted(() => {
 .pin-input {
   width: 90px;
   padding: 4px 28px 4px 8px;
-  background: #0d1018;
+  background: var(--elevated);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: #fff;
@@ -1371,7 +1388,7 @@ onMounted(() => {
 .scheduler-status {
   margin-top: 12px;
   padding: 10px 12px;
-  background: #0d1018;
+  background: var(--elevated);
   border-radius: 8px;
   display: flex;
   flex-direction: column;
@@ -1405,7 +1422,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 10px 0;
-  border-bottom: 1px solid #181d2c;
+  border-bottom: 1px solid var(--divider);
 }
 .pref-info {
   display: flex;
@@ -1434,7 +1451,7 @@ onMounted(() => {
   width: 70px;
   padding: 6px 10px;
   background: var(--input);
-  border: 1px solid #1c2240;
+  border: 1px solid var(--btn-border);
   border-radius: 6px;
   color: var(--text);
   font-size: 13px;
@@ -1447,6 +1464,17 @@ onMounted(() => {
 .pref-unit {
   font-size: 11px;
   color: var(--muted);
+}
+.theme-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border-radius: 8px;
+  font-size: 12px; font-weight: 600;
+  background: var(--input); border: 1px solid var(--border);
+  color: var(--label); cursor: pointer; transition: all 0.2s;
+}
+.theme-btn:hover { border-color: var(--muted); color: var(--text); }
+.theme-btn.active {
+  background: #7c6aff22; border-color: #7c6aff66; color: #7c6aff;
 }
 
 /* MQTT Modal */

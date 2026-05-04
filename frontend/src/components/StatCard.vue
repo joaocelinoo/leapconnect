@@ -32,6 +32,7 @@ defineProps({
   padding: 12px 14px;
   flex: 1;
   min-width: 0;
+  box-shadow: var(--shadow-card);
 }
 @media (min-width: 640px) {
   .stat-card { padding: 16px 18px; }

@@ -1366,7 +1366,10 @@ async def get_vehicle_daily_summary(vin: str, days: int = 30) -> DailySummaryRes
 async def get_preferences() -> PreferencesResponse:
     """Get user preferences (electricity price, etc.)."""
     prefs = await _load_preferences()
-    return PreferencesResponse(electricity_price_kwh=prefs.electricity_price_kwh)
+    return PreferencesResponse(
+        electricity_price_kwh=prefs.electricity_price_kwh,
+        theme=prefs.theme,
+    )
 
 
 @app.put("/api/preferences", response_model=PreferencesResponse)
@@ -1386,15 +1389,27 @@ async def update_preferences(request: Request) -> PreferencesResponse:
                 status_code=422, detail="'electricity_price_kwh' must be >= 0"
             )
         await _history_repo.save_setting("electricity_price_kwh", str(price))
+    theme = body.get("theme")
+    if theme is not None:
+        if theme not in ("dark", "light"):
+            raise HTTPException(
+                status_code=422, detail="'theme' must be 'dark' or 'light'"
+            )
+        await _history_repo.save_setting("theme", theme)
     prefs = await _load_preferences()
-    return PreferencesResponse(electricity_price_kwh=prefs.electricity_price_kwh)
+    return PreferencesResponse(
+        electricity_price_kwh=prefs.electricity_price_kwh,
+        theme=prefs.theme,
+    )
 
 
 async def _load_preferences() -> UserPreferences:
     """Load user preferences from DB, falling back to defaults."""
     raw = await _history_repo.get_setting("electricity_price_kwh")
+    theme_raw = await _history_repo.get_setting("theme")
     return UserPreferences(
         electricity_price_kwh=float(raw) if raw else 0.25,
+        theme=theme_raw if theme_raw in ("dark", "light") else "dark",
     )
 
 

@@ -492,11 +492,12 @@ const heatmapData = computed(() => {
 })
 
 function heatmapColor(val) {
-  if (val === 0) return '#1a1f2e'
-  if (val === 1) return '#1b3a2a'
-  if (val <= 3) return '#2e7d52'
-  if (val <= 6) return '#43a047'
-  return '#66bb6a'
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light'
+  if (val === 0) return isLight ? '#eaf4ef' : '#1a1f2e'
+  if (val === 1) return isLight ? '#b2dfdb' : '#1b3a2a'
+  if (val <= 3) return isLight ? '#66bb6a' : '#2e7d52'
+  if (val <= 6) return isLight ? '#43a047' : '#43a047'
+  return isLight ? '#2e7d32' : '#66bb6a'
 }
 
 // ---------------------------------------------------------------------------
@@ -595,26 +596,42 @@ const tireDiffCanvas = ref(null)
 
 const charts = []
 
-const chartDefaults = {
-  responsive: true,
-  maintainAspectRatio: false,
-  interaction: { mode: 'index', intersect: false },
-  plugins: {
-    legend: { display: false },
-    tooltip: {
-      backgroundColor: '#161b2a',
-      titleColor: '#8892a8',
-      bodyColor: '#e2e6f0',
-      borderColor: '#1c2240',
-      borderWidth: 1,
-      padding: 10,
-    },
-  },
-  scales: {
-    x: { grid: { color: '#1c2135', drawTicks: false }, ticks: { color: '#4a5468', font: { size: 10 }, maxTicksLimit: 8 } },
-    y: { grid: { color: '#1c2135', drawTicks: false }, ticks: { color: '#4a5468', font: { size: 10 } } },
-  },
+function getChartColors() {
+  const s = getComputedStyle(document.documentElement)
+  return {
+    grid: s.getPropertyValue('--chart-grid').trim() || '#1c2135',
+    tick: s.getPropertyValue('--chart-tick').trim() || '#4a5468',
+    tooltipBg: s.getPropertyValue('--tooltip-bg').trim() || '#161b2a',
+    tooltipBorder: s.getPropertyValue('--tooltip-border').trim() || '#1c2240',
+    text: s.getPropertyValue('--text').trim() || '#e2e6f0',
+    sub: s.getPropertyValue('--sub').trim() || '#8892a8',
+    label: s.getPropertyValue('--label').trim() || '#6a748a',
+  }
 }
+
+const chartDefaults = computed(() => {
+  const c = getChartColors()
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: c.tooltipBg,
+        titleColor: c.sub,
+        bodyColor: c.text,
+        borderColor: c.tooltipBorder,
+        borderWidth: 1,
+        padding: 10,
+      },
+    },
+    scales: {
+      x: { grid: { color: c.grid, drawTicks: false }, ticks: { color: c.tick, font: { size: 10 }, maxTicksLimit: 8 } },
+      y: { grid: { color: c.grid, drawTicks: false }, ticks: { color: c.tick, font: { size: 10 } } },
+    },
+  }
+})
 
 function destroyCharts() {
   charts.forEach(c => c.destroy())
@@ -670,12 +687,12 @@ function buildCharts() {
         ],
       },
       options: {
-        ...chartDefaults,
-        plugins: { ...chartDefaults.plugins, legend: { display: true, labels: { color: '#5c6478', font: { size: 10 }, boxWidth: 20 } } },
+        ...chartDefaults.value,
+        plugins: { ...chartDefaults.value.plugins, legend: { display: true, labels: { color: getChartColors().label, font: { size: 10 }, boxWidth: 20 } } },
         scales: {
-          ...chartDefaults.scales,
-          y: { ...chartDefaults.scales.y, min: 0, max: 100, ticks: { ...chartDefaults.scales.y.ticks, callback: v => `${v}%` } },
-          y2: { position: 'right', grid: { display: false }, ticks: { color: '#4a5468', font: { size: 10 }, callback: v => `${v} kWh` } },
+          ...chartDefaults.value.scales,
+          y: { ...chartDefaults.value.scales.y, min: 0, max: 100, ticks: { ...chartDefaults.value.scales.y.ticks, callback: v => `${v}%` } },
+          y2: { position: 'right', grid: { display: false }, ticks: { color: getChartColors().tick, font: { size: 10 }, callback: v => `${v} kWh` } },
         },
       },
       plugins: [chargeLinesPlugin],
@@ -687,7 +704,7 @@ function buildCharts() {
     charts.push(new Chart(rangeCanvas.value, {
       type: 'line',
       data: { labels, datasets: [{ data: d.map(x => x.range), borderColor: '#00d4ff', backgroundColor: 'rgba(0,212,255,0.07)', fill: true, tension: 0.4, pointRadius: pointR, pointHoverRadius: 5, borderWidth: 2 }] },
-      options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, ticks: { ...chartDefaults.scales.y.ticks, callback: v => `${v} km` } } } },
+      options: { ...chartDefaults.value, scales: { ...chartDefaults.value.scales, y: { ...chartDefaults.value.scales.y, ticks: { ...chartDefaults.value.scales.y.ticks, callback: v => `${v} km` } } } },
     }))
   }
 
@@ -696,7 +713,7 @@ function buildCharts() {
     charts.push(new Chart(kmCanvas.value, {
       type: 'bar',
       data: { labels, datasets: [{ data: d.map(x => x.kmDriven), backgroundColor: 'rgba(124,106,255,0.45)', borderColor: '#7c6aff', borderWidth: 1, borderRadius: 4 }] },
-      options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, ticks: { ...chartDefaults.scales.y.ticks, callback: v => `${v} km` } } } },
+      options: { ...chartDefaults.value, scales: { ...chartDefaults.value.scales, y: { ...chartDefaults.value.scales.y, ticks: { ...chartDefaults.value.scales.y.ticks, callback: v => `${v} km` } } } },
     }))
   }
 
@@ -711,7 +728,7 @@ function buildCharts() {
           { label: 'Discharging', data: d.map(x => -x.dischargingPower), borderColor: '#ef5350', backgroundColor: 'rgba(239,83,80,0.08)', fill: true, tension: 0.3, pointRadius: pointR, pointHoverRadius: 5, borderWidth: 2 },
         ],
       },
-      options: { ...chartDefaults, plugins: { ...chartDefaults.plugins, legend: { display: true, labels: { color: '#5c6478', font: { size: 10 }, boxWidth: 20 } } }, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, ticks: { ...chartDefaults.scales.y.ticks, callback: v => `${v} kW` } } } },
+      options: { ...chartDefaults.value, plugins: { ...chartDefaults.value.plugins, legend: { display: true, labels: { color: getChartColors().label, font: { size: 10 }, boxWidth: 20 } } }, scales: { ...chartDefaults.value.scales, y: { ...chartDefaults.value.scales.y, ticks: { ...chartDefaults.value.scales.y.ticks, callback: v => `${v} kW` } } } },
     }))
   }
 
@@ -732,7 +749,7 @@ function buildCharts() {
       charts.push(new Chart(consumptionCanvas.value, {
         type: 'line',
         data: { labels: consumptionLabels, datasets: [{ data: consumptionData, borderColor: '#ff7043', backgroundColor: 'rgba(255,112,67,0.08)', fill: true, tension: 0.3, pointRadius: consumptionData.length <= 10 ? 4 : 0, pointHoverRadius: 5, borderWidth: 2 }] },
-        options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, min: 0, ticks: { ...chartDefaults.scales.y.ticks, callback: v => `${v}` } } } },
+        options: { ...chartDefaults.value, scales: { ...chartDefaults.value.scales, y: { ...chartDefaults.value.scales.y, min: 0, ticks: { ...chartDefaults.value.scales.y.ticks, callback: v => `${v}` } } } },
       }))
     }
   }
@@ -752,7 +769,7 @@ function buildCharts() {
       charts.push(new Chart(effTempCanvas.value, {
         type: 'scatter',
         data: { datasets: [{ data: points, backgroundColor: '#ff7043', borderColor: '#ff7043', pointRadius: 5, pointHoverRadius: 7 }] },
-        options: { ...chartDefaults, scales: { x: { ...chartDefaults.scales.x, title: { display: true, text: '\u00b0C', color: '#4a5468' } }, y: { ...chartDefaults.scales.y, min: 0, title: { display: true, text: 'kWh/100km', color: '#4a5468' } } } },
+        options: { ...chartDefaults.value, scales: { x: { ...chartDefaults.value.scales.x, title: { display: true, text: '\u00b0C', color: getChartColors().tick } }, y: { ...chartDefaults.value.scales.y, min: 0, title: { display: true, text: 'kWh/100km', color: getChartColors().tick } } } },
       }))
     }
   }
@@ -772,7 +789,7 @@ function buildCharts() {
       charts.push(new Chart(effSpeedCanvas.value, {
         type: 'scatter',
         data: { datasets: [{ data: points, backgroundColor: '#7c6aff', borderColor: '#7c6aff', pointRadius: 5, pointHoverRadius: 7 }] },
-        options: { ...chartDefaults, scales: { x: { ...chartDefaults.scales.x, title: { display: true, text: 'km/h', color: '#4a5468' } }, y: { ...chartDefaults.scales.y, min: 0, title: { display: true, text: 'kWh/100km', color: '#4a5468' } } } },
+        options: { ...chartDefaults.value, scales: { x: { ...chartDefaults.value.scales.x, title: { display: true, text: 'km/h', color: getChartColors().tick } }, y: { ...chartDefaults.value.scales.y, min: 0, title: { display: true, text: 'kWh/100km', color: getChartColors().tick } } } },
       }))
     }
   }
@@ -809,7 +826,7 @@ function buildCharts() {
             { label: 'Actual km driven', data: actual, backgroundColor: 'rgba(124,106,255,0.4)', borderColor: '#7c6aff', borderWidth: 1, borderRadius: 4 },
           ],
         },
-        options: { ...chartDefaults, plugins: { ...chartDefaults.plugins, legend: { display: true, labels: { color: '#5c6478', font: { size: 10 }, boxWidth: 20 } } }, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, ticks: { ...chartDefaults.scales.y.ticks, callback: v => `${v} km` } } } },
+        options: { ...chartDefaults.value, plugins: { ...chartDefaults.value.plugins, legend: { display: true, labels: { color: getChartColors().label, font: { size: 10 }, boxWidth: 20 } } }, scales: { ...chartDefaults.value.scales, y: { ...chartDefaults.value.scales.y, ticks: { ...chartDefaults.value.scales.y.ticks, callback: v => `${v} km` } } } },
       }))
     }
   }
@@ -832,15 +849,15 @@ function buildCharts() {
           }],
         },
         options: {
-          ...chartDefaults,
+          ...chartDefaults.value,
           plugins: {
-            ...chartDefaults.plugins,
+            ...chartDefaults.value.plugins,
             tooltip: {
-              ...chartDefaults.plugins.tooltip,
+              ...chartDefaults.value.plugins.tooltip,
               callbacks: { afterLabel: (ctx) => { const s = sessions[ctx.dataIndex]; return `SOC: ${s.startSoc}% \u2192 ${s.endSoc}%` } },
             },
           },
-          scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, ticks: { ...chartDefaults.scales.y.ticks, callback: v => `${v} kWh` } } },
+          scales: { ...chartDefaults.value.scales, y: { ...chartDefaults.value.scales.y, ticks: { ...chartDefaults.value.scales.y.ticks, callback: v => `${v} kWh` } } },
         },
       }))
     }
@@ -856,11 +873,11 @@ function buildCharts() {
       type: 'doughnut',
       data: {
         labels: ['Parked', 'In use'],
-        datasets: [{ data: [parked, driving], backgroundColor: ['#1c2240', '#00d4ff'], borderColor: ['#2a3050', '#00d4ff'], borderWidth: 1 }],
+        datasets: [{ data: [parked, driving], backgroundColor: [getChartColors().grid, '#00d4ff'], borderColor: [getChartColors().tick, '#00d4ff'], borderWidth: 1 }],
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: true, position: 'bottom', labels: { color: '#5c6478', font: { size: 11 } } }, tooltip: { ...chartDefaults.plugins.tooltip } },
+        plugins: { legend: { display: true, position: 'bottom', labels: { color: getChartColors().label, font: { size: 11 } } }, tooltip: { ...chartDefaults.value.plugins.tooltip } },
       },
     }))
   }
@@ -884,12 +901,12 @@ function buildCharts() {
           }],
         },
         options: {
-          ...chartDefaults,
+          ...chartDefaults.value,
           scales: {
-            x: { ...chartDefaults.scales.x, title: { display: true, text: 'Longitude', color: '#4a5468' } },
-            y: { ...chartDefaults.scales.y, title: { display: true, text: 'Latitude', color: '#4a5468' } },
+            x: { ...chartDefaults.value.scales.x, title: { display: true, text: 'Longitude', color: getChartColors().tick } },
+            y: { ...chartDefaults.value.scales.y, title: { display: true, text: 'Latitude', color: getChartColors().tick } },
           },
-          plugins: { ...chartDefaults.plugins, tooltip: { ...chartDefaults.plugins.tooltip, callbacks: { label: (ctx) => `Speed: ${mapPoints[ctx.dataIndex].speed} km/h` } } },
+          plugins: { ...chartDefaults.value.plugins, tooltip: { ...chartDefaults.value.plugins.tooltip, callbacks: { label: (ctx) => `Speed: ${mapPoints[ctx.dataIndex].speed} km/h` } } },
         },
       }))
     }
@@ -912,7 +929,7 @@ function buildCharts() {
             borderRadius: 4,
           }],
         },
-        options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, ticks: { ...chartDefaults.scales.y.ticks, callback: v => `${v}%/day` } } } },
+        options: { ...chartDefaults.value, scales: { ...chartDefaults.value.scales, y: { ...chartDefaults.value.scales.y, ticks: { ...chartDefaults.value.scales.y.ticks, callback: v => `${v}%/day` } } } },
       }))
     }
   }
@@ -935,7 +952,7 @@ function buildCharts() {
             { label: 'RR', data: tireSnaps.map(s => toBar(s.tire_rear_right_pressure)), borderColor: '#ff7043', borderWidth: 2, tension: 0.3, pointRadius: 0, pointHoverRadius: 5 },
           ],
         },
-        options: { ...chartDefaults, plugins: { ...chartDefaults.plugins, legend: { display: true, labels: { color: '#5c6478', font: { size: 10 }, boxWidth: 20 } } }, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, ticks: { ...chartDefaults.scales.y.ticks, callback: v => `${v} bar` } } } },
+        options: { ...chartDefaults.value, plugins: { ...chartDefaults.value.plugins, legend: { display: true, labels: { color: getChartColors().label, font: { size: 10 }, boxWidth: 20 } } }, scales: { ...chartDefaults.value.scales, y: { ...chartDefaults.value.scales.y, ticks: { ...chartDefaults.value.scales.y.ticks, callback: v => `${v} bar` } } } },
       }))
     }
   }
@@ -952,7 +969,7 @@ function buildCharts() {
       charts.push(new Chart(tireTempCanvas.value, {
         type: 'scatter',
         data: { datasets: [{ data: points, backgroundColor: '#26c6da', borderColor: '#26c6da', pointRadius: 5, pointHoverRadius: 7 }] },
-        options: { ...chartDefaults, scales: { x: { ...chartDefaults.scales.x, title: { display: true, text: '\u00b0C', color: '#4a5468' } }, y: { ...chartDefaults.scales.y, title: { display: true, text: 'Avg pressure (bar)', color: '#4a5468' } } } },
+        options: { ...chartDefaults.value, scales: { x: { ...chartDefaults.value.scales.x, title: { display: true, text: '\u00b0C', color: getChartColors().tick } }, y: { ...chartDefaults.value.scales.y, title: { display: true, text: 'Avg pressure (bar)', color: getChartColors().tick } } } },
       }))
     }
   }
@@ -972,7 +989,7 @@ function buildCharts() {
             { label: 'Rear (L-R)', data: tireSnaps.map(s => Math.round((toBar(s.tire_rear_left_pressure) - toBar(s.tire_rear_right_pressure)) * 100) / 100), borderColor: '#ffab40', borderWidth: 2, tension: 0.3, pointRadius: 0, pointHoverRadius: 5 },
           ],
         },
-        options: { ...chartDefaults, plugins: { ...chartDefaults.plugins, legend: { display: true, labels: { color: '#5c6478', font: { size: 10 }, boxWidth: 20 } } }, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, ticks: { ...chartDefaults.scales.y.ticks, callback: v => `${v} bar` } } } },
+        options: { ...chartDefaults.value, plugins: { ...chartDefaults.value.plugins, legend: { display: true, labels: { color: getChartColors().label, font: { size: 10 }, boxWidth: 20 } } }, scales: { ...chartDefaults.value.scales, y: { ...chartDefaults.value.scales.y, ticks: { ...chartDefaults.value.scales.y.ticks, callback: v => `${v} bar` } } } },
       }))
     }
   }
@@ -989,9 +1006,9 @@ function buildCharts() {
         ],
       },
       options: {
-        ...chartDefaults,
-        plugins: { ...chartDefaults.plugins, legend: { display: true, labels: { color: '#5c6478', font: { size: 10 }, boxWidth: 20 } } },
-        scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, ticks: { ...chartDefaults.scales.y.ticks, callback: v => `${v}\u00b0C` } }, y2: { position: 'right', grid: { display: false }, ticks: { color: '#4a5468', font: { size: 10 }, callback: v => `${v}kWh` } } },
+        ...chartDefaults.value,
+        plugins: { ...chartDefaults.value.plugins, legend: { display: true, labels: { color: getChartColors().label, font: { size: 10 }, boxWidth: 20 } } },
+        scales: { ...chartDefaults.value.scales, y: { ...chartDefaults.value.scales.y, ticks: { ...chartDefaults.value.scales.y.ticks, callback: v => `${v}\u00b0C` } }, y2: { position: 'right', grid: { display: false }, ticks: { color: getChartColors().tick, font: { size: 10 }, callback: v => `${v}kWh` } } },
       },
     }))
   }
@@ -1020,7 +1037,7 @@ onBeforeUnmount(destroyCharts)
   font-size: 11px;
   color: var(--muted);
   padding: 6px 12px;
-  background: #1c224040;
+  background: var(--btn-bg);
   border-radius: 8px;
   width: fit-content;
   margin: 0 auto;
@@ -1091,7 +1108,7 @@ onBeforeUnmount(destroyCharts)
   cursor: not-allowed;
 }
 .period-btn.active {
-  background: #1c2240;
+  background: var(--btn-bg);
   color: #00d4ff;
 }
 
@@ -1211,7 +1228,7 @@ onBeforeUnmount(destroyCharts)
   color: var(--muted2);
   text-align: center;
   padding: 8px;
-  background: #0d1018;
+  background: var(--elevated);
   border-radius: 8px;
 }
 
@@ -1239,7 +1256,7 @@ onBeforeUnmount(destroyCharts)
   transition: all 0.2s;
 }
 .view-btn.active {
-  background: #1c2240;
+  background: var(--btn-bg);
   color: #00d4ff;
 }
 
@@ -1265,7 +1282,7 @@ onBeforeUnmount(destroyCharts)
   z-index: 1;
 }
 .data-table th {
-  background: #0d1018;
+  background: var(--elevated);
   padding: 10px 14px;
   text-align: left;
   font-size: 10px;
@@ -1279,7 +1296,7 @@ onBeforeUnmount(destroyCharts)
 .data-table td {
   padding: 9px 14px;
   color: var(--sub);
-  border-bottom: 1px solid #181d2c;
+  border-bottom: 1px solid var(--divider);
   white-space: nowrap;
 }
 .data-table tbody tr:hover {
@@ -1302,7 +1319,7 @@ onBeforeUnmount(destroyCharts)
 /* Table skeleton */
 .skeleton-line {
   border-radius: 4px;
-  background: linear-gradient(90deg, #1c2240 25%, #252d4a 50%, #1c2240 75%);
+  background: var(--skeleton);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }

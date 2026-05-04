@@ -99,6 +99,7 @@ const mapEl = ref(null)
 const mapWrapper = ref(null)
 const fullscreen = ref(false)
 let map = null
+let tileLayer = null
 let vehicleMarker = null
 let deviceMarker = null
 let destMarker = null
@@ -156,8 +157,12 @@ function initMap() {
     attributionControl: false,
   })
 
-  // Dark tile layer
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  // Tile layer (adapts to theme)
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light'
+  const tileUrl = isLight
+    ? 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
+    : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+  tileLayer = L.tileLayer(tileUrl, {
     maxZoom: 19,
     subdomains: 'abcd',
   }).addTo(map)
@@ -329,6 +334,18 @@ async function doSendDestination() {
 }
 
 onMounted(() => { nextTick(initMap) })
+
+// Swap tile layer when theme changes
+watch(() => store.theme, () => {
+  if (!map || !tileLayer) return
+  map.removeLayer(tileLayer)
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light'
+  const tileUrl = isLight
+    ? 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
+    : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+  tileLayer = L.tileLayer(tileUrl, { maxZoom: 19, subdomains: 'abcd' }).addTo(map)
+})
+
 onBeforeUnmount(() => {
   if (map) {
     map.remove()
@@ -428,8 +445,9 @@ onBeforeUnmount(() => {
   z-index: 1000;
   display: flex;
   gap: 10px;
-  background: rgba(13, 16, 24, 0.85);
-  backdrop-filter: blur(6px);
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
   border-radius: 6px;
   padding: 5px 10px;
   font-size: 11px;
@@ -545,30 +563,30 @@ onBeforeUnmount(() => {
 </style>
 
 <style>
-/* Global leaflet overrides for dark theme */
+/* Global leaflet overrides (theme-aware) */
 .leaflet-container {
-  background: #0d1018 !important;
+  background: var(--bg2) !important;
   font-family: var(--font) !important;
 }
 .leaflet-control-zoom a {
-  background: #111420 !important;
-  color: #e2e6f0 !important;
-  border-color: #1c2135 !important;
+  background: var(--card) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
 }
 .leaflet-control-zoom a:hover {
-  background: #1c2240 !important;
+  background: var(--elevated) !important;
 }
 .leaflet-popup-content-wrapper {
-  background: #111420 !important;
-  color: #e2e6f0 !important;
+  background: var(--card) !important;
+  color: var(--text) !important;
   border-radius: 10px !important;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.5) !important;
+  box-shadow: var(--shadow-menu) !important;
 }
 .leaflet-popup-tip {
-  background: #111420 !important;
+  background: var(--card) !important;
 }
 .leaflet-popup-close-button {
-  color: #5c6478 !important;
+  color: var(--muted) !important;
 }
 .custom-marker {
   background: none !important;

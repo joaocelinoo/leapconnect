@@ -4,7 +4,7 @@
       <span v-if="dot" class="info-dot" :style="{ background: color || '#00e676' }"></span>
       {{ label }}
     </span>
-    <span class="info-value" :style="{ color: color || '#e2e6f0' }">
+    <span class="info-value" :style="{ color: color || 'var(--text)' }">
       <slot>{{ value }}</slot>
     </span>
   </div>
@@ -25,7 +25,7 @@ defineProps({
   justify-content: space-between;
   align-items: center;
   padding: 9px 0;
-  border-bottom: 1px solid #181d2c;
+  border-bottom: 1px solid var(--divider);
   gap: 8px;
   min-width: 0;
 }
