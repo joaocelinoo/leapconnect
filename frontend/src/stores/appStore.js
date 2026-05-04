@@ -57,6 +57,23 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  async function disconnect() {
+    await api('POST', '/api/disconnect')
+    disconnectWebSocket()
+    connected.value = false
+  }
+
+  const mqttStatus = ref({ enabled: false, connected: false, broker: '' })
+
+  async function loadMqttStatus() {
+    try {
+      const data = await api('GET', '/api/mqtt')
+      mqttStatus.value = { enabled: data.enabled, connected: data.connected, broker: data.broker || '' }
+    } catch {
+      // ignore
+    }
+  }
+
   async function submitPin(pin) {
     await api('POST', '/api/set-pin', { pin })
     hasPin.value = true
@@ -309,6 +326,7 @@ export const useAppStore = defineStore('app', () => {
     currentStatus,
     login,
     reconnect,
+    disconnect,
     logout,
     checkStatus,
     loadVehicleData,
@@ -324,6 +342,8 @@ export const useAppStore = defineStore('app', () => {
     unreadMessages,
     loadUnreadCount,
     displayName,
+    mqttStatus,
+    loadMqttStatus,
     connectWebSocket,
     disconnectWebSocket,
   }

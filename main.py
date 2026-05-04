@@ -765,6 +765,20 @@ async def reconnect() -> ReconnectResponse:
         ) from exc
 
 
+@app.post("/api/disconnect", response_model=StatusResponse)
+async def disconnect() -> StatusResponse:
+    """Disconnect from the Leapmotor cloud without clearing session."""
+    global _sync_client, _client, _connected
+    if _scheduler:
+        _scheduler.set_client(None, [])
+    if _sync_client:
+        _sync_client.close()
+    _sync_client = None
+    _client = None
+    _connected = False
+    return StatusResponse(status="ok")
+
+
 # ---------------------------------------------------------------------------
 # Routes — Authentication
 # ---------------------------------------------------------------------------

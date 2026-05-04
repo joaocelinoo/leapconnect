@@ -60,7 +60,7 @@
         <MessageDropdown />
         <!-- User menu (always visible) -->
         <div class="user-menu-wrap">
-          <button class="user-avatar-btn" @click="showUserMenu = !showUserMenu">
+          <button class="user-avatar-btn" @click="toggleUserMenu">
             <span>{{ userInitials }}</span>
           </button>
           <Transition name="menu-fade">
@@ -69,11 +69,22 @@
                 <span class="user-menu-name">{{ store.displayName || 'User' }}</span>
                 <span class="user-menu-role">LeapConnect</span>
               </div>
-              <button v-if="!store.connected" class="user-menu-item user-menu-action" @click="handleReconnect(); showUserMenu = false">
-                <RefreshCw :size="14" />
-                <span>Reconnect to Cloud</span>
-              </button>
+              <!-- Services status -->
+              <div class="user-menu-services">
+                <div class="svc-row">
+                  <span class="svc-dot" :class="store.mqttStatus.connected ? 'on' : store.mqttStatus.enabled ? 'warn' : 'off'" />
+                  <span class="svc-label">Home Assistant</span>
+                  <span class="svc-value" :class="store.mqttStatus.connected ? 'on' : store.mqttStatus.enabled ? 'warn' : ''">
+                    {{ store.mqttStatus.connected ? 'Online' : store.mqttStatus.enabled ? 'Offline' : 'Disabled' }}
+                  </span>
+                </div>
+              </div>
               <div class="user-menu-divider" />
+              <!-- Cloud action -->
+              <button class="user-menu-item user-menu-action" @click="handleCloudToggle">
+                <component :is="store.connected ? CloudOff : Cloud" :size="14" />
+                <span>{{ store.connected ? 'Disconnect Leapmotor Cloud' : 'Connect Leapmotor Cloud' }}</span>
+              </button>
               <button class="user-menu-item user-menu-action user-menu-logout" @click="handleLogout">
                 <LogOut :size="14" />
                 <span>Logout</span>
@@ -274,8 +285,28 @@ async function handleReconnect() {
   }
 }
 
+async function handleCloudToggle() {
+  if (store.connected) {
+    if (!confirm('Disconnect from Leapmotor Cloud? Live data will stop until you reconnect.')) return
+    try {
+      await store.disconnect()
+      toast('Disconnected from Cloud', 'warning')
+    } catch (err) {
+      toast(err.message || 'Disconnect failed', 'error')
+    }
+  } else {
+    await handleReconnect()
+  }
+  showUserMenu.value = false
+}
+
 function handleLogout() {
   store.logout()
+}
+
+function toggleUserMenu() {
+  showUserMenu.value = !showUserMenu.value
+  if (showUserMenu.value) store.loadMqttStatus()
 }
 
 // --- Data age indicator ---
@@ -327,6 +358,7 @@ onMounted(async () => {
   // Load unread count and poll every 60s (only when authenticated)
   if (store.screen === 'app') {
     store.loadUnreadCount()
+    store.loadMqttStatus()
     unreadInterval = setInterval(() => store.loadUnreadCount(), 60000)
   }
   // Tick data age every 10s
@@ -416,28 +448,45 @@ onBeforeUnmount(() => {
 }
 
 .user-menu-dropdown {
-  position: absolute; top: 40px; right: 0;
+  position: absolute; top: 44px; right: 0;
   background: var(--bg2); border: 1px solid var(--border2);
-  border-radius: 12px; min-width: 200px;
-  box-shadow: 0 8px 24px #0006; z-index: 1100;
-  overflow: hidden;
+  border-radius: 14px; min-width: 220px;
+  box-shadow: 0 12px 32px #000a, 0 2px 8px #0004; z-index: 1100;
+  overflow: hidden; backdrop-filter: blur(12px);
 }
 .user-menu-header {
-  padding: 12px 14px 8px; border-bottom: 1px solid var(--border2);
+  padding: 14px 16px 10px;
 }
 .user-menu-name {
-  font-size: 13px; font-weight: 700; color: var(--text);
+  display: block; font-size: 14px; font-weight: 700; color: var(--text);
 }
+.user-menu-services {
+  padding: 6px 16px 10px;
+}
+.svc-row {
+  display: flex; align-items: center; gap: 8px; font-size: 11px;
+}
+.svc-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+}
+.svc-dot.on { background: #00e676; box-shadow: 0 0 6px #00e67688; }
+.svc-dot.warn { background: #ffab40; box-shadow: 0 0 6px #ffab4088; }
+.svc-dot.off { background: #444; }
+.svc-label { color: var(--label); }
+.svc-value { margin-left: auto; font-weight: 600; color: var(--muted); }
+.svc-value.on { color: #00e676; }
+.svc-value.warn { color: #ffab40; }
 .user-menu-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 10px 14px; font-size: 12px; color: var(--label);
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 16px; font-size: 12px; color: var(--label);
   width: 100%; background: none; border: none; cursor: default;
+  transition: background 0.15s, color 0.15s;
 }
 .user-menu-action {
-  cursor: pointer; transition: background 0.15s;
+  cursor: pointer;
 }
-.user-menu-action:hover { background: #ffffff08; color: var(--text); }
-.user-menu-divider { height: 1px; background: var(--border2); margin: 2px 0; }
+.user-menu-action:hover { background: #ffffff0a; color: var(--text); }
+.user-menu-divider { height: 1px; background: var(--border2); margin: 4px 12px; }
 .user-menu-logout { color: #ff5252; }
 .user-menu-logout:hover { color: #ff5252; background: #ff525210; }
 

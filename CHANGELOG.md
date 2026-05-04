@@ -7,16 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Navbar refactored**: the connection badge now shows a cloud icon with "CLOUD" / "OFFLINE" label always visible (including mobile). The refresh button and data freshness indicator are merged into a single color-coded pill. Notifications bell icon is standalone in the navbar. User avatar menu contains cloud disconnect/reconnect, Home Assistant status, and logout
+- **User menu redesigned**: cleaner dropdown with improved spacing, backdrop blur, and visual hierarchy. Shows Home Assistant connection status (dot + Online/Offline/Disabled). Cloud disconnect/reconnect button explicitly labeled "Leapmotor Cloud" with confirmation dialog. Removed redundant cloud status (already in topbar badge)
+
 ### Added
 
 - **Faster History page**: the History tab now shows placeholder shapes while loading, displays summary cards first, and remembers previous data so revisiting the page feels instant
 - **Smart API rate limiting**: all data requests to Leapmotor servers now go through a shared cache — no matter how many features need vehicle data (Home Assistant, history recording, dashboard), only one request is made within the configured time window. Configurable in Settings → Account with a dedicated "API Rate Limit" card (default: 10 seconds)
 - **Data freshness indicator**: the top navigation bar now shows how old the displayed data is (e.g. "32s ago", "5m ago"), with color coding — green for fresh (< 2 min), yellow for stale (< 10 min), red for old data. Updates every 10 seconds
 - **Real-time updates via WebSocket**: when the backend fetches fresh data from Leapmotor (via scheduler, MQTT polling, or any API call), it pushes the new vehicle status to the frontend instantly over a WebSocket connection — no manual refresh needed. The data age badge resets automatically on each push. Auto-reconnects if the connection drops
-
-### Changed
-
-- **Navbar refactored**: the connection badge now shows a cloud icon with "CLOUD" / "OFFLINE" to clearly indicate it refers to the Leapmotor cloud connection. The refresh button and data freshness indicator are merged into a single color-coded pill. On mobile, the cloud status and logout are collapsed into a compact user avatar menu (initials + colored dot) that opens a dropdown — freeing up navbar space
+- **Cloud disconnect/reconnect**: new `POST /api/disconnect` endpoint allows disconnecting from Leapmotor Cloud without logging out — accessible from the user avatar menu with a confirmation prompt
 
 ## [0.4.1] - 2026-05-04
 
