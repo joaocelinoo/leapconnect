@@ -132,6 +132,7 @@ export const useAppStore = defineStore('app', () => {
     loading.value = true
     try {
       const data = await api('GET', `/api/vehicles/${vin}/full`)
+      data._fetchedAt = Date.now()
       vehicleData.value[vin] = data
     } finally {
       loading.value = false
@@ -152,6 +153,7 @@ export const useAppStore = defineStore('app', () => {
       refreshing.value = true
       try {
         const data = await api('GET', `/api/vehicles/${selectedVin.value}/full`)
+        data._fetchedAt = Date.now()
         vehicleData.value[selectedVin.value] = data
       } finally {
         refreshing.value = false

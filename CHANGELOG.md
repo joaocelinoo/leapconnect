@@ -10,8 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Faster History page**: the History tab now shows placeholder shapes while loading, displays summary cards first, and remembers previous data so revisiting the page feels instant
-- **Smart API rate limiting**: all data requests to Leapmotor servers now go through a shared cache — no matter how many features need vehicle data (Home Assistant, history recording, dashboard), only one request is made within the configured time window. This prevents overloading Leapmotor's servers and avoids potential blocks
-- **Rate limit setting**: new "API rate limit" control in Settings → Data Collection lets you choose the minimum seconds between requests to Leapmotor (default: 10 seconds)
+- **Smart API rate limiting**: all data requests to Leapmotor servers now go through a shared cache — no matter how many features need vehicle data (Home Assistant, history recording, dashboard), only one request is made within the configured time window. Configurable in Settings → Account with a dedicated "API Rate Limit" card (default: 10 seconds)
+- **Data freshness indicator**: the top navigation bar now shows how old the displayed data is (e.g. "32s ago", "5m ago"), with color coding — green for fresh (< 2 min), yellow for stale (< 10 min), red for old data. Updates every 10 seconds
 
 ## [0.4.1] - 2026-05-04
 

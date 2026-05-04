@@ -435,6 +435,7 @@ class FullVehicleDataResponse(BaseModel):
     errors: dict[str, str | None] = {}
     vehicle_raw: dict | None = None
     status_raw: dict | None = None
+    cache_age_seconds: float | None = None
 
 
 class VehicleSnapshotSchema(BaseModel):

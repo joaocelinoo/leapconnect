@@ -45,6 +45,10 @@
           <span class="connection-dot" :class="{ offline: !store.connected }" />
           <span>{{ store.connected ? 'CONNECTED' : 'OFFLINE' }}</span>
         </div>
+        <div v-if="dataAgeLabel" class="data-age-badge" :class="dataAgeClass">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span>{{ dataAgeLabel }}</span>
+        </div>
         <!-- <div class="connection-dot sm:hidden" :class="{ offline: !store.connected }" style="width:8px;height:8px;border-radius:50%" /> -->
         <MessageDropdown />
         <button v-if="!store.connected" class="nav-btn" @click="handleReconnect">
@@ -248,6 +252,36 @@ function handleLogout() {
   store.logout()
 }
 
+// --- Data age indicator ---
+const dataAgeTick = ref(0)
+let dataAgeInterval = null
+
+const dataAgeSeconds = computed(() => {
+  dataAgeTick.value // reactive dependency for ticking
+  const data = store.currentData
+  if (!data || data.cache_age_seconds == null) return null
+  // cache_age_seconds is the age at fetch time; add elapsed since fetch
+  const fetchedAt = data._fetchedAt || 0
+  const elapsed = fetchedAt ? (Date.now() - fetchedAt) / 1000 : 0
+  return Math.round(data.cache_age_seconds + elapsed)
+})
+
+const dataAgeLabel = computed(() => {
+  const s = dataAgeSeconds.value
+  if (s == null) return ''
+  if (s < 60) return `${s}s ago`
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m ago`
+})
+
+const dataAgeClass = computed(() => {
+  const s = dataAgeSeconds.value
+  if (s == null) return ''
+  if (s < 120) return 'fresh'
+  if (s < 600) return 'stale'
+  return 'old'
+})
+
 let unreadInterval = null
 
 onMounted(async () => {
@@ -263,10 +297,13 @@ onMounted(async () => {
     store.loadUnreadCount()
     unreadInterval = setInterval(() => store.loadUnreadCount(), 60000)
   }
+  // Tick data age every 10s
+  dataAgeInterval = setInterval(() => { dataAgeTick.value++ }, 10000)
 })
 
 onBeforeUnmount(() => {
   if (unreadInterval) clearInterval(unreadInterval)
+  if (dataAgeInterval) clearInterval(dataAgeInterval)
 })
 </script>
 
@@ -338,6 +375,22 @@ onBeforeUnmount(() => {
 }
 .connection-dot.offline {
   background: #ff5252; box-shadow: 0 0 6px #ff5252;
+}
+.data-age-badge {
+  display: flex; align-items: center; gap: 5px;
+  border-radius: 20px; padding: 4px 10px;
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.data-age-badge.fresh {
+  background: #00e67614; border: 1px solid #00e67644; color: #00e676;
+}
+.data-age-badge.stale {
+  background: #ffab4014; border: 1px solid #ffab4044; color: #ffab40;
+}
+.data-age-badge.old {
+  background: #ff525214; border: 1px solid #ff525244; color: #ff5252;
 }
 .nav-btn {
   background: none; border: 1px solid #1c2240;

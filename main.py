@@ -1195,6 +1195,7 @@ async def get_full_vehicle_data(vin: str) -> FullVehicleDataResponse:
         },
         vehicle_raw=vehicle.raw,
         status_raw=status.raw if status else None,
+        cache_age_seconds=_vehicle_cache.cache_age(vin) if _vehicle_cache else None,
     )
 
 
