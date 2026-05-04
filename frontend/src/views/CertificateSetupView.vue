@@ -154,7 +154,7 @@ async function handleSubmit() {
     formData.append('cert_file', certFile.value)
     formData.append('key_file', keyFile.value)
 
-    const res = await fetch('/api/setup/certificates', {
+    const res = await fetch('./api/setup/certificates', {
       method: 'POST',
       body: formData,
       credentials: 'include',

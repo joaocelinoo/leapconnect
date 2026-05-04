@@ -1,4 +1,4 @@
-const BASE = ''
+const BASE = '.'
 
 let _onUnauthorized = null
 

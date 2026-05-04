@@ -57,7 +57,7 @@ async function preloadChargeFrames() {
     const fetches = []
     for (let i = 15; i >= 1; i--) {
       fetches.push(
-        fetch(`/api/vehicles/${props.vin}/picture/dynamic?charge_frame=${i}&_t=${ts}`, {
+        fetch(`./api/vehicles/${props.vin}/picture/dynamic?charge_frame=${i}&_t=${ts}`, {
           signal: controller.signal,
         }).then(r => r.blob())
       )

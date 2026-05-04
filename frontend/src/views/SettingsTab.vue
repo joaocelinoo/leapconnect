@@ -850,7 +850,7 @@ async function saveCertificates() {
     const formData = new FormData()
     formData.append('cert_file', certFile.value)
     formData.append('key_file', keyFile.value)
-    const res = await fetch('/api/setup/certificates', { method: 'POST', body: formData, credentials: 'include' })
+    const res = await fetch('./api/setup/certificates', { method: 'POST', body: formData, credentials: 'include' })
     const data = await res.json()
     if (!res.ok) throw new Error(data.detail || 'Upload failed')
     certSuccess.value = 'Certificates updated successfully'
