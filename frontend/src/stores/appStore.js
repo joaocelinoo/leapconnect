@@ -24,6 +24,7 @@ export const useAppStore = defineStore('app', () => {
   function applyTheme(t) {
     theme.value = t
     document.documentElement.setAttribute('data-theme', t)
+    localStorage.setItem('theme', t)
   }
 
   async function setTheme(t) {
@@ -37,7 +38,11 @@ export const useAppStore = defineStore('app', () => {
     try {
       const data = await api('GET', '/api/preferences')
       applyTheme(data.theme || 'dark')
-    } catch { /* ignore */ }
+    } catch {
+      // Fallback to localStorage (e.g. on login page before auth)
+      const saved = localStorage.getItem('theme')
+      if (saved) applyTheme(saved)
+    }
   }
 
   const selectedVehicle = computed(() =>

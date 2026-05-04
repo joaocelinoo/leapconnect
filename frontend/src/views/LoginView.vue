@@ -90,13 +90,13 @@ async function handleLogin() {
   height: 44px;
   margin: 0 auto 1.2rem;
   border-radius: 12px;
-  background: linear-gradient(135deg, #00d4ff22, #00d4ff44);
-  border: 1px solid #00d4ff55;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--cyan) 13%, transparent), color-mix(in srgb, var(--cyan) 27%, transparent));
+  border: 1px solid color-mix(in srgb, var(--cyan) 33%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.login-brand-icon svg { width: 22px; height: 22px; color: #00d4ff; }
+.login-brand-icon svg { width: 22px; height: 22px; color: var(--cyan); }
 
 .login-brand h1 {
   font-size: 18px;
@@ -144,7 +144,7 @@ async function handleLogin() {
   outline: none;
 }
 .form-group input:focus {
-  border-color: #00d4ff55;
+  border-color: color-mix(in srgb, var(--cyan) 33%, transparent);
 }
 .form-group input::placeholder {
   color: var(--muted2);
@@ -177,10 +177,10 @@ async function handleLogin() {
   width: 100%;
   padding: 14px;
   margin-top: 6px;
-  background: linear-gradient(135deg, #00d4ff22, #00d4ff44);
-  border: 1px solid #00d4ff55;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--cyan) 13%, transparent), color-mix(in srgb, var(--cyan) 27%, transparent));
+  border: 1px solid color-mix(in srgb, var(--cyan) 33%, transparent);
   border-radius: 10px;
-  color: #00d4ff;
+  color: var(--cyan);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -188,7 +188,7 @@ async function handleLogin() {
   letter-spacing: 0.04em;
 }
 .btn-login:hover {
-  background: linear-gradient(135deg, #00d4ff33, #00d4ff55);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--cyan) 20%, transparent), color-mix(in srgb, var(--cyan) 33%, transparent));
 }
 .btn-login:disabled { opacity: 0.5; cursor: not-allowed; }
 
