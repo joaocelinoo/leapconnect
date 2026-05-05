@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **History time filter redesigned**: replaced the period buttons (Today/7d/30d/90d) with a compact toolbar inspired by calendar apps — includes a calendar icon to open a date range picker, a label showing the selected date(s), a "Today" quick-jump pill, left/right arrows to navigate day-by-day, and a three-dot menu with CSV export
+- **Date range picker**: the calendar popup now includes a "Last 12 months" preset alongside the existing quick filters (Today, Yesterday, This week/month/quarter/year, Last 7/30/90 days)
+- **Removed table view toggle**: the History page now always shows charts (the chart/table switch has been removed)
+- **Mobile layout**: title and description are left-aligned on mobile while the date toolbar stays centered
 - **Navbar refactored**: the connection badge now shows a cloud icon with "CLOUD" / "OFFLINE" label always visible (including mobile). The refresh button and data freshness indicator are merged into a single color-coded pill. Notifications bell icon is standalone in the navbar. User avatar menu contains cloud disconnect/reconnect, Home Assistant status, and logout
 - **User menu redesigned**: cleaner dropdown with improved spacing, backdrop blur, and visual hierarchy. Shows Home Assistant connection status (dot + Online/Offline/Disabled). Cloud disconnect/reconnect button explicitly labeled "Leapmotor Cloud" with confirmation dialog. Removed redundant cloud status (already in topbar badge)
 

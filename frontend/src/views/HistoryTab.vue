@@ -6,23 +6,68 @@
         <h2>Data History</h2>
         <p>Performance analysis over time</p>
       </div>
-      <div class="period-selector">
-        <button
-          v-for="(p, i) in periods"
-          :key="i"
-          class="period-btn"
-          :class="{ active: period === i }"
-          :disabled="p.days > 1 && p.days !== 0 && allSnapshots.length < 2"
-          @click="period = i"
-        >{{ p.label }}</button>
+      <div class="time-toolbar">
+        <button class="toolbar-btn" @click="showDatePicker = !showDatePicker" title="Select date range">
+          <CalendarDays :size="15" />
+        </button>
+        <span class="toolbar-date-label">{{ dateRangeLabel }}</span>
+        <button class="toolbar-pill" @click="goToToday">Today</button>
+        <button class="toolbar-btn" @click="goBack" title="Previous day">
+          <ChevronLeft :size="16" />
+        </button>
+        <button class="toolbar-btn" :disabled="isAtToday" @click="goForward" title="Next day">
+          <ChevronRight :size="16" />
+        </button>
+        <div class="toolbar-menu-wrapper">
+          <button class="toolbar-btn" @click="showToolbarMenu = !showToolbarMenu" title="More options">
+            <MoreVertical :size="16" />
+          </button>
+          <div v-if="showToolbarMenu" class="toolbar-menu">
+            <button class="toolbar-menu-item" @click="exportCsv(); showToolbarMenu = false">
+              <Download :size="14" /> Download CSV
+            </button>
+          </div>
+          <div v-if="showToolbarMenu" class="toolbar-menu-overlay" @click="showToolbarMenu = false"></div>
+        </div>
       </div>
-      <div class="view-toggle">
-        <button class="view-btn" :class="{ active: viewMode === 'chart' }" @click="viewMode = 'chart'">
-          <BarChart3 :size="14" /> Charts
-        </button>
-        <button class="view-btn" :class="{ active: viewMode === 'table' }" @click="viewMode = 'table'">
-          <Table2 :size="14" /> Table
-        </button>
+
+      <!-- Date Range Picker Dropdown -->
+      <div v-if="showDatePicker" class="date-picker-overlay" @click.self="showDatePicker = false"></div>
+      <div v-if="showDatePicker" class="date-picker-dropdown">
+        <div class="date-picker-presets">
+          <button v-for="preset in datePresets" :key="preset.label" class="preset-btn" @click="applyPreset(preset)">{{ preset.label }}</button>
+        </div>
+        <div class="date-picker-calendar">
+          <div class="calendar-nav">
+            <button class="cal-nav-btn" @click="calendarMonth--; normalizeCalendarMonth()"><ChevronLeft :size="16" /></button>
+            <span class="cal-month-label">{{ calendarMonthLabel }}</span>
+            <button class="cal-nav-btn" @click="calendarMonth++; normalizeCalendarMonth()"><ChevronRight :size="16" /></button>
+          </div>
+          <div class="calendar-grid">
+            <span class="cal-weekday" v-for="d in ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']" :key="d">{{ d }}</span>
+            <span
+              v-for="(cell, idx) in calendarCells"
+              :key="idx"
+              class="cal-day"
+              :class="{
+                'other-month': !cell.current,
+                'today': cell.isToday,
+                'selected': cell.isSelected,
+                'in-range': cell.inRange
+              }"
+              @click="cell.current && selectCalendarDay(cell.date)"
+            >{{ cell.day }}</span>
+          </div>
+          <div class="calendar-footer">
+            <span class="cal-range-label" v-if="customFrom && customTo">{{ formatCalDate(customFrom) }} - {{ formatCalDate(customTo) }}</span>
+            <span class="cal-range-label" v-else-if="customFrom">{{ formatCalDate(customFrom) }} - ...</span>
+            <span class="cal-range-label" v-else>&nbsp;</span>
+          </div>
+        </div>
+        <div class="date-picker-actions">
+          <button class="dp-cancel" @click="showDatePicker = false">Cancel</button>
+          <button class="dp-select" :disabled="!customFrom || !customTo" @click="applyCustomRange()">Select</button>
+        </div>
       </div>
     </div>
 
@@ -45,10 +90,10 @@
     </div>
 
     <!-- Charts skeleton -->
-    <HistorySkeleton v-if="loadingCharts && viewMode === 'chart' && !data.length" :show-kpi="false" :show-charts="true" :chart-count="4" />
+    <HistorySkeleton v-if="loadingCharts && !data.length" :show-kpi="false" :show-charts="true" :chart-count="4" />
 
     <!-- Charts -->
-    <template v-if="viewMode === 'chart' && chartsReady">
+    <template v-if="chartsReady">
       <!-- Existing core charts -->
       <h3 class="section-title">Battery & Energy</h3>
       <div class="charts-grid">
@@ -163,52 +208,6 @@
       </div>
     </template>
 
-    <!-- Table view -->
-    <div v-else-if="viewMode === 'table'" class="data-table-wrapper">
-      <!-- Table skeleton -->
-      <div v-if="loadingCharts && !tableData.length" class="data-table-scroll">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th v-for="i in 7" :key="i"><div class="skeleton-line skeleton-th"></div></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="i in 8" :key="i">
-              <td v-for="j in 7" :key="j"><div class="skeleton-line skeleton-td"></div></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <!-- Real table -->
-      <div v-else class="data-table-scroll">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>{{ isToday ? 'Time' : 'Date' }}</th>
-              <th>Battery %</th>
-              <th>Range km</th>
-              <th>km Driven</th>
-              <th>Battery kWh</th>
-              <th>Temp °C</th>
-              <th>Charges</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(row, i) in tableData" :key="i">
-              <td class="td-date">{{ row.date }}</td>
-              <td><span class="td-badge" style="--c:#00e676">{{ row.battery }}</span></td>
-              <td>{{ row.range }}</td>
-              <td>{{ row.kmDriven }}</td>
-              <td>{{ row.batteryEnergy }}</td>
-              <td>{{ row.temp }}</td>
-              <td>{{ row.chargeSessions }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
     <div class="history-note" v-if="allSnapshots.length">
       Real data collected from vehicle · {{ allSnapshots.length }} snapshots available
     </div>
@@ -222,7 +221,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { Chart, registerables } from 'chart.js'
 import { api } from '../composables/useApi'
-import { Battery, Map, Zap, Route, Thermometer, BarChart3, Table2, Gauge, Clock, CircleDot, MapPin, Circle, BatteryWarning } from 'lucide-vue-next'
+import { Battery, Map, Zap, Route, Thermometer, BarChart3, Table2, Gauge, Clock, CircleDot, MapPin, Circle, BatteryWarning, CalendarDays, ChevronLeft, ChevronRight, MoreVertical, Download } from 'lucide-vue-next'
 import HistorySkeleton from '../components/HistorySkeleton.vue'
 
 Chart.register(...registerables)
@@ -232,15 +231,195 @@ const props = defineProps({
   vin: { type: String, default: null },
 })
 
-const periods = [
-  { label: 'Today', days: 1 },
-  { label: '7 days', days: 7 },
-  { label: '30 days', days: 30 },
-  { label: '90 days', days: 90 },
-  { label: 'All', days: 0 },
-]
-const period = ref(0)
 const viewMode = ref('chart')
+const showToolbarMenu = ref(false)
+
+// ---------------------------------------------------------------------------
+// Custom date range picker
+// ---------------------------------------------------------------------------
+const showDatePicker = ref(false)
+const customRangeActive = ref(false)
+const customFrom = ref(null)
+const customTo = ref(null)
+const calendarYear = ref(new Date().getFullYear())
+const calendarMonth = ref(new Date().getMonth()) // 0-based
+
+const datePresets = [
+  { label: 'Today', fn: () => { const t = startOfDay(new Date()); return [t, new Date()] } },
+  { label: 'Yesterday', fn: () => { const t = startOfDay(new Date()); t.setDate(t.getDate()-1); return [t, startOfDay(new Date())] } },
+  { label: 'This week', fn: () => { const t = startOfWeek(new Date()); return [t, new Date()] } },
+  { label: 'This month', fn: () => { const t = new Date(); t.setDate(1); t.setHours(0,0,0,0); return [t, new Date()] } },
+  { label: 'This quarter', fn: () => { const t = new Date(); const q = Math.floor(t.getMonth()/3)*3; t.setMonth(q,1); t.setHours(0,0,0,0); return [t, new Date()] } },
+  { label: 'This year', fn: () => { const t = new Date(); t.setMonth(0,1); t.setHours(0,0,0,0); return [t, new Date()] } },
+  { label: 'Last 7 days', fn: () => [daysAgo(7), new Date()] },
+  { label: 'Last 30 days', fn: () => [daysAgo(30), new Date()] },
+  { label: 'Last 90 days', fn: () => [daysAgo(90), new Date()] },
+  { label: 'Last 12 months', fn: () => [daysAgo(365), new Date()] },
+]
+
+function startOfDay(d) { d.setHours(0,0,0,0); return d }
+function startOfWeek(d) { const day = (d.getDay()+6)%7; d.setDate(d.getDate()-day); d.setHours(0,0,0,0); return d }
+function daysAgo(n) { const d = new Date(); d.setDate(d.getDate()-n); d.setHours(0,0,0,0); return d }
+
+function normalizeCalendarMonth() {
+  if (calendarMonth.value < 0) { calendarMonth.value = 11; calendarYear.value-- }
+  if (calendarMonth.value > 11) { calendarMonth.value = 0; calendarYear.value++ }
+}
+
+const calendarMonthLabel = computed(() => {
+  const d = new Date(calendarYear.value, calendarMonth.value, 1)
+  return d.toLocaleString('en-US', { month: 'long', year: 'numeric' })
+})
+
+const calendarCells = computed(() => {
+  const y = calendarYear.value, m = calendarMonth.value
+  const first = new Date(y, m, 1)
+  const startDow = (first.getDay() + 6) % 7 // Monday = 0
+  const daysInMonth = new Date(y, m + 1, 0).getDate()
+  const cells = []
+  const today = new Date(); today.setHours(0,0,0,0)
+
+  // Previous month days
+  const prevMonthDays = new Date(y, m, 0).getDate()
+  for (let i = startDow - 1; i >= 0; i--) {
+    const day = prevMonthDays - i
+    const date = new Date(y, m - 1, day); date.setHours(0,0,0,0)
+    cells.push({ day, date, current: false, isToday: false, isSelected: false, inRange: false })
+  }
+
+  // Current month
+  for (let d = 1; d <= daysInMonth; d++) {
+    const date = new Date(y, m, d); date.setHours(0,0,0,0)
+    const isToday = date.getTime() === today.getTime()
+    const isSelected = (customFrom.value && date.getTime() === customFrom.value.getTime()) || (customTo.value && date.getTime() === customTo.value.getTime())
+    const inRange = customFrom.value && customTo.value && date > customFrom.value && date < customTo.value
+    cells.push({ day: d, date, current: true, isToday, isSelected, inRange })
+  }
+
+  // Next month fill
+  const remaining = 42 - cells.length
+  for (let d = 1; d <= remaining; d++) {
+    const date = new Date(y, m + 1, d); date.setHours(0,0,0,0)
+    cells.push({ day: d, date, current: false, isToday: false, isSelected: false, inRange: false })
+  }
+  return cells
+})
+
+function selectCalendarDay(date) {
+  if (!customFrom.value || (customFrom.value && customTo.value)) {
+    customFrom.value = date
+    customTo.value = null
+  } else {
+    if (date < customFrom.value) {
+      customTo.value = customFrom.value
+      customFrom.value = date
+    } else {
+      customTo.value = date
+    }
+  }
+}
+
+function applyPreset(preset) {
+  const [from, to] = preset.fn()
+  customFrom.value = from
+  customTo.value = to
+}
+
+function applyCustomRange() {
+  customRangeActive.value = true
+  showDatePicker.value = false
+}
+
+function formatCalDate(d) {
+  if (!d) return ''
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+// ---------------------------------------------------------------------------
+// Toolbar navigation
+// ---------------------------------------------------------------------------
+function isSameDay(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+}
+
+const isAtToday = computed(() => {
+  if (!customRangeActive.value) return true // default is today
+  if (!customTo.value) return true
+  const today = new Date(); today.setHours(0,0,0,0)
+  return isSameDay(customTo.value, today)
+})
+
+const dateRangeLabel = computed(() => {
+  if (!customRangeActive.value || !customFrom.value || !customTo.value) {
+    // Default: today
+    const today = new Date()
+    return today.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
+  }
+  if (isSameDay(customFrom.value, customTo.value)) {
+    return customFrom.value.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
+  }
+  const fmtFrom = customFrom.value.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
+  const fmtTo = customTo.value.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
+  return `${fmtFrom} – ${fmtTo}`
+})
+
+function goToToday() {
+  const today = new Date(); today.setHours(0,0,0,0)
+  customFrom.value = today
+  customTo.value = today
+  customRangeActive.value = true
+}
+
+function goBack() {
+  if (!customRangeActive.value || !customFrom.value || !customTo.value) {
+    // Currently showing today, go to yesterday
+    const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1); yesterday.setHours(0,0,0,0)
+    customFrom.value = yesterday
+    customTo.value = yesterday
+    customRangeActive.value = true
+    return
+  }
+  const rangeMs = customTo.value.getTime() - customFrom.value.getTime()
+  const dayMs = 86400000
+  const shift = Math.max(dayMs, rangeMs + dayMs)
+  const newFrom = new Date(customFrom.value.getTime() - shift); newFrom.setHours(0,0,0,0)
+  const newTo = new Date(customTo.value.getTime() - shift); newTo.setHours(0,0,0,0)
+  customFrom.value = newFrom
+  customTo.value = newTo
+  customRangeActive.value = true
+}
+
+function goForward() {
+  if (!customRangeActive.value || !customFrom.value || !customTo.value) return
+  const today = new Date(); today.setHours(0,0,0,0)
+  const rangeMs = customTo.value.getTime() - customFrom.value.getTime()
+  const dayMs = 86400000
+  const shift = Math.max(dayMs, rangeMs + dayMs)
+  const newTo = new Date(customTo.value.getTime() + shift); newTo.setHours(0,0,0,0)
+  if (newTo > today) newTo.setTime(today.getTime())
+  const newFrom = new Date(customFrom.value.getTime() + shift); newFrom.setHours(0,0,0,0)
+  if (newFrom > today) newFrom.setTime(today.getTime())
+  customFrom.value = newFrom
+  customTo.value = newTo
+  customRangeActive.value = true
+}
+
+function exportCsv() {
+  const rows = data.value
+  if (!rows.length) return
+  const headers = Object.keys(rows[0]).filter(k => k !== 'rawDate')
+  const csv = [headers.join(',')]
+  for (const row of rows) {
+    csv.push(headers.map(h => `"${row[h] ?? ''}"`).join(','))
+  }
+  const blob = new Blob([csv.join('\n')], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `history_${dateRangeLabel.value.replace(/[^a-zA-Z0-9]/g, '_')}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 // ---------------------------------------------------------------------------
 // Loading & caching states
@@ -305,6 +484,7 @@ function applyData(daily, snaps, allSnaps) {
   if (daily.length > 0) {
     allData.value = daily.map(d => ({
       date: formatDate(d.date),
+      rawDate: d.date,
       battery: d.avg_soc ?? 0,
       range: d.max_range ?? 0,
       kmDriven: d.km_driven ?? 0,
@@ -386,27 +566,57 @@ onMounted(async () => {
 // Filtered snapshots for selected period
 // ---------------------------------------------------------------------------
 const filteredSnapshots = computed(() => {
-  const days = periods[period.value].days
-  if (days === 0) return allSnapshots.value
-  const now = new Date()
-  let since
-  if (days === 1) {
-    since = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  } else {
-    since = new Date(now.getTime() - days * 86400000)
+  if (customRangeActive.value && customFrom.value && customTo.value) {
+    const from = customFrom.value.getTime()
+    const to = customTo.value.getTime() + 86400000 - 1 // end of day
+    return allSnapshots.value.filter(s => {
+      const t = new Date(s.timestamp).getTime()
+      return t >= from && t <= to
+    })
   }
+  // Default: today
+  const now = new Date()
+  const since = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   return allSnapshots.value.filter(s => new Date(s.timestamp) >= since)
 })
 
 // ---------------------------------------------------------------------------
 // Visible display data based on selected period
 // ---------------------------------------------------------------------------
-const isToday = computed(() => periods[period.value].days === 1)
+const isToday = computed(() => {
+  if (!customRangeActive.value) return true
+  if (!customFrom.value || !customTo.value) return true
+  return isSameDay(customFrom.value, customTo.value) && isSameDay(customTo.value, new Date())
+})
 
 const data = computed(() => {
-  if (isToday.value) return todaySnapshots.value
-  const days = periods[period.value].days
-  return days === 0 ? allData.value : allData.value.slice(-days)
+  if (customRangeActive.value && customFrom.value && customTo.value) {
+    if (isSameDay(customFrom.value, customTo.value)) {
+      // Single day view: use snapshot data
+      const from = customFrom.value.getTime()
+      const to = customTo.value.getTime() + 86400000 - 1
+      return allSnapshots.value.filter(s => {
+        const t = new Date(s.timestamp).getTime()
+        return t >= from && t <= to
+      }).map(s => ({
+        date: formatTimestamp(s.timestamp),
+        battery: s.battery_soc ?? 0,
+        range: s.battery_expected_mileage ?? 0,
+        kmDriven: 0,
+        batteryEnergy: (s.battery_dump_energy ?? 0) / 1000.0,
+        chargingPower: s.battery_charging_power_kw ?? 0,
+        dischargingPower: s.battery_discharge_power_kw ?? 0,
+        temp: s.climate_outdoor_temp ?? 0,
+        chargeSessions: s.battery_is_charging ? 1 : 0,
+        sampleCount: 1,
+      }))
+    }
+    const fromStr = customFrom.value.toISOString().slice(0, 10)
+    const toStr = customTo.value.toISOString().slice(0, 10)
+    return allData.value.filter(d => d.rawDate && d.rawDate >= fromStr && d.rawDate <= toStr)
+  }
+  // Default: today snapshots
+  return todaySnapshots.value
 })
 
 const tableData = computed(() => [...data.value].reverse())
@@ -1062,14 +1272,20 @@ onBeforeUnmount(destroyCharts)
 .history-header {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
+}
+.history-header .time-toolbar {
+  align-self: center;
 }
 @media (min-width: 640px) {
   .history-header {
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
+  }
+  .history-header .time-toolbar {
+    align-self: auto;
   }
 }
 .history-header h2 {
@@ -1082,34 +1298,296 @@ onBeforeUnmount(destroyCharts)
   color: var(--muted);
   margin-top: 3px;
 }
-.period-selector {
+.time-toolbar {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
   background: var(--card);
   border: 1px solid var(--border);
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
   border-radius: 10px;
-  padding: 4px;
+  padding: 5px 12px;
 }
-.period-btn {
-  padding: 6px 12px;
-  border-radius: 7px;
+.toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
   border: none;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
   background: transparent;
-  color: var(--muted);
-  transition: all 0.2s;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s;
 }
-.period-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-.period-btn.active {
+.toolbar-btn:hover:not(:disabled) {
   background: var(--btn-bg);
   color: #00d4ff;
+}
+.toolbar-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.toolbar-date-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  padding: 0 10px;
+  margin-right: 10px;
+  white-space: nowrap;
+}
+.toolbar-pill {
+  padding: 5px 12px;
+  border-radius: 14px;
+  border: 1.5px solid #00b8d4;
+  background: transparent;
+  color: #00d4ff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  margin-right: 6px;
+}
+.toolbar-pill:hover {
+  background: rgba(0, 184, 212, 0.12);
+}
+.toolbar-menu-wrapper {
+  position: relative;
+}
+.toolbar-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+.toolbar-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  min-width: 160px;
+  z-index: 100;
+  padding: 6px;
+  overflow: hidden;
+}
+.toolbar-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 7px;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.toolbar-menu-item:hover {
+  background: var(--btn-bg);
+  color: #00d4ff;
+}
+
+/* Date picker overlay & dropdown */
+.date-picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: rgba(0,0,0,0.4);
+}
+.date-picker-dropdown {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1000;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  max-width: 95vw;
+}
+.date-picker-presets {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 0;
+  border-right: 1px solid var(--border);
+  min-width: 160px;
+  overflow-y: auto;
+  max-height: 380px;
+}
+.preset-btn {
+  padding: 10px 20px;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.preset-btn:hover {
+  background: var(--btn-bg);
+  color: #00d4ff;
+}
+.date-picker-calendar {
+  padding: 16px 20px 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.calendar-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.cal-nav-btn {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  transition: background 0.15s;
+  display: flex;
+  align-items: center;
+}
+.cal-nav-btn:hover {
+  background: var(--btn-bg);
+}
+.cal-month-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  text-transform: capitalize;
+}
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  text-align: center;
+}
+.cal-weekday {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 4px 0;
+}
+.cal-day {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text);
+  transition: all 0.15s;
+}
+.cal-day.other-month {
+  color: var(--muted);
+  opacity: 0.4;
+}
+.cal-day.today {
+  border: 2px solid #00b8d4;
+}
+.cal-day.selected {
+  background: #00b8d4;
+  color: #fff;
+  font-weight: 700;
+}
+.cal-day.in-range {
+  background: rgba(0, 184, 212, 0.2);
+  border-radius: 4px;
+}
+.cal-day:hover:not(.other-month) {
+  background: var(--btn-bg);
+}
+.calendar-footer {
+  text-align: center;
+}
+.cal-range-label {
+  font-size: 11px;
+  color: var(--muted);
+}
+.date-picker-actions {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  left: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--card);
+  border-radius: 0 0 14px 14px;
+}
+.dp-cancel {
+  padding: 8px 18px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.dp-cancel:hover {
+  color: var(--text);
+}
+.dp-select {
+  padding: 8px 18px;
+  border-radius: 8px;
+  border: none;
+  background: #00b8d4;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.dp-select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.dp-select:hover:not(:disabled) {
+  background: #00a0b8;
+}
+
+@media (max-width: 520px) {
+  .date-picker-dropdown {
+    flex-direction: column;
+    max-height: 90vh;
+  }
+  .date-picker-presets {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    min-width: unset;
+    max-height: 120px;
+    padding: 10px;
+    gap: 4px;
+  }
+  .preset-btn {
+    padding: 6px 12px;
+    font-size: 11px;
+    border-radius: 6px;
+    background: var(--btn-bg);
+  }
 }
 
 .section-title {
