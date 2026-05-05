@@ -1,6 +1,14 @@
 # LeapConnect
 
 [![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-leapconnect-blue?logo=docker)](https://ghcr.io/markoceri/leapconnect)
+[![License](https://img.shields.io/github/license/markoceri/leapconnect)](LICENSE)
+[![Version](https://img.shields.io/github/v/tag/markoceri/leapconnect?label=version)](https://github.com/markoceri/leapconnect/releases)
+[![Python](https://img.shields.io/badge/python-3.12+-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Vue.js](https://img.shields.io/badge/Vue.js-3-4FC08D?logo=vue.js&logoColor=white)](https://vuejs.org/)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![GitHub Stars](https://img.shields.io/github/stars/markoceri/leapconnect?style=flat&logo=github)](https://github.com/markoceri/leapconnect/stargazers)
+[![GitHub Issues](https://img.shields.io/github/issues/markoceri/leapconnect)](https://github.com/markoceri/leapconnect/issues)
 
 Web dashboard for monitoring and controlling Leapmotor vehicles via the [leapmotor-api](https://github.com/markoceri/leapmotor-api) Python client.
 
