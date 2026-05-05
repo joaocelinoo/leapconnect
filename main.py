@@ -26,6 +26,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from leapmotor_api import LeapmotorApiClient
 from leapmotor_api.async_client import AsyncLeapmotorApiClient
+from leapmotor_api.exceptions import LeapmotorApiError
 from leapmotor_api.image import CarImagePackage
 from leapmotor_api.models import MessageList, Vehicle, VehicleStatus
 from pydantic import BaseModel
@@ -1228,16 +1229,19 @@ async def get_dynamic_picture(vin: str, charge_frame: int = 0) -> Response:
     client = _get_client()
     vehicle = _find_vehicle(vin)
 
-    if _vehicle_cache:
-        pkg, status_raw = await asyncio.gather(
-            _get_image_package(vin),
-            _vehicle_cache.get(vehicle),
-        )
-    else:
-        pkg, status_raw = await asyncio.gather(
-            _get_image_package(vin),
-            client.get_vehicle_status(vehicle),
-        )
+    try:
+        if _vehicle_cache:
+            pkg, status_raw = await asyncio.gather(
+                _get_image_package(vin),
+                _vehicle_cache.get(vehicle),
+            )
+        else:
+            pkg, status_raw = await asyncio.gather(
+                _get_image_package(vin),
+                client.get_vehicle_status(vehicle),
+            )
+    except LeapmotorApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     status = status_raw if isinstance(status_raw, VehicleStatus) else None
     img_bytes = await asyncio.to_thread(
@@ -1883,9 +1887,12 @@ async def send_destination(vin: str, request: Request) -> dict:
 async def get_messages(page_no: int = 1, page_size: int = 20) -> MessageListResponse:
     """Get paginated notification messages from the account."""
     client = _get_client()
-    msg_list: MessageList = await client.get_message_list(
-        page_no=page_no, page_size=page_size
-    )
+    try:
+        msg_list: MessageList = await client.get_message_list(
+            page_no=page_no, page_size=page_size
+        )
+    except LeapmotorApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     return MessageListResponse(
         count=msg_list.count,
         page_no=page_no,
@@ -1898,7 +1905,10 @@ async def get_messages(page_no: int = 1, page_size: int = 20) -> MessageListResp
 async def get_unread_message_count() -> UnreadCountResponse:
     """Get the number of unread notification messages."""
     client = _get_client()
-    count = await client.get_unread_message_count()
+    try:
+        count = await client.get_unread_message_count()
+    except LeapmotorApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     return UnreadCountResponse(unread=count)
 
 
