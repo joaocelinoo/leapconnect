@@ -15,7 +15,10 @@ LABEL org.opencontainers.image.description="LeapConnect - Leapmotor vehicle mana
 LABEL org.opencontainers.image.licenses=AGPL-3.0-only
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
+    curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    mv /root/.local/bin/uv /bin/uv && mv /root/.local/bin/uvx /bin/uvx && \
+    apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
