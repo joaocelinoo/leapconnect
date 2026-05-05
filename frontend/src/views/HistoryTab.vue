@@ -180,7 +180,10 @@
         </div>
         <div class="chart-card">
           <div class="chart-header"><BatteryWarning :size="16" class="chart-icon" /> Vampire drain (SOC loss while parked)</div>
-          <div class="chart-area"><canvas ref="vampireCanvas" /></div>
+          <div v-if="vampireDrainData.length === 0" class="chart-empty-msg">
+            No drain detected — the battery SOC remained stable during all parked sessions in this period. This chart will show data when a measurable SOC drop occurs while the car is parked and not charging for at least 1 hour.
+          </div>
+          <div v-else class="chart-area"><canvas ref="vampireCanvas" /></div>
         </div>
       </div>
 
@@ -1654,6 +1657,13 @@ onBeforeUnmount(destroyCharts)
 .chart-icon { font-size: 14px; }
 .chart-area { height: 180px; }
 .chart-area.tall { height: 200px; }
+.chart-empty-msg {
+  padding: 1.5rem 1rem;
+  font-size: 0.82rem;
+  color: var(--text-secondary, #888);
+  text-align: center;
+  line-height: 1.5;
+}
 
 .chart-legend {
   display: flex;
