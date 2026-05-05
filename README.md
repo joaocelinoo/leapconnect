@@ -2,7 +2,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/markoceri/leapconnect/ci.yml?label=CI&logo=github)](https://github.com/markoceri/leapconnect/actions/workflows/ci.yml)
 [![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-leapconnect-blue?logo=docker)](https://ghcr.io/markoceri/leapconnect)
-[![License](https://img.shields.io/github/license/markoceri/leapconnect)](LICENSE)
+[![License](https://img.shields.io/github/license/markoceri/leapconnect)](https://github.com/markoceri/leapconnect/blob/main/LICENSE)
 [![Version](https://img.shields.io/github/v/tag/markoceri/leapconnect?label=version)](https://github.com/markoceri/leapconnect/releases)
 [![Python](https://img.shields.io/badge/python-3.12+-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
