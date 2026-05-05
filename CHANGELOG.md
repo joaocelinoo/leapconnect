@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Dynamic car image broken under HA Ingress**: the static image URL in `DynamicCarImage.vue` used an absolute path (`/api/vehicles/...`) which resolved against the Home Assistant host instead of going through the ingress proxy. Changed to a relative path (`./api/vehicles/...`) consistent with the charge frame fetch URLs
 - **Power chart not displaying**: the Charging/Discharging power chart on the History page was always empty because power values were never persisted to the database. Added `charging_power_kw` and `discharge_power_kw` columns (via Alembic migration) so power data from the Leapmotor API is now saved. For historical data collected before this fix, power is derived from stored current × voltage values
 - **Vampire drain chart**: added an explanatory message when no drain events are detected, instead of showing an empty chart. Explains that the battery SOC remained stable during parked sessions and describes the conditions needed to trigger the chart
 - **Trip map replaced with Leaflet**: the lat/lon scatter chart is now a real interactive map (OpenStreetMap via Leaflet). Shows the route as a polyline color-coded by speed (green ≤40, orange 40–80, red >80 km/h), with Start/End markers and speed tooltips on each point. Supports dark/light tile layers based on theme, and a maximize button to expand the map to full width at 70vh height
