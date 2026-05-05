@@ -927,19 +927,27 @@ function buildCharts() {
     }))
   }
 
-  // Power
+  // Power (uses filteredSnapshots for actual power data)
   if (powerCanvas.value) {
-    charts.push(new Chart(powerCanvas.value, {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [
-          { label: 'Charging', data: d.map(x => x.chargingPower), borderColor: '#66bb6a', backgroundColor: 'rgba(102,187,106,0.08)', fill: true, tension: 0.3, pointRadius: pointR, pointHoverRadius: 5, borderWidth: 2 },
-          { label: 'Discharging', data: d.map(x => -x.dischargingPower), borderColor: '#ef5350', backgroundColor: 'rgba(239,83,80,0.08)', fill: true, tension: 0.3, pointRadius: pointR, pointHoverRadius: 5, borderWidth: 2 },
-        ],
-      },
-      options: { ...chartDefaults.value, plugins: { ...chartDefaults.value.plugins, legend: { display: true, labels: { color: getChartColors().label, font: { size: 10 }, boxWidth: 20 } } }, scales: { ...chartDefaults.value.scales, y: { ...chartDefaults.value.scales.y, ticks: { ...chartDefaults.value.scales.y.ticks, callback: v => `${v} kW` } } } },
-    }))
+    const powerSnaps = snaps.filter(s => s.battery_charging_power_kw != null || s.battery_discharge_power_kw != null)
+    if (powerSnaps.length > 0) {
+      const powerLabels = powerSnaps.map(s => {
+        const dt = new Date(s.timestamp)
+        return isToday.value ? dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : dt.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+      })
+      const powerPointR = powerSnaps.length <= 5 ? 4 : 0
+      charts.push(new Chart(powerCanvas.value, {
+        type: 'line',
+        data: {
+          labels: powerLabels,
+          datasets: [
+            { label: 'Charging', data: powerSnaps.map(s => s.battery_charging_power_kw ?? 0), borderColor: '#66bb6a', backgroundColor: 'rgba(102,187,106,0.08)', fill: true, tension: 0.3, pointRadius: powerPointR, pointHoverRadius: 5, borderWidth: 2 },
+            { label: 'Discharging', data: powerSnaps.map(s => -(s.battery_discharge_power_kw ?? 0)), borderColor: '#ef5350', backgroundColor: 'rgba(239,83,80,0.08)', fill: true, tension: 0.3, pointRadius: powerPointR, pointHoverRadius: 5, borderWidth: 2 },
+          ],
+        },
+        options: { ...chartDefaults.value, plugins: { ...chartDefaults.value.plugins, legend: { display: true, labels: { color: getChartColors().label, font: { size: 10 }, boxWidth: 20 } } }, scales: { ...chartDefaults.value.scales, y: { ...chartDefaults.value.scales.y, ticks: { ...chartDefaults.value.scales.y.ticks, callback: v => `${v} kW` } } } },
+      }))
+    }
   }
 
   // ===== EFFICIENCY & CONSUMPTION =====

@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     func,
     select,
+    text,
 )
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
@@ -42,6 +43,8 @@ class VehicleSnapshotRow(Base):
     battery_soc = Column(Integer, nullable=True)
     battery_current = Column(Float, nullable=True)
     battery_voltage = Column(Float, nullable=True)
+    charging_power_kw = Column(Float, nullable=True)
+    discharge_power_kw = Column(Float, nullable=True)
     expected_mileage = Column(Integer, nullable=True)
     total_mileage = Column(Integer, nullable=True)
     energy_kwh = Column(Float, nullable=True)
@@ -111,8 +114,52 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
     # -- lifecycle -----------------------------------------------------------
 
     async def init_db(self) -> None:
+        # Create tables for fresh installs
         async with self._engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+
+        # Run Alembic migrations (async-compatible)
+        async with self._engine.begin() as conn:
+            await conn.run_sync(self._run_alembic_upgrade)
+
+    @staticmethod
+    def _run_alembic_upgrade(sync_conn) -> None:
+        """Run pending Alembic migrations on a sync connection."""
+        import sqlalchemy
+        from alembic.config import Config
+        from alembic.migration import MigrationContext
+        from alembic.operations import Operations
+        from alembic.script import ScriptDirectory
+
+        alembic_cfg = Config("alembic.ini")
+        script = ScriptDirectory.from_config(alembic_cfg)
+
+        # If alembic_version doesn't exist
+        # this is a pre-alembic DB: stamp it at baseline
+        inspector = sqlalchemy.inspect(sync_conn)
+        if not inspector.has_table("alembic_version"):
+            sync_conn.execute(
+                text(
+                    "CREATE TABLE alembic_version (  version_num VARCHAR(32) NOT NULL)"
+                )
+            )
+            sync_conn.execute(
+                text("INSERT INTO alembic_version (version_num) VALUES ('0001')")
+            )
+
+        # Run pending migrations
+        context = MigrationContext.configure(sync_conn, opts={"render_as_batch": True})
+        current_rev = context.get_current_revision()
+        head_rev = script.get_current_head()
+
+        if current_rev != head_rev:
+
+            def do_upgrade(revision, context):
+                return script._upgrade_revs(head_rev, revision)
+
+            with Operations.context(context):
+                context._migrations_fn = do_upgrade
+                context.run_migrations()
 
     async def close(self) -> None:
         await self._engine.dispose()
@@ -126,6 +173,8 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
             battery_soc=snapshot.battery_soc,
             battery_current=snapshot.battery_current,
             battery_voltage=snapshot.battery_voltage,
+            charging_power_kw=snapshot.battery_charging_power_kw,
+            discharge_power_kw=snapshot.battery_discharge_power_kw,
             expected_mileage=snapshot.battery_expected_mileage,
             total_mileage=snapshot.drive_total_mileage,
             energy_kwh=snapshot.battery_dump_energy,
@@ -177,6 +226,23 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                 battery_soc=r.battery_soc,
                 battery_current=r.battery_current,
                 battery_voltage=r.battery_voltage,
+                battery_charging_power_kw=r.charging_power_kw
+                if r.charging_power_kw
+                else (
+                    round(abs(r.battery_current) * r.battery_voltage / 1000, 2)
+                    if r.battery_current and r.battery_voltage and r.is_charging
+                    else None
+                ),
+                battery_discharge_power_kw=r.discharge_power_kw
+                if r.discharge_power_kw
+                else (
+                    round(r.battery_current * r.battery_voltage / 1000, 2)
+                    if r.battery_current
+                    and r.battery_voltage
+                    and r.battery_current > 0
+                    and not r.is_charging
+                    else None
+                ),
                 battery_expected_mileage=r.expected_mileage,
                 drive_total_mileage=r.total_mileage,
                 battery_dump_energy=r.energy_kwh,

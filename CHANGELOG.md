@@ -18,12 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Alembic database migrations**: added a proper migration system using Alembic. Migrations run automatically at startup (async-safe) and can also be managed via CLI (`alembic upgrade head`, `alembic history`). Existing databases are stamped at baseline and upgraded seamlessly
 - **Faster History page**: the History tab now shows placeholder shapes while loading, displays summary cards first, and remembers previous data so revisiting the page feels instant
 - **Smart API rate limiting**: all data requests to Leapmotor servers now go through a shared cache — no matter how many features need vehicle data (Home Assistant, history recording, dashboard), only one request is made within the configured time window. Configurable in Settings → Account with a dedicated "API Rate Limit" card (default: 10 seconds)
 - **Data freshness indicator**: the top navigation bar now shows how old the displayed data is (e.g. "32s ago", "5m ago"), with color coding — green for fresh (< 2 min), yellow for stale (< 10 min), red for old data. Updates every 10 seconds
 - **Real-time updates via WebSocket**: when the backend fetches fresh data from Leapmotor (via scheduler, MQTT polling, or any API call), it pushes the new vehicle status to the frontend instantly over a WebSocket connection — no manual refresh needed. The data age badge resets automatically on each push. Auto-reconnects if the connection drops
 - **Cloud disconnect/reconnect**: new `POST /api/disconnect` endpoint allows disconnecting from Leapmotor Cloud without logging out — accessible from the user avatar menu with a confirmation prompt
 - **Light theme**: full light mode with mint-green tinted palette inspired by the official Leapmotor app. Toggle in user menu and Settings → Preferences. Preference saved to database (default: dark)
+
+### Fixed
+
+- **Power chart not displaying**: the Charging/Discharging power chart on the History page was always empty because power values were never persisted to the database. Added `charging_power_kw` and `discharge_power_kw` columns (via Alembic migration) so power data from the Leapmotor API is now saved. For historical data collected before this fix, power is derived from stored current × voltage values
 
 ## [0.4.1] - 2026-05-04
 
