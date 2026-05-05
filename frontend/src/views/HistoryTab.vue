@@ -174,9 +174,14 @@
           <div class="chart-header"><CircleDot :size="16" class="chart-icon" /> Parked vs In use</div>
           <div class="chart-area"><canvas ref="usagePieCanvas" /></div>
         </div>
-        <div class="chart-card">
-          <div class="chart-header"><MapPin :size="16" class="chart-icon" /> Trip map (lat/lon)</div>
-          <div class="chart-area"><canvas ref="tripMapCanvas" /></div>
+        <div class="chart-card" :class="{ 'map-expanded': mapExpanded }">
+          <div class="chart-header">
+            <MapPin :size="16" class="chart-icon" /> Trip map (lat/lon)
+            <button class="map-expand-btn" @click="toggleMapExpand" :title="mapExpanded ? 'Minimize' : 'Maximize'">
+              <component :is="mapExpanded ? Minimize2 : Maximize2" :size="14" />
+            </button>
+          </div>
+          <div class="chart-area map-area" :class="{ 'map-area-expanded': mapExpanded }" ref="tripMapContainer"></div>
         </div>
         <div class="chart-card">
           <div class="chart-header"><BatteryWarning :size="16" class="chart-icon" /> Vampire drain (SOC loss while parked)</div>
@@ -224,8 +229,10 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { Chart, registerables } from 'chart.js'
 import { api } from '../composables/useApi'
-import { Battery, Map, Zap, Route, Thermometer, BarChart3, Table2, Gauge, Clock, CircleDot, MapPin, Circle, BatteryWarning, CalendarDays, ChevronLeft, ChevronRight, MoreVertical, Download } from 'lucide-vue-next'
+import { Battery, Map, Zap, Route, Thermometer, BarChart3, Table2, Gauge, Clock, CircleDot, MapPin, Circle, BatteryWarning, CalendarDays, ChevronLeft, ChevronRight, MoreVertical, Download, Maximize2, Minimize2 } from 'lucide-vue-next'
 import HistorySkeleton from '../components/HistorySkeleton.vue'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 
 Chart.register(...registerables)
 
@@ -801,13 +808,75 @@ const effSpeedCanvas = ref(null)
 const realVsEstCanvas = ref(null)
 const chargeSessionCanvas = ref(null)
 const usagePieCanvas = ref(null)
-const tripMapCanvas = ref(null)
+const tripMapContainer = ref(null)
+const mapExpanded = ref(false)
 const vampireCanvas = ref(null)
 const tirePressureCanvas = ref(null)
 const tireTempCanvas = ref(null)
 const tireDiffCanvas = ref(null)
 
 const charts = []
+let tripMap = null
+
+function getMapTileUrl() {
+  const isDark = document.documentElement.getAttribute('data-theme') !== 'light'
+  return isDark
+    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+}
+
+function toggleMapExpand() {
+  mapExpanded.value = !mapExpanded.value
+  nextTick(() => {
+    if (tripMap) tripMap.invalidateSize()
+  })
+}
+
+function renderTripMap(points) {
+  if (tripMap) {
+    tripMap.remove()
+    tripMap = null
+  }
+  const container = tripMapContainer.value
+  if (!container || points.length === 0) return
+
+  tripMap = L.map(container, { zoomControl: true, attributionControl: false })
+  L.tileLayer(getMapTileUrl(), { maxZoom: 18 }).addTo(tripMap)
+
+  const coords = points.map(s => [s.vehicle_latitude, s.vehicle_longitude])
+
+  // Draw polyline segments colored by speed
+  for (let i = 1; i < coords.length; i++) {
+    const speed = points[i].drive_speed ?? 0
+    const color = speed > 80 ? '#ef5350' : speed > 40 ? '#ffab40' : '#66bb6a'
+    L.polyline([coords[i - 1], coords[i]], { color, weight: 3, opacity: 0.8 }).addTo(tripMap)
+  }
+
+  // Speed markers on each point
+  for (let i = 0; i < coords.length; i++) {
+    const speed = points[i].drive_speed ?? 0
+    const time = points[i].timestamp ? new Date(points[i].timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
+    L.circleMarker(coords[i], {
+      radius: 4,
+      color: speed > 80 ? '#ef5350' : speed > 40 ? '#ffab40' : '#66bb6a',
+      fillColor: speed > 80 ? '#ef5350' : speed > 40 ? '#ffab40' : '#66bb6a',
+      fillOpacity: 0.7,
+      weight: 1,
+    }).bindTooltip(`${speed} km/h${time ? ' — ' + time : ''}`, { direction: 'top', offset: [0, -6] }).addTo(tripMap)
+  }
+
+  // Start / end markers (larger)
+  L.circleMarker(coords[0], { radius: 8, color: '#fff', fillColor: '#66bb6a', fillOpacity: 1, weight: 2 })
+    .bindTooltip('Start', { permanent: false })
+    .addTo(tripMap)
+  L.circleMarker(coords[coords.length - 1], { radius: 8, color: '#fff', fillColor: '#ef5350', fillOpacity: 1, weight: 2 })
+    .bindTooltip('End', { permanent: false })
+    .addTo(tripMap)
+
+  // Fit bounds
+  const bounds = L.latLngBounds(coords)
+  tripMap.fitBounds(bounds, { padding: [20, 20] })
+}
 
 function getChartColors() {
   const s = getComputedStyle(document.documentElement)
@@ -849,6 +918,10 @@ const chartDefaults = computed(() => {
 function destroyCharts() {
   charts.forEach(c => c.destroy())
   charts.length = 0
+  if (tripMap) {
+    tripMap.remove()
+    tripMap = null
+  }
 }
 
 function buildCharts() {
@@ -1103,33 +1176,11 @@ function buildCharts() {
     }))
   }
 
-  // Trip map (scatter lat/lon)
-  if (tripMapCanvas.value) {
-    const mapPoints = snaps.filter(s => s.vehicle_latitude && s.vehicle_longitude).map(s => ({
-      x: s.vehicle_longitude,
-      y: s.vehicle_latitude,
-      speed: s.drive_speed ?? 0,
-    }))
+  // Trip map (Leaflet)
+  if (tripMapContainer.value) {
+    const mapPoints = snaps.filter(s => s.vehicle_latitude && s.vehicle_longitude)
     if (mapPoints.length > 0) {
-      charts.push(new Chart(tripMapCanvas.value, {
-        type: 'scatter',
-        data: {
-          datasets: [{
-            data: mapPoints,
-            backgroundColor: mapPoints.map(p => p.speed > 50 ? '#ef5350' : p.speed > 20 ? '#ffab40' : '#66bb6a'),
-            pointRadius: 4,
-            pointHoverRadius: 6,
-          }],
-        },
-        options: {
-          ...chartDefaults.value,
-          scales: {
-            x: { ...chartDefaults.value.scales.x, title: { display: true, text: 'Longitude', color: getChartColors().tick } },
-            y: { ...chartDefaults.value.scales.y, title: { display: true, text: 'Latitude', color: getChartColors().tick } },
-          },
-          plugins: { ...chartDefaults.value.plugins, tooltip: { ...chartDefaults.value.plugins.tooltip, callbacks: { label: (ctx) => `Speed: ${mapPoints[ctx.dataIndex].speed} km/h` } } },
-        },
-      }))
+      renderTripMap(mapPoints)
     }
   }
 
@@ -1657,6 +1708,27 @@ onBeforeUnmount(destroyCharts)
 .chart-icon { font-size: 14px; }
 .chart-area { height: 180px; }
 .chart-area.tall { height: 200px; }
+.chart-area.map-area { height: 280px; z-index: 0; border-radius: 8px; overflow: hidden; }
+.chart-area.map-area-expanded { height: 70vh; }
+.map-expanded {
+  grid-column: 1 / -1;
+}
+.map-expand-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  transition: color 0.2s, background 0.2s;
+}
+.map-expand-btn:hover {
+  color: var(--text);
+  background: var(--border);
+}
 .chart-empty-msg {
   padding: 1.5rem 1rem;
   font-size: 0.82rem;
