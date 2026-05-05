@@ -24,7 +24,7 @@ const loaded = ref(false)
 // --- Static image (non-charging or base) ---
 const staticSrc = computed(() => {
   const ts = props.refreshKey || Date.now()
-  return `/api/vehicles/${props.vin}/picture/dynamic?_t=${ts}`
+  return `./api/vehicles/${props.vin}/picture/dynamic?_t=${ts}`
 })
 
 // --- Charging animation ---
