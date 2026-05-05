@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-05-05
+
 ### Added
 
 - **Live Refresh**: new background task that automatically refreshes vehicle data at a configurable interval and pushes updates to all connected WebSocket clients — no manual refresh needed. Configurable in Settings → Services with start/stop toggle and interval selector (10–3600 seconds)
