@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Power chart not displaying**: the Charging/Discharging power chart on the History page was always empty because power values were never persisted to the database. Added `charging_power_kw` and `discharge_power_kw` columns (via Alembic migration) so power data from the Leapmotor API is now saved. For historical data collected before this fix, power is derived from stored current × voltage values
+- **Vampire drain chart**: added an explanatory message when no drain events are detected, instead of showing an empty chart. Explains that the battery SOC remained stable during parked sessions and describes the conditions needed to trigger the chart
 
 ## [0.4.1] - 2026-05-04
 
