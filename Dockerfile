@@ -23,6 +23,8 @@ RUN uv sync --frozen --no-dev --no-editable
 COPY main.py models.py schemas.py ./
 COPY persistence/ ./persistence/
 COPY services/ ./services/
+COPY alembic.ini ./
+COPY migrations/ ./migrations/
 
 # Copy built frontend from stage 1
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist

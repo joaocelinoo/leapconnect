@@ -125,13 +125,17 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
     @staticmethod
     def _run_alembic_upgrade(sync_conn) -> None:
         """Run pending Alembic migrations on a sync connection."""
+        from pathlib import Path
+
         import sqlalchemy
         from alembic.config import Config
         from alembic.migration import MigrationContext
         from alembic.operations import Operations
         from alembic.script import ScriptDirectory
 
-        alembic_cfg = Config("alembic.ini")
+        base_dir = Path(__file__).resolve().parent.parent
+        alembic_cfg = Config(str(base_dir / "alembic.ini"))
+        alembic_cfg.set_main_option("script_location", str(base_dir / "migrations"))
         script = ScriptDirectory.from_config(alembic_cfg)
 
         # If alembic_version doesn't exist
