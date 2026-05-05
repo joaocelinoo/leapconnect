@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-04
+
 ### Changed
 
 - **History time filter redesigned**: replaced the period buttons (Today/7d/30d/90d) with a compact toolbar inspired by calendar apps — includes a calendar icon to open a date range picker, a label showing the selected date(s), a "Today" quick-jump pill, left/right arrows to navigate day-by-day, and a three-dot menu with CSV export
