@@ -10,6 +10,7 @@
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![GitHub Stars](https://img.shields.io/github/stars/markoceri/leapconnect?style=flat&logo=github)](https://github.com/markoceri/leapconnect/stargazers)
 [![GitHub Issues](https://img.shields.io/github/issues/markoceri/leapconnect)](https://github.com/markoceri/leapconnect/issues)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20me-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/markoceri)
 
 Web dashboard for monitoring and controlling Leapmotor vehicles via the [leapmotor-api](https://github.com/markoceri/leapmotor-api) Python client.
 
