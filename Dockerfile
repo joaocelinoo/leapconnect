@@ -10,6 +10,10 @@ RUN npm run build
 # ---- Stage 2: Python backend ----
 FROM python:3.13-slim AS runtime
 
+LABEL org.opencontainers.image.source=https://github.com/markoceri/leapconnect
+LABEL org.opencontainers.image.description="LeapConnect - Leapmotor vehicle management webapp"
+LABEL org.opencontainers.image.licenses=AGPL-3.0-only
+
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
