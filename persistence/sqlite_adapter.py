@@ -138,8 +138,8 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
         alembic_cfg.set_main_option("script_location", str(base_dir / "migrations"))
         script = ScriptDirectory.from_config(alembic_cfg)
 
-        # If alembic_version doesn't exist
-        # this is a pre-alembic DB: stamp it at baseline
+        # If alembic_version doesn't exist, determine if this is a fresh DB
+        # (created by create_all with full schema) or a pre-alembic DB.
         inspector = sqlalchemy.inspect(sync_conn)
         if not inspector.has_table("alembic_version"):
             sync_conn.execute(
@@ -147,8 +147,16 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                     "CREATE TABLE alembic_version (  version_num VARCHAR(32) NOT NULL)"
                 )
             )
+            # If the table already has columns from later migrations,
+            # it was created by create_all — stamp at head.
+            columns = {c["name"] for c in inspector.get_columns("vehicle_snapshots")}
+            if "charging_power_kw" in columns:
+                stamp_rev = script.get_current_head()
+            else:
+                stamp_rev = "0001"
             sync_conn.execute(
-                text("INSERT INTO alembic_version (version_num) VALUES ('0001')")
+                text("INSERT INTO alembic_version (version_num) VALUES (:rev)"),
+                {"rev": stamp_rev},
             )
 
         # Run pending migrations
