@@ -74,6 +74,13 @@ class SchedulerSettings:
 
 
 @dataclass
+class LiveRefreshSettings:
+    """Live refresh configuration for WebSocket-connected clients."""
+
+    interval_seconds: int = 30  # 0 = disabled, default 30s
+
+
+@dataclass
 class MqttSettings:
     """MQTT connection settings for Home Assistant integration."""
 

@@ -99,6 +99,17 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  const liveRefreshStatus = ref({ interval_seconds: 0, is_running: false })
+
+  async function loadLiveRefreshStatus() {
+    try {
+      const data = await api('GET', '/api/live-refresh')
+      liveRefreshStatus.value = { interval_seconds: data.interval_seconds, is_running: data.is_running }
+    } catch {
+      // ignore
+    }
+  }
+
   async function submitPin(pin) {
     await api('POST', '/api/set-pin', { pin })
     hasPin.value = true
@@ -374,6 +385,8 @@ export const useAppStore = defineStore('app', () => {
     setTheme,
     mqttStatus,
     loadMqttStatus,
+    liveRefreshStatus,
+    loadLiveRefreshStatus,
     connectWebSocket,
     disconnectWebSocket,
   }

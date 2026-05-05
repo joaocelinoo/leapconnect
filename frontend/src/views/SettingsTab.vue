@@ -201,6 +201,41 @@
         </div>
       </SectionCard>
 
+      <SectionCard title="Live Refresh" :icon="RefreshCw">
+        <p class="rate-limit-hint" style="margin-bottom:10px">Automatically push fresh vehicle data to the dashboard via WebSocket. Only active when the page is open.</p>
+        <div class="scheduler-service">
+          <div class="service-status">
+            <span class="status-dot" :class="liveRefresh.is_running ? 'running' : 'stopped'" />
+            <span class="service-text">
+              {{ liveRefresh.is_running ? 'Active' : 'Disabled' }}
+              <span v-if="liveRefresh.is_running" class="service-interval">· every {{ formatSeconds(liveRefresh.interval_seconds) }}</span>
+            </span>
+          </div>
+          <button
+            class="service-btn"
+            :class="liveRefresh.is_running ? 'btn-stop' : 'btn-start'"
+            :disabled="liveRefreshUpdating"
+            @click="toggleLiveRefresh"
+          >
+            {{ liveRefresh.is_running ? 'Disable' : 'Enable' }}
+          </button>
+        </div>
+
+        <div class="interval-row">
+          <span class="interval-label">Refresh interval</span>
+          <div class="interval-control">
+            <button class="interval-btn" @click="pendingLiveInterval = Math.max(10, pendingLiveInterval - 10)">−</button>
+            <span class="interval-value">{{ formatSeconds(pendingLiveInterval) }}</span>
+            <button class="interval-btn" @click="pendingLiveInterval = Math.min(600, pendingLiveInterval + 10)">+</button>
+            <button
+              class="interval-set-btn"
+              :disabled="pendingLiveInterval === liveRefresh.interval_seconds || liveRefreshUpdating"
+              @click="applyLiveInterval"
+            >Set</button>
+          </div>
+        </div>
+      </SectionCard>
+
       <SectionCard title="Home Assistant" :icon="Wifi">
         <div class="scheduler-service">
           <div class="service-status">
@@ -528,7 +563,7 @@ import InfoRow from '../components/InfoRow.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
 import { api } from '../composables/useApi'
 import { useAppStore } from '../stores/appStore'
-import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun } from 'lucide-vue-next'
+import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw } from 'lucide-vue-next'
 
 const store = useAppStore()
 
@@ -665,6 +700,44 @@ function applyRateLimit() {
   if (pendingRateLimit.value !== scheduler.rate_limit_seconds) {
     updateScheduler({ rate_limit_seconds: pendingRateLimit.value })
   }
+}
+
+// -- Live Refresh state -----------------------------------------------------
+const liveRefresh = reactive({
+  interval_seconds: 0,
+  is_running: false,
+})
+const pendingLiveInterval = ref(30)
+const liveRefreshUpdating = ref(false)
+
+async function loadLiveRefresh() {
+  try {
+    const data = await api('GET', '/api/live-refresh')
+    Object.assign(liveRefresh, data)
+    pendingLiveInterval.value = data.interval_seconds || 30
+  } catch { /* ignore */ }
+}
+
+async function toggleLiveRefresh() {
+  liveRefreshUpdating.value = true
+  try {
+    const newInterval = liveRefresh.is_running ? 0 : (pendingLiveInterval.value || 30)
+    const data = await api('PUT', '/api/live-refresh', { interval_seconds: newInterval })
+    Object.assign(liveRefresh, data)
+    if (data.interval_seconds > 0) pendingLiveInterval.value = data.interval_seconds
+  } catch { /* ignore */ }
+  finally { liveRefreshUpdating.value = false }
+}
+
+async function applyLiveInterval() {
+  if (pendingLiveInterval.value === liveRefresh.interval_seconds) return
+  liveRefreshUpdating.value = true
+  try {
+    const data = await api('PUT', '/api/live-refresh', { interval_seconds: pendingLiveInterval.value })
+    Object.assign(liveRefresh, data)
+    pendingLiveInterval.value = data.interval_seconds
+  } catch { /* ignore */ }
+  finally { liveRefreshUpdating.value = false }
 }
 
 function formatSeconds(s) {
@@ -981,6 +1054,7 @@ async function clearVehiclePin() {
 
 onMounted(() => {
   loadScheduler()
+  loadLiveRefresh()
   loadAccount()
   loadCertsStatus()
   loadPreferences()

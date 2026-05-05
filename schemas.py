@@ -503,6 +503,13 @@ class SchedulerStatusResponse(BaseModel):
     total_errors: int
 
 
+class LiveRefreshStatusResponse(BaseModel):
+    """Response for the live refresh status endpoint."""
+
+    interval_seconds: int
+    is_running: bool
+
+
 class MessageListResponse(BaseModel):
     count: int
     page_no: int

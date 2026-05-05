@@ -42,6 +42,7 @@ from schemas import (
     ConnectionStatusResponse,
     DailySummaryResponse,
     FullVehicleDataResponse,
+    LiveRefreshStatusResponse,
     LoginResponse,
     MessageListResponse,
     MessageSchema,
@@ -96,6 +97,11 @@ _scheduler: VehicleDataScheduler | None = None
 _mqtt_service: HomeAssistantMqttService | None = None
 _vehicle_cache: VehicleStatusCache | None = None
 
+# Live refresh — periodic cache refresh for VINs with active WebSocket clients
+_live_refresh_task: asyncio.Task | None = None
+_live_refresh_interval: int = 30  # default 30s, 0 = disabled
+_live_refresh_stop: asyncio.Event | None = None
+
 # ---------------------------------------------------------------------------
 # WebSocket connection manager
 # ---------------------------------------------------------------------------
@@ -130,6 +136,61 @@ async def _on_cache_update(
         "cache_age_seconds": round(cache_age, 1),
     }
     await _ws_broadcast(vin, payload)
+
+
+# ---------------------------------------------------------------------------
+# Live refresh — pushes fresh data to connected WebSocket clients
+# ---------------------------------------------------------------------------
+
+
+async def _live_refresh_loop() -> None:
+    """Periodically refresh vehicle cache for VINs with active WS clients."""
+    global _live_refresh_interval
+    _LOGGER.info("Live refresh started (interval=%d sec)", _live_refresh_interval)
+    try:
+        while _live_refresh_interval > 0:
+            await asyncio.sleep(_live_refresh_interval)
+            if _live_refresh_stop and _live_refresh_stop.is_set():
+                break
+            if not _vehicle_cache or not _vehicles:
+                continue
+            # Only refresh VINs with active WebSocket connections
+            active_vins = {vin for vin, conns in _ws_connections.items() if conns}
+            if not active_vins:
+                continue
+            for vehicle in _vehicles:
+                if vehicle.vin in active_vins:
+                    try:
+                        await _vehicle_cache.get(vehicle)
+                    except Exception as exc:
+                        _LOGGER.debug(
+                            "Live refresh failed for %s: %s", vehicle.vin, exc
+                        )
+    except asyncio.CancelledError:
+        pass
+    finally:
+        _LOGGER.info("Live refresh loop stopped")
+
+
+def _start_live_refresh() -> None:
+    """Start (or restart) the live refresh background task."""
+    global _live_refresh_task, _live_refresh_stop
+    _stop_live_refresh()
+    if _live_refresh_interval <= 0:
+        return
+    _live_refresh_stop = asyncio.Event()
+    _live_refresh_task = asyncio.create_task(_live_refresh_loop(), name="live-refresh")
+
+
+def _stop_live_refresh() -> None:
+    """Stop the live refresh background task if running."""
+    global _live_refresh_task, _live_refresh_stop
+    if _live_refresh_stop:
+        _live_refresh_stop.set()
+    if _live_refresh_task and not _live_refresh_task.done():
+        _live_refresh_task.cancel()
+    _live_refresh_task = None
+    _live_refresh_stop = None
 
 
 # Session management — in-memory token store
@@ -301,11 +362,22 @@ async def lifespan(app: FastAPI):
 
     _scheduler.set_on_status_callback(_on_scheduler_status)
 
+    # Initialize live refresh from saved setting
+    global _live_refresh_interval
+    live_raw = await _history_repo.get_setting("live_refresh_interval")
+    _live_refresh_interval = int(live_raw) if live_raw else 30
+    _LOGGER.info("Live refresh interval: %d sec", _live_refresh_interval)
+
     # Auto-connect using saved credentials
     await _auto_connect()
 
+    # Start live refresh if configured (needs client from auto-connect)
+    if _live_refresh_interval > 0 and _connected:
+        _start_live_refresh()
+
     yield
 
+    _stop_live_refresh()
     if _mqtt_service:
         await _mqtt_service.stop()
     if _scheduler:
@@ -698,6 +770,10 @@ async def save_account(request: Request) -> AccountSetupResponse:
             _scheduler.set_client(_client, _vehicles)
             _scheduler.start()
 
+        # Start live refresh if configured
+        if _live_refresh_interval > 0:
+            _start_live_refresh()
+
         return AccountSetupResponse(
             status="ok",
             connected=True,
@@ -751,6 +827,10 @@ async def reconnect() -> ReconnectResponse:
             _scheduler.set_client(_client, _vehicles)
             _scheduler.start()
 
+        # Start live refresh if configured
+        if _live_refresh_interval > 0:
+            _start_live_refresh()
+
         return ReconnectResponse(
             status="ok",
             connected=True,
@@ -770,6 +850,7 @@ async def reconnect() -> ReconnectResponse:
 async def disconnect() -> StatusResponse:
     """Disconnect from the Leapmotor cloud without clearing session."""
     global _sync_client, _client, _connected
+    _stop_live_refresh()
     if _scheduler:
         _scheduler.set_client(None, [])
     if _sync_client:
@@ -846,6 +927,10 @@ async def login(request: Request) -> LoginResponse:
         if _scheduler:
             _scheduler.set_client(_client, _vehicles)
             _scheduler.start()
+
+        # Start live refresh if configured
+        if _live_refresh_interval > 0:
+            _start_live_refresh()
 
         return LoginResponse(
             status="ok",
@@ -1480,6 +1565,62 @@ async def update_scheduler_settings(request: Request) -> SchedulerStatusResponse
     await _history_repo.save_scheduler_settings(settings)
 
     return _scheduler.status_dict()
+
+
+# ---------------------------------------------------------------------------
+# Routes — Live Refresh
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/live-refresh", response_model=LiveRefreshStatusResponse)
+async def get_live_refresh() -> LiveRefreshStatusResponse:
+    """Get live refresh status and current interval."""
+    is_running = _live_refresh_task is not None and not _live_refresh_task.done()
+    return LiveRefreshStatusResponse(
+        interval_seconds=_live_refresh_interval,
+        is_running=is_running,
+    )
+
+
+@app.put("/api/live-refresh", response_model=LiveRefreshStatusResponse)
+async def update_live_refresh(request: Request) -> LiveRefreshStatusResponse:
+    """Enable/disable live refresh or change its interval.
+
+    Set interval_seconds to 0 to disable. Valid range: 10–600 seconds.
+    """
+    global _live_refresh_interval
+    body = await request.json()
+    interval = body.get("interval_seconds")
+    if interval is None:
+        raise HTTPException(status_code=422, detail="'interval_seconds' is required")
+    try:
+        interval = int(interval)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=422, detail="'interval_seconds' must be an integer"
+        ) from exc
+    if interval < 0:
+        raise HTTPException(status_code=422, detail="'interval_seconds' must be >= 0")
+    # Cap at reasonable max (10 min) and min (10 sec when enabled)
+    if interval > 0:
+        interval = max(10, min(600, interval))
+
+    _live_refresh_interval = interval
+    # Persist
+    if _history_repo:
+        await _history_repo.save_setting("live_refresh_interval", str(interval))
+
+    # (Re)start or stop the loop
+    if interval > 0 and _connected:
+        _start_live_refresh()
+    else:
+        _stop_live_refresh()
+
+    is_running = _live_refresh_task is not None and not _live_refresh_task.done()
+    return LiveRefreshStatusResponse(
+        interval_seconds=_live_refresh_interval,
+        is_running=is_running,
+    )
 
 
 # ---------------------------------------------------------------------------

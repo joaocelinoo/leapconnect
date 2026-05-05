@@ -72,6 +72,13 @@
               <!-- Services status -->
               <div class="user-menu-services">
                 <div class="svc-row">
+                  <span class="svc-dot" :class="store.liveRefreshStatus.is_running ? 'on' : 'off'" />
+                  <span class="svc-label">Live Refresh</span>
+                  <span class="svc-value" :class="store.liveRefreshStatus.is_running ? 'on' : ''">
+                    {{ store.liveRefreshStatus.is_running ? `${store.liveRefreshStatus.interval_seconds}s` : 'Disabled' }}
+                  </span>
+                </div>
+                <div class="svc-row">
                   <span class="svc-dot" :class="store.mqttStatus.connected ? 'on' : store.mqttStatus.enabled ? 'warn' : 'off'" />
                   <span class="svc-label">Home Assistant</span>
                   <span class="svc-value" :class="store.mqttStatus.connected ? 'on' : store.mqttStatus.enabled ? 'warn' : ''">
@@ -312,7 +319,10 @@ function handleLogout() {
 
 function toggleUserMenu() {
   showUserMenu.value = !showUserMenu.value
-  if (showUserMenu.value) store.loadMqttStatus()
+  if (showUserMenu.value) {
+    store.loadMqttStatus()
+    store.loadLiveRefreshStatus()
+  }
 }
 
 // --- Data age indicator ---
@@ -365,6 +375,7 @@ onMounted(async () => {
   if (store.screen === 'app') {
     store.loadUnreadCount()
     store.loadMqttStatus()
+    store.loadLiveRefreshStatus()
     unreadInterval = setInterval(() => store.loadUnreadCount(), 60000)
   }
   // Tick data age every 10s
