@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Log level control**: you can now change the logging verbosity for the app and the leapmotor-api library separately from Settings → Advanced, without restarting the application
+- **Live log viewer**: a new real-time console output panel in Settings → Advanced lets you see application logs directly in the browser for easier troubleshooting. Disabled by default — enable it with a toggle when needed. Includes level filtering, text search, auto-scroll, and a live connection indicator
+
+### Changed
+
+- **Updated leapmotor-api to v0.1.6**
+
 ## [0.5.2] - 2026-05-05
 
 ### Added

@@ -317,6 +317,36 @@
 
     <!-- ═══════════════ ADVANCED ═══════════════ -->
     <template v-if="activeSection === 'advanced'">
+      <SectionCard title="Log Levels" :icon="SlidersHorizontal">
+        <p class="section-desc">Set the logging verbosity for the app and the leapmotor-api library independently.</p>
+        <div class="interval-row">
+          <span class="interval-label">LeapConnect App</span>
+          <div class="interval-control">
+            <select v-model="logLevels.app_level" class="log-level-select" @change="saveLogLevels">
+              <option v-for="l in logLevelOptions" :key="l" :value="l">{{ l }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="interval-row">
+          <span class="interval-label">leapmotor-api</span>
+          <div class="interval-control">
+            <select v-model="logLevels.library_level" class="log-level-select" @change="saveLogLevels">
+              <option v-for="l in logLevelOptions" :key="l" :value="l">{{ l }}</option>
+            </select>
+          </div>
+        </div>
+        <div v-if="logLevelSuccess" class="field-success">{{ logLevelSuccess }}</div>
+      </SectionCard>
+
+      <SectionCard title="Application Logs" :icon="Terminal">
+        <p class="section-desc">Live console output for troubleshooting. Entries stream in real-time via WebSocket.</p>
+        <div class="notif-row">
+          <span class="notif-label">Enable live log viewer</span>
+          <ToggleSwitch v-model="liveLogsEnabled" />
+        </div>
+      </SectionCard>
+      <LogViewer v-if="liveLogsEnabled" />
+
       <SectionCard title="Debug" :icon="Code">
         <p class="section-desc">Inspect raw JSON data returned by the Leapmotor API for troubleshooting.</p>
         <button class="save-btn" style="margin-top:4px" @click="showRaw = true">
@@ -561,9 +591,10 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import SectionCard from '../components/SectionCard.vue'
 import InfoRow from '../components/InfoRow.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
+import LogViewer from '../components/LogViewer.vue'
 import { api } from '../composables/useApi'
 import { useAppStore } from '../stores/appStore'
-import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw } from 'lucide-vue-next'
+import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal } from 'lucide-vue-next'
 
 const store = useAppStore()
 
@@ -1052,6 +1083,34 @@ async function clearVehiclePin() {
   await saveVehiclePin()
 }
 
+// -- Log levels -------------------------------------------------------------
+const logLevelOptions = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+const logLevels = reactive({ app_level: 'INFO', library_level: 'INFO' })
+const logLevelSuccess = ref('')
+const liveLogsEnabled = ref(false)
+
+async function loadLogLevels() {
+  try {
+    const data = await api('GET', '/api/logs/levels')
+    logLevels.app_level = data.app_level
+    logLevels.library_level = data.library_level
+  } catch { /* ignore */ }
+}
+
+async function saveLogLevels() {
+  logLevelSuccess.value = ''
+  try {
+    const data = await api('PUT', '/api/logs/levels', {
+      app_level: logLevels.app_level,
+      library_level: logLevels.library_level,
+    })
+    logLevels.app_level = data.app_level
+    logLevels.library_level = data.library_level
+    logLevelSuccess.value = 'Log levels updated'
+    setTimeout(() => { logLevelSuccess.value = '' }, 3000)
+  } catch { /* ignore */ }
+}
+
 onMounted(() => {
   loadScheduler()
   loadLiveRefresh()
@@ -1060,6 +1119,7 @@ onMounted(() => {
   loadPreferences()
   loadMqtt()
   loadVehiclePin()
+  loadLogLevels()
 })
 </script>
 
@@ -1688,4 +1748,26 @@ onMounted(() => {
   margin: 8px 0 0; padding-left: 20px;
 }
 .about-disclaimer li { margin-bottom: 6px; }
+
+/* Log level select */
+.log-level-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 6px 28px 6px 10px;
+  background: var(--input) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2388909a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 10px center;
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--mono);
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.log-level-select:focus { border-color: #00d4ff55; }
+.log-level-select option {
+  background: var(--card, #1a1e2e);
+  color: var(--text);
+}
 </style>

@@ -72,6 +72,65 @@ from services.vehicle_cache import VehicleStatusCache
 logging.basicConfig(level=logging.INFO)
 _LOGGER = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# In-memory ring-buffer log handler for frontend log viewer
+# ---------------------------------------------------------------------------
+class _RingBufferHandler(logging.Handler):
+    """Keeps the last N log records in memory and notifies WebSocket clients."""
+
+    def __init__(self, capacity: int = 2000) -> None:
+        super().__init__()
+        from collections import deque
+
+        self._buffer: deque[dict] = deque(maxlen=capacity)
+        self._ws_clients: set[WebSocket] = set()
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Store reference to the main asyncio event loop."""
+        self._loop = loop
+
+    def emit(self, record: logging.LogRecord) -> None:
+        entry = {
+            "ts": datetime.fromtimestamp(record.created).isoformat(
+                timespec="milliseconds"
+            ),
+            "level": record.levelname,
+            "name": record.name,
+            "message": self.format(record),
+        }
+        self._buffer.append(entry)
+        # Schedule broadcast to connected WS clients
+        loop = self._loop
+        if not loop or not self._ws_clients:
+            return
+        for ws in list(self._ws_clients):
+            try:
+                loop.call_soon_threadsafe(loop.create_task, ws.send_json(entry))
+            except Exception:
+                self._ws_clients.discard(ws)
+
+    def get_entries(self, limit: int = 200) -> list[dict]:
+        """Return the last *limit* log entries."""
+        entries = list(self._buffer)
+        return entries[-limit:]
+
+    def register_ws(self, ws: WebSocket) -> None:
+        self._ws_clients.add(ws)
+
+    def unregister_ws(self, ws: WebSocket) -> None:
+        self._ws_clients.discard(ws)
+
+
+_log_handler = _RingBufferHandler()
+_log_handler.setFormatter(
+    logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+)
+_log_handler.setLevel(logging.DEBUG)
+logging.getLogger().addHandler(_log_handler)
+
+
 try:
     _APP_VERSION = tomllib.loads(
         (Path(__file__).parent / "pyproject.toml").read_text()
@@ -303,6 +362,9 @@ async def _auto_connect() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _history_repo, _scheduler, _mqtt_service, _vehicle_cache
+    # Capture the running event loop for thread-safe log broadcasting
+    _log_handler.set_loop(asyncio.get_running_loop())
+
     db_path = os.environ.get(
         "HISTORY_DB_PATH", str(Path(__file__).parent / "history.db")
     )
@@ -2051,6 +2113,82 @@ async def get_unread_message_count() -> UnreadCountResponse:
     except LeapmotorApiError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return UnreadCountResponse(unread=count)
+
+
+# ---------------------------------------------------------------------------
+# Logging — level control & live viewer
+# ---------------------------------------------------------------------------
+
+_VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+
+
+@app.get("/api/logs/levels")
+async def get_log_levels():
+    """Return current log levels for app and leapmotor-api library."""
+    app_level = logging.getLogger("__main__").getEffectiveLevel()
+    lib_level = logging.getLogger("leapmotor_api").getEffectiveLevel()
+    return {
+        "app_level": logging.getLevelName(app_level),
+        "library_level": logging.getLevelName(lib_level),
+    }
+
+
+class _LogLevelBody(BaseModel):
+    app_level: str | None = None
+    library_level: str | None = None
+
+
+@app.put("/api/logs/levels")
+async def set_log_levels(body: _LogLevelBody):
+    """Change log levels at runtime for app and/or leapmotor-api."""
+    if body.app_level:
+        level = body.app_level.upper()
+        if level not in _VALID_LOG_LEVELS:
+            raise HTTPException(status_code=400, detail=f"Invalid level: {level}")
+        logging.getLogger("__main__").setLevel(level)
+        logging.getLogger("main").setLevel(level)
+        _LOGGER.info("App log level changed to %s", level)
+    if body.library_level:
+        level = body.library_level.upper()
+        if level not in _VALID_LOG_LEVELS:
+            raise HTTPException(status_code=400, detail=f"Invalid level: {level}")
+        logging.getLogger("leapmotor_api").setLevel(level)
+        _LOGGER.info("leapmotor-api log level changed to %s", level)
+    # Return current state
+    return await get_log_levels()
+
+
+@app.get("/api/logs/entries")
+async def get_log_entries(limit: int = 200):
+    """Return recent log entries from the in-memory buffer."""
+    if limit < 1:
+        limit = 1
+    elif limit > 2000:
+        limit = 2000
+    return {"entries": _log_handler.get_entries(limit)}
+
+
+@app.websocket("/ws/logs")
+async def ws_logs(websocket: WebSocket) -> None:
+    """Stream live log entries to connected clients via WebSocket."""
+    token = websocket.query_params.get(
+        "token",
+    ) or websocket.cookies.get(SESSION_COOKIE_NAME)
+    if not _validate_session(token):
+        await websocket.close(code=4401, reason="Unauthorized")
+        return
+
+    await websocket.accept()
+    _log_handler.register_ws(websocket)
+    _LOGGER.info("Log viewer WebSocket connected")
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        _log_handler.unregister_ws(websocket)
+        _LOGGER.info("Log viewer WebSocket disconnected")
 
 
 # ---------------------------------------------------------------------------
