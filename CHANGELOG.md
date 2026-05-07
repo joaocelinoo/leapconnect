@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-05-07
+
+### Changed
+
+- **Updated leapmotor-api to v0.1.7**: adds support for retrieving vehicle status on the B10 model using the same method as the C10
+
 ## [0.6.0] - 2026-05-06
 
 ### Added
