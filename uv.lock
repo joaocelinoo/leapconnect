@@ -525,7 +525,7 @@ requires-dist = [
     { name = "aiosqlite", specifier = ">=0.20.0" },
     { name = "alembic", specifier = ">=1.13.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
-    { name = "leapmotor-api", specifier = ">=0.1.7" },
+    { name = "leapmotor-api", specifier = "==0.2.0" },
     { name = "pillow", specifier = ">=10.0.0" },
     { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.0" },
@@ -544,16 +544,16 @@ dev = [
 
 [[package]]
 name = "leapmotor-api"
-version = "0.1.7"
+version = "0.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
     { name = "pillow" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/85/74/6c2c810ccc2bcb9907c073dd3a9b26fcb18377c50cb567bd86b8e9d2a7a0/leapmotor_api-0.1.7.tar.gz", hash = "sha256:15d3f0c3ee59d27b57285dba11a3000602395868d7712ed1977bdc4b77897f85", size = 53605, upload-time = "2026-05-07T12:56:43.717Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c4/8c/1903818d7a14fb3e7c96174f4a1becac22449c75ce49511b20e88f711827/leapmotor_api-0.2.0.tar.gz", hash = "sha256:46fef57a0669972dc433c73b4181705b07c717614a6b383ec2d49ff32357f69c", size = 100638, upload-time = "2026-05-13T23:37:37.681Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ed/b9/c1666e80e01449bcaa1e635699b5df05a72d8b73f5c8cf72672a76fe8724/leapmotor_api-0.1.7-py3-none-any.whl", hash = "sha256:f2508cc93df7bcde0ea76d6c325f094a66547998e7badb3a1344368341351813", size = 42372, upload-time = "2026-05-07T12:56:42.161Z" },
+    { url = "https://files.pythonhosted.org/packages/93/2c/cc415ead579e5ec5b0e4652340e5083006e5dc9864e43e3509a770f17b1f/leapmotor_api-0.2.0-py3-none-any.whl", hash = "sha256:3f6e52cfca6f771b7d8b7e8ba3b8a85926969bd09a326cd8bd477b013a65d13b", size = 59882, upload-time = "2026-05-13T23:37:35.835Z" },
 ]
 
 [[package]]
