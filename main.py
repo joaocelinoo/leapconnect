@@ -2002,7 +2002,7 @@ class ClimateRequest(BaseModel):
     operate: str | None = None  # "manual" or "auto"
     position: str | None = None  # "all"
     temperature: str | None = None  # e.g. "24"
-    windlevel: str | None = None  # e.g. "4"
+    windlevel: int | None = None  # 1–7
     wshld: str | None = None  # "1" (normal) or "2" (defrost)
 
 
@@ -2079,6 +2079,376 @@ async def send_destination(vin: str, request: Request) -> dict:
         latitude=float(latitude),
         longitude=float(longitude),
     )
+
+
+# ---------------------------------------------------------------------------
+# Routes — New Vehicle Commands
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/vehicles/{vin}/battery-preheat-off")
+async def battery_preheat_off(vin: str) -> dict:
+    """Stop battery preheating remotely."""
+    client = _get_client()
+    return await client.battery_preheat_off(vin)
+
+
+@app.post("/api/vehicles/{vin}/sentry-mode/on")
+async def sentry_mode_on(vin: str) -> dict:
+    """Activate sentry mode (dashcam/sentinel)."""
+    client = _get_client()
+    return await client.sentry_mode_on(vin)
+
+
+@app.post("/api/vehicles/{vin}/sentry-mode/off")
+async def sentry_mode_off(vin: str) -> dict:
+    """Deactivate sentry mode."""
+    client = _get_client()
+    return await client.sentry_mode_off(vin)
+
+
+@app.post("/api/vehicles/{vin}/charging/start")
+async def start_charging(vin: str) -> dict:
+    """Start charging the vehicle."""
+    client = _get_client()
+    return await client.start_charging(vin)
+
+
+@app.post("/api/vehicles/{vin}/charging/stop")
+async def stop_charging(vin: str) -> dict:
+    """Stop charging the vehicle."""
+    client = _get_client()
+    return await client.stop_charging(vin)
+
+
+@app.post("/api/vehicles/{vin}/steering-wheel-heat/on")
+async def steering_wheel_heat_on(vin: str) -> dict:
+    """Turn on steering wheel heating."""
+    client = _get_client()
+    return await client.steering_wheel_heat_on(vin)
+
+
+@app.post("/api/vehicles/{vin}/steering-wheel-heat/off")
+async def steering_wheel_heat_off(vin: str) -> dict:
+    """Turn off steering wheel heating."""
+    client = _get_client()
+    return await client.steering_wheel_heat_off(vin)
+
+
+@app.post("/api/vehicles/{vin}/fuel-heating/on")
+async def fuel_heating_on(vin: str) -> dict:
+    """Turn on fuel heating."""
+    client = _get_client()
+    return await client.fuel_heating_on(vin)
+
+
+@app.post("/api/vehicles/{vin}/fuel-heating/off")
+async def fuel_heating_off(vin: str) -> dict:
+    """Turn off fuel heating."""
+    client = _get_client()
+    return await client.fuel_heating_off(vin)
+
+
+@app.post("/api/vehicles/{vin}/rearview-mirror-heat/on")
+async def rearview_mirror_heat_on(vin: str) -> dict:
+    """Turn on rearview mirror heating."""
+    client = _get_client()
+    return await client.rearview_mirror_heat_on(vin)
+
+
+@app.post("/api/vehicles/{vin}/rearview-mirror-heat/off")
+async def rearview_mirror_heat_off(vin: str) -> dict:
+    """Turn off rearview mirror heating."""
+    client = _get_client()
+    return await client.rearview_mirror_heat_off(vin)
+
+
+@app.post("/api/vehicles/{vin}/healthy-charging/on")
+async def healthy_charging_on(vin: str) -> dict:
+    """Enable healthy charging."""
+    client = _get_client()
+    return await client.healthy_charging_on(vin)
+
+
+@app.post("/api/vehicles/{vin}/healthy-charging/off")
+async def healthy_charging_off(vin: str) -> dict:
+    """Disable healthy charging."""
+    client = _get_client()
+    return await client.healthy_charging_off(vin)
+
+
+@app.post("/api/vehicles/{vin}/on3/on")
+async def on3_on(vin: str) -> dict:
+    """Activate ON3 (ignition)."""
+    client = _get_client()
+    return await client.on3_on(vin)
+
+
+@app.post("/api/vehicles/{vin}/on3/off")
+async def on3_off(vin: str) -> dict:
+    """Deactivate ON3 (ignition)."""
+    client = _get_client()
+    return await client.on3_off(vin)
+
+
+@app.post("/api/vehicles/{vin}/ble-key-restart")
+async def ble_key_restart(vin: str) -> dict:
+    """Restart BLE key module."""
+    client = _get_client()
+    return await client.ble_key_restart(vin)
+
+
+@app.post("/api/vehicles/{vin}/sunroof/open")
+async def open_sunroof(vin: str) -> dict:
+    """Open the sunroof."""
+    client = _get_client()
+    return await client.open_sunroof(vin)
+
+
+@app.post("/api/vehicles/{vin}/sunroof/close")
+async def close_sunroof(vin: str) -> dict:
+    """Close the sunroof."""
+    client = _get_client()
+    return await client.close_sunroof(vin)
+
+
+@app.post("/api/vehicles/{vin}/unlock-charger")
+async def unlock_charger(vin: str) -> dict:
+    """Unlock the charging connector."""
+    client = _get_client()
+    return await client.unlock_charger(vin)
+
+
+@app.post("/api/vehicles/{vin}/hotspot")
+async def toggle_hotspot(vin: str) -> dict:
+    """Toggle vehicle WiFi hotspot."""
+    client = _get_client()
+    return await client.hotspot(vin)
+
+
+@app.post("/api/vehicles/{vin}/autopark")
+async def autopark(vin: str) -> dict:
+    """Trigger autopark."""
+    client = _get_client()
+    return await client.autopark(vin)
+
+
+# -- Parameterized commands --
+
+
+class SeatHeatRequest(BaseModel):
+    position: int  # 1–6
+    level: int  # 0–3
+
+
+@app.post("/api/vehicles/{vin}/seat-heat")
+async def seat_heat(vin: str, body: SeatHeatRequest) -> dict:
+    """Control seat heating (position 1-6, level 0-3)."""
+    client = _get_client()
+    return await client.seat_heat(vin, position=body.position, level=body.level)
+
+
+class SeatVentilationRequest(BaseModel):
+    position: int  # 1–6
+    level: int  # 0–3
+
+
+@app.post("/api/vehicles/{vin}/seat-ventilation")
+async def seat_ventilation(vin: str, body: SeatVentilationRequest) -> dict:
+    """Control seat ventilation (position 1-6, level 0-3)."""
+    client = _get_client()
+    return await client.seat_ventilation(vin, position=body.position, level=body.level)
+
+
+class SpeedLimitRequest(BaseModel):
+    value: str  # km/h as string
+
+
+@app.post("/api/vehicles/{vin}/speed-limit")
+async def set_speed_limit(vin: str, body: SpeedLimitRequest) -> dict:
+    """Set the vehicle speed limit."""
+    client = _get_client()
+    return await client.set_speed_limit(vin, value=body.value)
+
+
+class MediaRequest(BaseModel):
+    operation: str  # "play", "pause", "next", "previous"
+
+
+@app.post("/api/vehicles/{vin}/music")
+async def music(vin: str, body: MediaRequest) -> dict:
+    """Control music playback."""
+    client = _get_client()
+    return await client.music(vin, operation=body.operation)
+
+
+@app.post("/api/vehicles/{vin}/video")
+async def video(vin: str, body: MediaRequest) -> dict:
+    """Control video playback."""
+    client = _get_client()
+    return await client.video(vin, operation=body.operation)
+
+
+class FotaRequest(BaseModel):
+    task_id: int
+
+
+@app.post("/api/vehicles/{vin}/fota/download")
+async def fota_download(vin: str, body: FotaRequest) -> dict:
+    """Start FOTA firmware download."""
+    client = _get_client()
+    return await client.fota_download(vin, task_id=body.task_id)
+
+
+@app.post("/api/vehicles/{vin}/fota/install")
+async def fota_install(vin: str, body: FotaRequest) -> dict:
+    """Start FOTA firmware installation."""
+    client = _get_client()
+    return await client.fota_install(vin, task_id=body.task_id)
+
+
+class FotaScheduleRequest(BaseModel):
+    task_id: int
+    schedule_time: str
+
+
+@app.post("/api/vehicles/{vin}/fota/schedule")
+async def fota_schedule(vin: str, body: FotaScheduleRequest) -> dict:
+    """Schedule a FOTA firmware installation."""
+    client = _get_client()
+    return await client.fota_schedule(
+        vin, task_id=body.task_id, schedule_time=body.schedule_time
+    )
+
+
+class RearSeatsRequest(BaseModel):
+    seat_info: str
+
+
+@app.post("/api/vehicles/{vin}/rear-seats")
+async def rear_seats(vin: str, body: RearSeatsRequest) -> dict:
+    """Control rear seats (C16 only)."""
+    client = _get_client()
+    return await client.rear_seats(vin, seat_info=body.seat_info)
+
+
+@app.post("/api/vehicles/{vin}/prepare-car")
+async def prepare_car(vin: str, request: Request) -> dict:
+    """Prepare car command (C10/B10)."""
+    client = _get_client()
+    body = await request.json()
+    return await client.prepare_car(vin, params=body)
+
+
+@app.post("/api/vehicles/{vin}/seat-adjust")
+async def seat_adjust(vin: str, request: Request) -> dict:
+    """Adjust seat position (C10/C16)."""
+    client = _get_client()
+    body = await request.json()
+    return await client.seat_adjust(vin, params=body)
+
+
+@app.post("/api/vehicles/{vin}/piloted-parking")
+async def piloted_parking(vin: str, request: Request) -> dict:
+    """Trigger piloted parking (C10/C16)."""
+    client = _get_client()
+    body = await request.json()
+    return await client.piloted_parking(vin, params=body)
+
+
+# ---------------------------------------------------------------------------
+# Routes — New Data Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/vehicles/{vin}/charging-history")
+async def get_charging_history(
+    vin: str,
+    start: str | None = None,
+    end: str | None = None,
+    timezone: str = "GMT+00:00",
+    page: int = 1,
+    size: int = 10,
+) -> dict:
+    """Get paginated charging session history."""
+    from datetime import date as date_cls
+
+    client = _get_client()
+    today = date_cls.today()
+    start_date = date_cls.fromisoformat(start) if start else today.replace(day=1)
+    end_date = date_cls.fromisoformat(end) if end else today
+    result = await client.get_charging_daily_detail(
+        vin,
+        start_time=start_date,
+        end_time=end_date,
+        timezone=timezone,
+        page_num=page,
+        page_size=size,
+    )
+    return {
+        "records": [
+            {
+                "start_ts": r.start_ts,
+                "end_ts": r.end_ts,
+                "charge_type": r.charge_type,
+                "energy_kwh": r.energy_kwh,
+                "latitude": r.latitude,
+                "longitude": r.longitude,
+                "timezone": r.timezone,
+                "start_datetime": r.start_datetime.isoformat()
+                if r.start_datetime
+                else None,
+                "end_datetime": r.end_datetime.isoformat() if r.end_datetime else None,
+                "duration_seconds": r.duration_seconds,
+                "is_fast_charge": r.is_fast_charge,
+            }
+            for r in result.records
+        ],
+        "total": result.total,
+        "page_num": result.page_num,
+        "page_size": result.page_size,
+    }
+
+
+@app.get("/api/vehicles/{vin}/consumption/weekly-rank")
+async def get_consumption_weekly_rank(vin: str) -> dict:
+    """Get weekly energy consumption ranking."""
+    client = _get_client()
+    vehicle = _find_vehicle(vin)
+    result = await client.get_consumption_weekly_rank(vehicle)
+    return {
+        "rank": {
+            "result": result.rank.result,
+            "rank": result.rank.rank,
+            "hundred_km_ec": result.rank.hundred_km_ec,
+            "hundred_mi_kwh_ec": result.rank.hundred_mi_kwh_ec,
+        }
+        if result.rank
+        else None,
+        "weekly": [
+            {
+                "week_start": w.week_start,
+                "week_end": w.week_end,
+                "hundred_km_ec": w.hundred_km_ec,
+                "hundred_mi_kwh_ec": w.hundred_mi_kwh_ec,
+            }
+            for w in result.weekly
+        ],
+    }
+
+
+@app.get("/api/vehicles/{vin}/consumption/last-week")
+async def get_consumption_last_week(vin: str) -> dict:
+    """Get last week energy consumption breakdown."""
+    client = _get_client()
+    vehicle = _find_vehicle(vin)
+    result = await client.get_consumption_last_week_breakdown(vehicle)
+    return {
+        "driver_ec": result.driver_ec,
+        "ac_ec": result.ac_ec,
+        "other_ec": result.other_ec,
+        "total_ec": result.total_ec,
+    }
 
 
 # ---------------------------------------------------------------------------

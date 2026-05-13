@@ -5,6 +5,14 @@ from __future__ import annotations
 from leapmotor_api.models import Message, Vehicle, VehicleStatus
 from pydantic import BaseModel
 
+
+def _enum_val(v):
+    """Extract .value from an IntEnum/StrEnum, pass through None."""
+    if v is None:
+        return None
+    return v.value if hasattr(v, "value") else v
+
+
 # ---------------------------------------------------------------------------
 # Vehicle
 # ---------------------------------------------------------------------------
@@ -52,9 +60,11 @@ class VehicleSchema(BaseModel):
             seat_layout=v.seat_layout,
             rudder=v.rudder,
             year=v.year,
-            rights=v.rights,
-            abilities=v.abilities or [],
-            module_rights=v.module_rights,
+            rights=",".join(str(r.value) for r in v.rights) if v.rights else None,
+            abilities=[str(a.value) for a in v.abilities] if v.abilities else [],
+            module_rights=",".join(str(m.value) for m in v.module_rights)
+            if v.module_rights
+            else None,
             allocation_code=v.allocation_code,
             raw=v.raw,
         )
@@ -65,18 +75,37 @@ class VehicleSchema(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class ChargePlanSchema(BaseModel):
+    soc_setting: int | None = None
+    time_setting: str | None = None
+    enabled: int | None = None
+    start: str | None = None
+    end: str | None = None
+    cycles: str | None = None
+    circulation: int | None = None
+    recharge: int | None = None
+    cancelled_once: int | None = None
+
+
 class BatterySchema(BaseModel):
     soc: int | None = None
+    precise_soc: float | None = None
     charge_state: int | None = None
     charge_state_label: str | None = None
     charge_remain_time: int | None = None
     charge_soc_setting: int | None = None
     charge_time_setting: str | None = None
+    charge_completed: int | None = None
     dc_input_fast_charge: int | None = None
+    ac_input_slow_charge: int | None = None
     dump_energy: float | None = None
     battery_current: float | None = None
     battery_voltage: float | None = None
     expected_mileage: int | None = None
+    min_battery_temp: int | None = None
+    battery_thermal_request: int | None = None
+    healthy_charge_enabled: int | None = None
+    charge_plan: ChargePlanSchema | None = None
     # Computed properties
     dump_energy_kwh: float | None = None
     battery_power: float | None = None
@@ -84,6 +113,8 @@ class BatterySchema(BaseModel):
     discharging_power_kw: float | None = None
     is_charging: bool | None = None
     is_discharging: bool | None = None
+    is_charge_fast_gun_insert: bool | None = None
+    is_charge_slow_gun_insert: bool | None = None
 
 
 class DrivingSchema(BaseModel):
@@ -91,6 +122,14 @@ class DrivingSchema(BaseModel):
     total_mileage: int | None = None
     gear_status: int | None = None
     is_parked: bool | None = None
+    vehicle_state: int | None = None
+    speed_limit: int | None = None
+    speed_limit_unit: int | None = None
+    speed_limit_active: int | None = None
+    live_remaining_range: int | None = None
+    max_range: int | None = None
+    range_mode: int | None = None
+    parking_brake_state: int | None = None
 
 
 class LocationSchema(BaseModel):
@@ -101,6 +140,8 @@ class LocationSchema(BaseModel):
 class ClimateSchema(BaseModel):
     ac_switch: bool | None = None
     ac_setting: float | None = None
+    ac_setting_right: float | None = None
+    interior_temp: float | None = None
     ac_air_volume: int | None = None
     ac_air_volume_setting: int | None = None
     ac_wind_direction: int | None = None
@@ -111,6 +152,14 @@ class ClimateSchema(BaseModel):
     min_single_temp: int | None = None
     ptc_state: int | None = None
     ptc_power_setting_value: int | None = None
+    recirculation_mode: int | None = None
+    windshield_defrost: int | None = None
+    rear_window_heating: int | None = None
+    climate_mode: int | None = None
+    rapid_cooling: int | None = None
+    rapid_heating: int | None = None
+    ac_operate_mode: int | None = None
+    is_windshield_defrost_active: bool | None = None
 
 
 class DoorSchema(BaseModel):
@@ -161,8 +210,27 @@ class ConnectivitySchema(BaseModel):
     hotspot_state: bool | None = None
 
 
+class SeatComfortSchema(BaseModel):
+    driver_seat_heating: int | None = None
+    driver_seat_ventilation: int | None = None
+    passenger_seat_heating: int | None = None
+    passenger_seat_ventilation: int | None = None
+    steering_wheel_heating: int | None = None
+    steering_wheel_heater_minutes: int | None = None
+
+
+class SecuritySchema(BaseModel):
+    vehicle_security_active: int | None = None
+    sentry_mode: int | None = None
+    left_mirror_heating: int | None = None
+    right_mirror_heating: int | None = None
+    roof_opening: int | None = None
+    is_security_active: bool | None = None
+
+
 class IgnitionSchema(BaseModel):
     bcm_key_position_on1: bool | None = None
+    bcm_key_position_on2: bool | None = None
     bcm_key_position_on3: bool | None = None
 
 
@@ -180,6 +248,8 @@ class VehicleStatusSchema(BaseModel):
     windows: WindowSchema
     tires: TireSchema
     connectivity: ConnectivitySchema
+    seat_comfort: SeatComfortSchema
+    security: SecuritySchema
     ignition: IgnitionSchema
     # Computed (top-level convenience)
     is_locked: bool | None = None
@@ -187,58 +257,102 @@ class VehicleStatusSchema(BaseModel):
     is_plugged: bool | None = None
     is_regening: bool | None = None
     is_parked: bool | None = None
+    is_driving: bool | None = None
     timestamps: TimestampsSchema
     raw: dict | None = None
 
     @classmethod
     def from_model(cls, status: VehicleStatus) -> VehicleStatusSchema:
+        b = status.battery
+        cp = b.charge_plan
+        d = status.driving
+        c = status.climate
+        sc = status.seat_comfort
+        sec = status.security
+        ign = status.ignition
+
         return cls(
             battery=BatterySchema(
-                soc=status.battery.soc,
-                charge_state=status.battery.charge_state.value
-                if status.battery.charge_state
+                soc=b.soc,
+                precise_soc=b.precise_soc,
+                charge_state=_enum_val(b.charge_state),
+                charge_state_label=b.charge_state.name
+                if b.charge_state is not None
                 else None,
-                charge_state_label=status.battery.charge_state.name
-                if status.battery.charge_state
-                else None,
-                charge_remain_time=status.battery.charge_remain_time,
-                charge_soc_setting=status.battery.charge_soc_setting,
-                charge_time_setting=status.battery.charge_time_setting,
-                dc_input_fast_charge=status.battery.dc_input_fast_charge,
-                dump_energy=status.battery.dump_energy,
-                battery_current=status.battery.battery_current,
-                battery_voltage=status.battery.battery_voltage,
-                expected_mileage=status.battery.expected_mileage,
-                dump_energy_kwh=status.battery.dump_energy_kwh,
-                battery_power=status.battery.battery_power,
-                charging_power_kw=status.battery.charging_power_kw,
-                discharging_power_kw=status.battery.discharging_power_kw,
-                is_charging=status.battery.is_charging,
-                is_discharging=status.battery.is_discharging,
+                charge_remain_time=b.charge_remain_time,
+                charge_soc_setting=cp.soc_setting,
+                charge_time_setting=cp.time_setting,
+                charge_completed=b.charge_completed,
+                dc_input_fast_charge=b.dc_input_fast_charge,
+                ac_input_slow_charge=b.ac_input_slow_charge,
+                dump_energy=b.dump_energy,
+                battery_current=b.battery_current,
+                battery_voltage=b.battery_voltage,
+                expected_mileage=b.expected_mileage,
+                min_battery_temp=b.min_battery_temp,
+                battery_thermal_request=b.battery_thermal_request,
+                healthy_charge_enabled=b.healthy_charge_enabled,
+                charge_plan=ChargePlanSchema(
+                    soc_setting=cp.soc_setting,
+                    time_setting=cp.time_setting,
+                    enabled=cp.enabled,
+                    start=cp.start,
+                    end=cp.end,
+                    cycles=cp.cycles,
+                    circulation=cp.circulation,
+                    recharge=cp.recharge,
+                    cancelled_once=cp.cancelled_once,
+                ),
+                dump_energy_kwh=b.dump_energy_kwh,
+                battery_power=b.battery_power,
+                charging_power_kw=b.charging_power_kw,
+                discharging_power_kw=b.discharging_power_kw,
+                is_charging=b.is_charging,
+                is_discharging=b.is_discharging,
+                is_charge_fast_gun_insert=b.is_charge_fast_gun_insert,
+                is_charge_slow_gun_insert=b.is_charge_slow_gun_insert,
             ),
             driving=DrivingSchema(
-                speed=status.driving.speed,
-                total_mileage=status.driving.total_mileage,
-                gear_status=status.driving.gear_status,
-                is_parked=status.driving.is_parked,
+                speed=d.speed,
+                total_mileage=d.total_mileage,
+                gear_status=_enum_val(d.gear_status),
+                is_parked=d.is_parked,
+                vehicle_state=d.vehicle_state,
+                speed_limit=d.speed_limit,
+                speed_limit_unit=d.speed_limit_unit,
+                speed_limit_active=d.speed_limit_active,
+                live_remaining_range=d.live_remaining_range,
+                max_range=d.max_range,
+                range_mode=d.range_mode,
+                parking_brake_state=d.parking_brake_state,
             ),
             location=LocationSchema(
                 latitude=status.location.latitude,
                 longitude=status.location.longitude,
             ),
             climate=ClimateSchema(
-                ac_switch=status.climate.ac_switch,
-                ac_setting=status.climate.ac_setting,
-                ac_air_volume=status.climate.ac_air_volume,
-                ac_air_volume_setting=status.climate.ac_air_volume_setting,
-                ac_wind_direction=status.climate.ac_wind_direction,
-                ac_temp_mode=status.climate.ac_temp_mode,
-                ac_circle_mode=status.climate.ac_circle_mode,
-                ac_cooling_and_heating=status.climate.ac_cooling_and_heating,
-                outdoor_temp=status.climate.outdoor_temp,
-                min_single_temp=status.climate.min_single_temp,
-                ptc_state=status.climate.ptc_state,
-                ptc_power_setting_value=status.climate.ptc_power_setting_value,
+                ac_switch=c.ac_switch,
+                ac_setting=c.ac_setting,
+                ac_setting_right=c.ac_setting_right,
+                interior_temp=c.interior_temp,
+                ac_air_volume=c.ac_air_volume,
+                ac_air_volume_setting=c.ac_air_volume_setting,
+                ac_wind_direction=c.ac_wind_direction,
+                ac_temp_mode=c.ac_temp_mode,
+                ac_circle_mode=c.ac_circle_mode,
+                ac_cooling_and_heating=_enum_val(c.ac_cooling_and_heating),
+                outdoor_temp=c.outdoor_temp,
+                min_single_temp=c.min_single_temp,
+                ptc_state=c.ptc_state,
+                ptc_power_setting_value=c.ptc_power_setting_value,
+                recirculation_mode=_enum_val(c.recirculation_mode),
+                windshield_defrost=_enum_val(c.windshield_defrost),
+                rear_window_heating=c.rear_window_heating,
+                climate_mode=_enum_val(c.climate_mode),
+                rapid_cooling=c.rapid_cooling,
+                rapid_heating=c.rapid_heating,
+                ac_operate_mode=_enum_val(c.ac_operate_mode),
+                is_windshield_defrost_active=c.is_windshield_defrost_active,
             ),
             doors=DoorSchema(
                 driver_door_lock_status=status.doors.driver_door_lock_status,
@@ -282,15 +396,33 @@ class VehicleStatusSchema(BaseModel):
                 bluetooth_addr=status.connectivity.bluetooth_addr,
                 hotspot_state=status.connectivity.hotspot_state,
             ),
+            seat_comfort=SeatComfortSchema(
+                driver_seat_heating=sc.driver_seat_heating,
+                driver_seat_ventilation=sc.driver_seat_ventilation,
+                passenger_seat_heating=sc.passenger_seat_heating,
+                passenger_seat_ventilation=sc.passenger_seat_ventilation,
+                steering_wheel_heating=sc.steering_wheel_heating,
+                steering_wheel_heater_minutes=sc.steering_wheel_heater_minutes,
+            ),
+            security=SecuritySchema(
+                vehicle_security_active=_enum_val(sec.vehicle_security_active),
+                sentry_mode=sec.sentry_mode,
+                left_mirror_heating=sec.left_mirror_heating,
+                right_mirror_heating=sec.right_mirror_heating,
+                roof_opening=sec.roof_opening,
+                is_security_active=sec.is_security_active,
+            ),
             ignition=IgnitionSchema(
-                bcm_key_position_on1=status.ignition.bcm_key_position_on1,
-                bcm_key_position_on3=status.ignition.bcm_key_position_on3,
+                bcm_key_position_on1=ign.bcm_key_position_on1,
+                bcm_key_position_on2=ign.bcm_key_position_on2,
+                bcm_key_position_on3=ign.bcm_key_position_on3,
             ),
             is_locked=status.is_locked,
             is_charging=status.is_charging,
             is_plugged=status.is_plugged,
             is_regening=status.is_regening,
             is_parked=status.is_parked,
+            is_driving=status.is_driving,
             timestamps=TimestampsSchema(
                 collect_time=status.collect_time.isoformat()
                 if status.collect_time

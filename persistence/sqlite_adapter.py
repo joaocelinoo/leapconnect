@@ -61,6 +61,7 @@ class VehicleSnapshotRow(Base):
     tire_fr_pressure = Column(Float, nullable=True)
     tire_rl_pressure = Column(Float, nullable=True)
     tire_rr_pressure = Column(Float, nullable=True)
+    is_regening = Column(Boolean, nullable=True)
 
 
 class AppSettingRow(Base):
@@ -150,8 +151,10 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
             # If the table already has columns from later migrations,
             # it was created by create_all — stamp at head.
             columns = {c["name"] for c in inspector.get_columns("vehicle_snapshots")}
-            if "charging_power_kw" in columns:
+            if "is_regening" in columns:
                 stamp_rev = script.get_current_head()
+            elif "charging_power_kw" in columns:
+                stamp_rev = "0002"
             else:
                 stamp_rev = "0001"
             sync_conn.execute(
@@ -203,6 +206,7 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
             tire_fr_pressure=snapshot.tire_front_right_pressure,
             tire_rl_pressure=snapshot.tire_rear_left_pressure,
             tire_rr_pressure=snapshot.tire_rear_right_pressure,
+            is_regening=snapshot.vehicle_is_regening,
         )
         async with self._session_factory() as session:
             session.add(row)
@@ -271,6 +275,7 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                 tire_front_right_pressure=r.tire_fr_pressure,
                 tire_rear_left_pressure=r.tire_rl_pressure,
                 tire_rear_right_pressure=r.tire_rr_pressure,
+                vehicle_is_regening=r.is_regening,
             )
             for r in rows
         ]

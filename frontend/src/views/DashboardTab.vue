@@ -112,6 +112,102 @@
       </div>
     </div>
 
+    <!-- Charging Controls -->
+    <div class="controls-card">
+      <div class="controls-header">
+        <PlugZap :size="16" class="controls-icon" />
+        <span class="controls-title">Charging</span>
+      </div>
+      <div class="controls-grid">
+        <button
+          v-for="c in chargingControls"
+          :key="c.action"
+          class="ctrl-btn"
+          :class="{ loading: loadingAction === c.action }"
+          :style="{ '--c': c.color }"
+          @click="c.modal ? openModal(c.modal) : exec(c.action)"
+        >
+          <span class="ctrl-icon" :class="{ spinning: loadingAction === c.action }">
+            <Loader v-if="loadingAction === c.action" :size="16" />
+            <component v-else :is="c.icon" :size="16" />
+          </span>
+          <span class="ctrl-label">{{ c.label }}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Comfort Controls -->
+    <div class="controls-card">
+      <div class="controls-header">
+        <Heater :size="16" class="controls-icon" />
+        <span class="controls-title">Comfort</span>
+      </div>
+      <div class="controls-grid">
+        <button
+          v-for="c in comfortControls"
+          :key="c.action"
+          class="ctrl-btn"
+          :class="{ loading: loadingAction === c.action }"
+          :style="{ '--c': c.color }"
+          @click="c.modal ? openModal(c.modal) : exec(c.action)"
+        >
+          <span class="ctrl-icon" :class="{ spinning: loadingAction === c.action }">
+            <Loader v-if="loadingAction === c.action" :size="16" />
+            <component v-else :is="c.icon" :size="16" />
+          </span>
+          <span class="ctrl-label">{{ c.label }}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Security Controls -->
+    <div class="controls-card">
+      <div class="controls-header">
+        <ShieldCheck :size="16" class="controls-icon" />
+        <span class="controls-title">Security</span>
+      </div>
+      <div class="controls-grid">
+        <button
+          v-for="c in securityControls"
+          :key="c.action"
+          class="ctrl-btn"
+          :class="{ loading: loadingAction === c.action }"
+          :style="{ '--c': c.color }"
+          @click="exec(c.action)"
+        >
+          <span class="ctrl-icon" :class="{ spinning: loadingAction === c.action }">
+            <Loader v-if="loadingAction === c.action" :size="16" />
+            <component v-else :is="c.icon" :size="16" />
+          </span>
+          <span class="ctrl-label">{{ c.label }}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Vehicle Controls -->
+    <div class="controls-card">
+      <div class="controls-header">
+        <Car :size="16" class="controls-icon" />
+        <span class="controls-title">Vehicle</span>
+      </div>
+      <div class="controls-grid">
+        <button
+          v-for="c in vehicleControls"
+          :key="c.action"
+          class="ctrl-btn"
+          :class="{ loading: loadingAction === c.action }"
+          :style="{ '--c': c.color }"
+          @click="exec(c.action)"
+        >
+          <span class="ctrl-icon" :class="{ spinning: loadingAction === c.action }">
+            <Loader v-if="loadingAction === c.action" :size="16" />
+            <component v-else :is="c.icon" :size="16" />
+          </span>
+          <span class="ctrl-label">{{ c.label }}</span>
+        </button>
+      </div>
+    </div>
+
     <!-- Charge limit -->
     <div class="charge-limit-card">
       <div class="charge-limit-header">
@@ -156,6 +252,13 @@
       :on-exec="execClimate"
       :climate="s.climate"
     />
+
+    <SeatControlModal
+      :visible="showSeatModal"
+      @close="showSeatModal = false"
+      :on-exec="execSeat"
+      :seat-comfort="s.seat_comfort"
+    />
   </div>
 </template>
 
@@ -171,10 +274,14 @@ import WindowControlModal from '../components/WindowControlModal.vue'
 import SunshadeControlModal from '../components/SunshadeControlModal.vue'
 import ClimateControlModal from '../components/ClimateControlModal.vue'
 import TrunkOpenIcon from '../components/icons/TrunkOpenIcon.vue'
+import SeatControlModal from '../components/SeatControlModal.vue'
 import {
   Zap, Snowflake, Lock, Unlock, Shield, Loader, Plug,
   Radio, ChevronUp, ChevronDown, Sun, Wind, Flame,
-  Thermometer, ThermometerSnowflake, BatteryCharging, Columns2
+  Thermometer, ThermometerSnowflake, BatteryCharging, Columns2,
+  ShieldCheck, ShieldOff, Power, PowerOff, Wifi, Car,
+  CircleParking, Key, Eye, EyeOff, PlugZap,
+  Heater, AirVent, Armchair
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -208,7 +315,7 @@ const chargingPowerDisplay = computed(() => {
 })
 
 const isSlowCharging = computed(() => {
-  return s.value.is_charging && s.value.battery?.charge_state_label === 'AC_CONNECTED'
+  return s.value.is_charging && s.value.battery?.charge_state_label === 'CHARGING' && !s.value.battery?.dc_input_fast_charge
 })
 
 const battSub = computed(() => {
@@ -232,6 +339,7 @@ const pinDialogRef = ref(null)
 const showWindowModal = ref(false)
 const showSunshadeModal = ref(false)
 const showClimateModal = ref(false)
+const showSeatModal = ref(false)
 
 const pendingLimit = ref(props.status?.battery?.charge_soc_setting ?? 80)
 
@@ -244,6 +352,39 @@ const controls = [
   { action: 'sunshade', icon: Sun, label: 'Sunshade', color: '#ffab40', modal: 'sunshade' },
   { action: 'climate', icon: Thermometer, label: 'Climate', color: '#00d4ff', modal: 'climate' },
   { action: 'battery-preheat', icon: BatteryCharging, label: 'Battery Preheat', color: '#00e676' },
+]
+
+const chargingControls = [
+  { action: 'charging/start', icon: PlugZap, label: 'Start Charge', color: '#00e676' },
+  { action: 'charging/stop', icon: PlugZap, label: 'Stop Charge', color: '#ff5252' },
+  { action: 'unlock-charger', icon: Plug, label: 'Unlock Charger', color: '#ffab40' },
+  { action: 'healthy-charging/on', icon: ShieldCheck, label: 'Healthy Charge On', color: '#00e676' },
+  { action: 'healthy-charging/off', icon: ShieldOff, label: 'Healthy Charge Off', color: '#ff5252' },
+]
+
+const comfortControls = [
+  { action: 'seats', icon: Armchair, label: 'Seats', color: '#ff9100', modal: 'seats' },
+  { action: 'steering-wheel-heat/on', icon: Heater, label: 'Wheel Heat On', color: '#ff9100' },
+  { action: 'steering-wheel-heat/off', icon: Heater, label: 'Wheel Heat Off', color: '#5c6478' },
+  { action: 'fuel-heating/on', icon: Flame, label: 'Fuel Heat On', color: '#ff9100' },
+  { action: 'fuel-heating/off', icon: Flame, label: 'Fuel Heat Off', color: '#5c6478' },
+  { action: 'sunroof/open', icon: Sun, label: 'Sunroof Open', color: '#00d4ff' },
+  { action: 'sunroof/close', icon: Sun, label: 'Sunroof Close', color: '#5c6478' },
+]
+
+const securityControls = [
+  { action: 'sentry-mode/on', icon: Eye, label: 'Sentry On', color: '#00e676' },
+  { action: 'sentry-mode/off', icon: EyeOff, label: 'Sentry Off', color: '#5c6478' },
+  { action: 'rearview-mirror-heat/on', icon: AirVent, label: 'Mirror Heat On', color: '#ff9100' },
+  { action: 'rearview-mirror-heat/off', icon: AirVent, label: 'Mirror Heat Off', color: '#5c6478' },
+]
+
+const vehicleControls = [
+  { action: 'on3/on', icon: Power, label: 'ON3 On', color: '#00e676' },
+  { action: 'on3/off', icon: PowerOff, label: 'ON3 Off', color: '#ff5252' },
+  { action: 'battery-preheat-off', icon: BatteryCharging, label: 'Preheat Off', color: '#5c6478' },
+  { action: 'ble-key-restart', icon: Key, label: 'BLE Restart', color: '#7c6aff' },
+  { action: 'hotspot', icon: Wifi, label: 'Hotspot', color: '#00d4ff' },
 ]
 
 function isActive(action) {
@@ -338,10 +479,23 @@ async function execClimate({ action, body }) {
   }
 }
 
+async function execSeat({ action, body }) {
+  const ok = await requirePin()
+  if (!ok) return
+  try {
+    await store.execControl(props.vehicle.vin, action, body)
+    toast('Seat command sent', 'success')
+    await store.refreshAfterCommand()
+  } catch (err) {
+    toast(`Seat: ${err.message}`, 'error')
+  }
+}
+
 function openModal(type) {
   if (type === 'windows') showWindowModal.value = true
   else if (type === 'sunshade') showSunshadeModal.value = true
   else if (type === 'climate') showClimateModal.value = true
+  else if (type === 'seats') showSeatModal.value = true
 }
 
 async function doSetChargeLimit() {

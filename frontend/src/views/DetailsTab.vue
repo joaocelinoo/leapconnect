@@ -20,10 +20,17 @@
     <SectionCard title="Climate" :icon="Thermometer">
       <InfoRow label="A/C" :value="climate.ac_switch ? 'On' : 'Off'" :color="climate.ac_switch ? '#00d4ff' : 'var(--muted)'" :dot="!!climate.ac_switch" />
       <InfoRow label="Set Temperature" :value="climate.ac_setting != null ? `${climate.ac_setting}°C` : '—'" color="var(--text)" />
+      <InfoRow v-if="climate.ac_setting_right != null" label="Right Temp" :value="`${climate.ac_setting_right}°C`" color="var(--text)" />
+      <InfoRow v-if="climate.interior_temp != null" label="Interior Temp" :value="`${climate.interior_temp}°C`" color="var(--sub)" />
       <InfoRow label="Outside Temperature" :value="climate.outdoor_temp != null ? `${climate.outdoor_temp}°C` : '—'" color="var(--sub)" />
       <InfoRow label="Fan Volume" :value="climate.ac_air_volume ?? '—'" color="var(--text)" />
       <InfoRow label="Mode" :value="climateMode(climate.ac_cooling_and_heating)" :color="climate.ac_cooling_and_heating ? '#00d4ff' : 'var(--muted)'" />
       <InfoRow label="Air Circulation" :value="climate.ac_circle_mode != null ? (climate.ac_circle_mode ? 'Recirculate' : 'Fresh') : '—'" color="var(--sub)" />
+      <InfoRow v-if="climate.recirculation_mode != null" label="Recirculation" :value="climate.recirculation_mode === 0 ? 'Fresh Air' : 'Recirculation'" color="var(--sub)" />
+      <InfoRow v-if="climate.windshield_defrost != null" label="Windshield Defrost" :value="climate.windshield_defrost > 0 ? 'Active' : 'Off'" :color="climate.windshield_defrost > 0 ? '#ff9100' : 'var(--muted)'" />
+      <InfoRow v-if="climate.rear_window_heating != null" label="Rear Window Heat" :value="climate.rear_window_heating ? 'On' : 'Off'" :color="climate.rear_window_heating ? '#ff9100' : 'var(--muted)'" />
+      <InfoRow v-if="climate.ac_operate_mode != null" label="Operate Mode" :value="climate.ac_operate_mode === 0 ? 'Auto' : 'Manual'" color="var(--sub)" />
+      <InfoRow v-if="climate.climate_mode != null" label="Climate Mode" :value="climate.climate_mode === 0 ? 'Off' : climate.climate_mode === 1 ? 'Fast Cool' : climate.climate_mode === 3 ? 'Fast Heat' : `${climate.climate_mode}`" color="var(--sub)" />
       <!-- Temperature slider visual -->
       <div v-if="climate.ac_setting != null" class="temp-slider-visual">
         <div class="temp-slider-label">Temperatura impostata</div>
@@ -61,9 +68,42 @@
       <InfoRow label="Charging Power" :value="bat.charging_power_kw != null ? `${bat.charging_power_kw} kW` : '—'" color="#00e676" />
       <InfoRow label="Discharging Power" :value="bat.discharging_power_kw != null ? `${bat.discharging_power_kw} kW` : '—'" color="#ffab40" />
       <InfoRow label="Energy Available" :value="bat.dump_energy_kwh != null ? `${bat.dump_energy_kwh} kWh` : '—'" color="#00d4ff" />
+      <InfoRow v-if="bat.precise_soc != null" label="Precise SoC" :value="`${bat.precise_soc}%`" color="var(--sub)" />
+      <InfoRow v-if="bat.min_battery_temp != null" label="Min Battery Temp" :value="`${bat.min_battery_temp}°C`" color="var(--sub)" />
+      <InfoRow v-if="bat.healthy_charge_enabled != null" label="Healthy Charge" :value="bat.healthy_charge_enabled ? 'Enabled' : 'Disabled'" :color="bat.healthy_charge_enabled ? '#00e676' : 'var(--muted)'" />
+      <InfoRow v-if="bat.charge_completed != null" label="Charge Completed" :value="bat.charge_completed ? 'Yes' : 'No'" color="var(--sub)" />
       <div class="batt-bar">
         <div class="batt-bar-fill" :style="{ width: `${bat.soc ?? 0}%`, boxShadow: props.status?.is_charging ? '0 0 10px #00e67688' : 'none' }" />
       </div>
+    </SectionCard>
+
+    <!-- Charge Plan -->
+    <SectionCard title="Charge Plan" :icon="BatteryCharging">
+      <InfoRow label="Charge Limit" :value="chargePlan.soc_setting != null ? `${chargePlan.soc_setting}%` : '—'" color="var(--text)" />
+      <InfoRow label="Scheduled" :value="chargePlan.enabled === 1 ? 'Enabled' : chargePlan.enabled === 0 ? 'Disabled' : '—'" :color="chargePlan.enabled === 1 ? '#00e676' : 'var(--muted)'" />
+      <InfoRow label="Start Time" :value="chargePlan.start || '—'" color="var(--sub)" />
+      <InfoRow label="End Time" :value="chargePlan.end || '—'" color="var(--sub)" />
+      <InfoRow label="Cycles" :value="chargePlan.cycles || '—'" color="var(--sub)" />
+      <InfoRow label="Recharge" :value="chargePlan.recharge != null ? (chargePlan.recharge ? 'Yes' : 'No') : '—'" color="var(--sub)" />
+    </SectionCard>
+
+    <!-- Seat Comfort -->
+    <SectionCard title="Seat Comfort" :icon="Armchair">
+      <InfoRow label="Driver Heat" :value="seatComfort.driver_seat_heating != null ? `Level ${seatComfort.driver_seat_heating}` : '—'" :color="seatComfort.driver_seat_heating > 0 ? '#ff9100' : 'var(--muted)'" />
+      <InfoRow label="Driver Ventilation" :value="seatComfort.driver_seat_ventilation != null ? `Level ${seatComfort.driver_seat_ventilation}` : '—'" :color="seatComfort.driver_seat_ventilation > 0 ? '#00d4ff' : 'var(--muted)'" />
+      <InfoRow label="Passenger Heat" :value="seatComfort.passenger_seat_heating != null ? `Level ${seatComfort.passenger_seat_heating}` : '—'" :color="seatComfort.passenger_seat_heating > 0 ? '#ff9100' : 'var(--muted)'" />
+      <InfoRow label="Passenger Ventilation" :value="seatComfort.passenger_seat_ventilation != null ? `Level ${seatComfort.passenger_seat_ventilation}` : '—'" :color="seatComfort.passenger_seat_ventilation > 0 ? '#00d4ff' : 'var(--muted)'" />
+      <InfoRow label="Steering Wheel Heat" :value="seatComfort.steering_wheel_heating != null ? (seatComfort.steering_wheel_heating ? 'On' : 'Off') : '—'" :color="seatComfort.steering_wheel_heating ? '#ff9100' : 'var(--muted)'" />
+      <InfoRow v-if="seatComfort.steering_wheel_heater_minutes != null" label="SW Heat Remaining" :value="`${seatComfort.steering_wheel_heater_minutes} min`" color="var(--sub)" />
+    </SectionCard>
+
+    <!-- Security -->
+    <SectionCard title="Security" :icon="ShieldCheck">
+      <InfoRow label="Security Active" :value="security.is_security_active === true ? 'Yes' : security.is_security_active === false ? 'No' : '—'" :color="security.is_security_active ? '#00e676' : 'var(--muted)'" :dot="!!security.is_security_active" />
+      <InfoRow label="Sentry Mode" :value="security.sentry_mode != null ? (security.sentry_mode ? 'On' : 'Off') : '—'" :color="security.sentry_mode ? '#00e676' : 'var(--muted)'" />
+      <InfoRow label="Left Mirror Heat" :value="security.left_mirror_heating != null ? (security.left_mirror_heating ? 'On' : 'Off') : '—'" :color="security.left_mirror_heating ? '#ff9100' : 'var(--muted)'" />
+      <InfoRow label="Right Mirror Heat" :value="security.right_mirror_heating != null ? (security.right_mirror_heating ? 'On' : 'Off') : '—'" :color="security.right_mirror_heating ? '#ff9100' : 'var(--muted)'" />
+      <InfoRow label="Roof Opening" :value="security.roof_opening != null ? `${security.roof_opening}` : '—'" color="var(--sub)" />
     </SectionCard>
 
     <!-- Location -->
@@ -74,8 +114,12 @@
       <InfoRow label="Bluetooth" :value="connectivity.bluetooth_state ? 'On' : connectivity.bluetooth_state === false ? 'Off' : '—'" :color="connectivity.bluetooth_state ? '#00d4ff' : 'var(--muted)'" :dot="!!connectivity.bluetooth_state" />
       <InfoRow label="Wi-Fi Hotspot" :value="connectivity.hotspot_state ? 'On' : connectivity.hotspot_state === false ? 'Off' : '—'" :color="connectivity.hotspot_state ? '#00e676' : 'var(--muted)'" :dot="!!connectivity.hotspot_state" />
       <InfoRow label="Ignition ON1" :value="ignition.bcm_key_position_on1 != null ? (ignition.bcm_key_position_on1 ? 'Yes' : 'No') : '—'" :color="ignition.bcm_key_position_on1 ? '#00e676' : 'var(--muted)'" />
+      <InfoRow v-if="ignition.bcm_key_position_on2 != null" label="Ignition ON2" :value="ignition.bcm_key_position_on2 ? 'Yes' : 'No'" :color="ignition.bcm_key_position_on2 ? '#00e676' : 'var(--muted)'" />
       <InfoRow label="Ignition ON3" :value="ignition.bcm_key_position_on3 != null ? (ignition.bcm_key_position_on3 ? 'Yes' : 'No') : '—'" :color="ignition.bcm_key_position_on3 ? '#00e676' : 'var(--muted)'" />
       <InfoRow label="Gear Status" :value="driving.gear_status != null ? gearLabel(driving.gear_status) : '—'" color="var(--text)" />
+      <InfoRow v-if="driving.speed_limit != null" label="Speed Limit" :value="`${driving.speed_limit} km/h`" :color="driving.speed_limit_active ? '#ff5252' : 'var(--sub)'" />
+      <InfoRow v-if="driving.parking_brake_state != null" label="Parking Brake" :value="driving.parking_brake_state ? 'Engaged' : 'Released'" :color="driving.parking_brake_state ? '#ffab40' : 'var(--muted)'" />
+      <InfoRow v-if="driving.live_remaining_range != null" label="Live Range" :value="`${driving.live_remaining_range} km`" color="var(--sub)" />
       <InfoRow label="Last Update" :value="timestamps.collect_time ? formatTime(timestamps.collect_time) : '—'" color="#5c6478" />
     </SectionCard>
 
@@ -111,8 +155,8 @@ import SectionCard from '../components/SectionCard.vue'
 import InfoRow from '../components/InfoRow.vue'
 import LocationCard from '../components/LocationCard.vue'
 import {
-  DoorOpen, Thermometer, Circle, Battery,
-  Wifi, Info, Zap
+  DoorOpen, Thermometer, Circle, Battery, BatteryCharging,
+  Wifi, Info, Zap, Armchair, ShieldCheck
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -130,6 +174,9 @@ const connectivity = computed(() => props.status?.connectivity || {})
 const ignition = computed(() => props.status?.ignition || {})
 const driving = computed(() => props.status?.driving || {})
 const timestamps = computed(() => props.status?.timestamps || {})
+const seatComfort = computed(() => props.status?.seat_comfort || {})
+const security = computed(() => props.status?.security || {})
+const chargePlan = computed(() => props.status?.battery?.charge_plan || {})
 
 const tireItems = computed(() => {
   const t = props.status?.tires || {}

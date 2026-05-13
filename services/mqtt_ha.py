@@ -167,20 +167,38 @@ class HomeAssistantMqttService:
                 b.charge_state.value if b.charge_state is not None else None
             )
             data["battery_charge_remain_time"] = b.charge_remain_time
-            data["battery_charge_soc_setting"] = b.charge_soc_setting
-            data["battery_charge_time_setting"] = b.charge_time_setting
+            data["battery_charge_soc_setting"] = b.charge_plan.soc_setting
+            data["battery_charge_time_setting"] = b.charge_plan.time_setting
             data["battery_dc_input_fast_charge"] = b.dc_input_fast_charge
-            data["battery_is_charging"] = bool(
-                b.charging_power_kw is not None and b.charging_power_kw > 0
-            )
+            data["battery_ac_input_slow_charge"] = b.ac_input_slow_charge
+            data["battery_is_charging"] = b.is_charging
             data["battery_is_discharging"] = b.is_discharging
+            data["battery_precise_soc"] = b.precise_soc
+            data["battery_min_temp"] = b.min_battery_temp
+            data["battery_healthy_charge_enabled"] = b.healthy_charge_enabled
+            data["battery_charge_completed"] = b.charge_completed
+            # Charge plan
+            cp = b.charge_plan
+            data["charge_plan_enabled"] = cp.enabled
+            data["charge_plan_start"] = cp.start
+            data["charge_plan_end"] = cp.end
+            data["charge_plan_cycles"] = cp.cycles
+            data["charge_plan_circulation"] = cp.circulation
+            data["charge_plan_recharge"] = cp.recharge
 
         # Driving
         if status.driving:
             d = status.driving
             data["speed"] = d.speed
             data["total_mileage"] = d.total_mileage
-            data["gear_status"] = d.gear_status
+            data["gear_status"] = (
+                d.gear_status.value if d.gear_status is not None else None
+            )
+            data["vehicle_state"] = d.vehicle_state
+            data["speed_limit"] = d.speed_limit
+            data["speed_limit_active"] = d.speed_limit_active
+            data["parking_brake_state"] = d.parking_brake_state
+            data["live_remaining_range"] = d.live_remaining_range
 
         # Location
         if status.location:
@@ -198,10 +216,28 @@ class HomeAssistantMqttService:
             data["ac_wind_direction"] = c.ac_wind_direction
             data["ac_temp_mode"] = c.ac_temp_mode
             data["ac_circle_mode"] = c.ac_circle_mode
-            data["ac_cooling_and_heating"] = c.ac_cooling_and_heating
+            data["ac_cooling_and_heating"] = (
+                c.ac_cooling_and_heating.value
+                if c.ac_cooling_and_heating is not None
+                else None
+            )
             data["min_single_temp"] = c.min_single_temp
             data["ptc_state"] = c.ptc_state
             data["ptc_power_setting_value"] = c.ptc_power_setting_value
+            data["interior_temp"] = c.interior_temp
+            data["recirculation_mode"] = (
+                c.recirculation_mode.value if c.recirculation_mode is not None else None
+            )
+            data["windshield_defrost"] = (
+                c.windshield_defrost.value if c.windshield_defrost is not None else None
+            )
+            data["rear_window_heating"] = c.rear_window_heating
+            data["climate_mode"] = (
+                c.climate_mode.value if c.climate_mode is not None else None
+            )
+            data["ac_operate_mode"] = (
+                c.ac_operate_mode.value if c.ac_operate_mode is not None else None
+            )
 
         # Doors
         if status.doors:
@@ -254,13 +290,39 @@ class HomeAssistantMqttService:
         # Ignition
         if status.ignition:
             data["ignition_on1"] = status.ignition.bcm_key_position_on1
+            data["ignition_on2"] = status.ignition.bcm_key_position_on2
             data["ignition_on3"] = status.ignition.bcm_key_position_on3
+
+        # Seat comfort
+        if status.seat_comfort:
+            sc = status.seat_comfort
+            data["driver_seat_heating"] = sc.driver_seat_heating
+            data["driver_seat_ventilation"] = sc.driver_seat_ventilation
+            data["passenger_seat_heating"] = sc.passenger_seat_heating
+            data["passenger_seat_ventilation"] = sc.passenger_seat_ventilation
+            data["steering_wheel_heating"] = sc.steering_wheel_heating
+            data["steering_wheel_heater_minutes"] = sc.steering_wheel_heater_minutes
+
+        # Security
+        if status.security:
+            sec = status.security
+            data["vehicle_security_active"] = (
+                sec.vehicle_security_active.value
+                if sec.vehicle_security_active is not None
+                else None
+            )
+            data["sentry_mode"] = sec.sentry_mode
+            data["left_mirror_heating"] = sec.left_mirror_heating
+            data["right_mirror_heating"] = sec.right_mirror_heating
+            data["roof_opening"] = sec.roof_opening
 
         # Top-level convenience properties
         data["is_charging"] = status.is_charging
         data["is_regening"] = status.is_regening
         data["is_locked"] = status.is_locked
         data["is_parked"] = status.is_parked
+        data["is_driving"] = status.is_driving
+        data["is_plugged"] = status.is_plugged
 
         # Timestamps
         if status.collect_time:
@@ -304,7 +366,9 @@ class HomeAssistantMqttService:
                 f"{prefix}/charge_remain_time", _str(b.charge_remain_time), retain=True
             )
             await self._publish(
-                f"{prefix}/charge_soc_setting", _str(b.charge_soc_setting), retain=True
+                f"{prefix}/charge_soc_setting",
+                _str(b.charge_plan.soc_setting),
+                retain=True,
             )
 
         if status.driving:
@@ -315,7 +379,13 @@ class HomeAssistantMqttService:
                 f"{prefix}/speed", _str(status.driving.speed), retain=True
             )
             await self._publish(
-                f"{prefix}/gear_status", _str(status.driving.gear_status), retain=True
+                f"{prefix}/gear_status",
+                _str(
+                    status.driving.gear_status.value
+                    if status.driving.gear_status is not None
+                    else None
+                ),
+                retain=True,
             )
 
         if status.climate:
@@ -372,21 +442,15 @@ class HomeAssistantMqttService:
         await self._publish(f"{prefix}/parked", _bool(status.is_parked), retain=True)
 
         if status.battery:
-            # Workaround: battery.is_charging from leapmotor-api returns True
-            # when charge_remain_time is 0 (not None). Use charging_power_kw > 0
-            # as additional check until the library is fixed.
             b = status.battery
-            battery_charging = bool(
-                b.charging_power_kw is not None and b.charging_power_kw > 0
-            )
             await self._publish(
                 f"{prefix}/battery_charging",
-                _bool(battery_charging),
+                _bool(b.is_charging),
                 retain=True,
             )
             await self._publish(
                 f"{prefix}/battery_discharging",
-                _bool(status.battery.is_discharging),
+                _bool(b.is_discharging),
                 retain=True,
             )
 
