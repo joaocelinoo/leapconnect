@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **33 new remote command endpoints**: battery preheat off, sentry mode on/off, start/stop charging, steering wheel heat on/off, fuel heating on/off, rearview mirror heat on/off, healthy charging on/off, ON3 on/off, BLE key restart, sunroof open/close, unlock charger, hotspot, autopark, seat heat, seat ventilation, speed limit, music control, video control, FOTA download/install/schedule, rear seats, prepare car, seat adjust, piloted parking
+- **3 new data endpoints**: `GET /api/vehicles/{vin}/charging-history` (paginated charging session history), `GET /api/vehicles/{vin}/consumption/weekly-rank`, `GET /api/vehicles/{vin}/consumption/last-week`
+- **Seat Control Modal**: new modal in Dashboard for controlling seat heating and ventilation — supports driver, passenger, rear-left, and rear-right positions with 4 levels (Off/Low/Med/High)
+- **Grouped Dashboard controls**: remote controls are now organized into 5 sections — Main, Charging, Comfort, Security, and Vehicle — instead of a single flat grid
+- **Details: Charge Plan section**: displays charge limit, scheduled charge status, start/end times, cycles, and recharge flag
+- **Details: Seat Comfort section**: shows driver/passenger seat heating and ventilation levels, steering wheel heat status and remaining minutes
+- **Details: Security section**: shows security active status, sentry mode, left/right mirror heating, and roof opening
+- **Details: expanded Climate info**: interior temperature, right-side temperature, recirculation mode, windshield defrost, rear window heating, climate mode, and AC operate mode
+- **Details: expanded Battery info**: precise SoC, minimum battery temperature, healthy charge status, and charge completed flag
+- **Details: expanded Driving info**: speed limit with active indicator, parking brake state, live remaining range
+- **Details: Ignition ON2** added to Connectivity section
+- **New MQTT fields**: seat comfort (6 fields), security (5 fields), additional battery/driving/climate/ignition fields published to Home Assistant
+- **Database migration 0003**: added `is_regening` column to `vehicle_snapshots` table for tracking regenerative braking state in history
+
+### Changed
+
+- **Updated leapmotor-api to v0.2.0**: major library update with 30+ new remote commands, typed enums for permissions/gear/HVAC, new sub-objects (ChargePlan, SeatComfortStatus, SecurityStatus), and expanded vehicle status fields
+- **schemas.py rewritten**: all enum fields (`rights`, `abilities`, `module_rights`, `gear_status`, `ac_cooling_and_heating`) now properly serialize enum values; charge plan fields relocated to `battery.charge_plan` sub-object; added `ChargePlanSchema`, `SeatComfortSchema`, and `SecuritySchema`
+- **MQTT/HA integration updated**: fixed enum serialization for gear status and HVAC direction; charge plan fields read from new sub-object path; `is_charging` now uses the library's native property instead of a power-based workaround
+- **Slow charging detection fixed**: `isSlowCharging` on the Dashboard now checks `charge_state_label === 'CHARGING' && !battery.dc_input_fast_charge` instead of the removed `AC_CONNECTED` label
+- **ClimateRequest.windlevel** type changed from `str` to `int` to match the updated library
+
 ## [0.6.1] - 2026-05-07
 
 ### Changed
