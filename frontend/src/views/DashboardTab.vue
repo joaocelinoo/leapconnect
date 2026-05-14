@@ -88,16 +88,20 @@
     </div>
 
     <!-- Remote Controls -->
-    <div class="controls-card">
-      <div class="controls-header">
+    <div class="controls-card" :class="{ 'controls-collapsed': remoteSection.allHidden && !showHidden.remote }">
+      <div class="controls-header" :class="{ 'controls-header-clickable': remoteSection.allHidden }" @click="remoteSection.allHidden && (showHidden.remote = !showHidden.remote)">
         <Shield :size="16" class="controls-icon" />
         <span class="controls-title">Remote Controls</span>
-        <button v-if="remoteSection.hiddenCount" class="section-toggle" @click="showHidden.remote = !showHidden.remote">
+        <button v-if="remoteSection.hiddenCount && !remoteSection.allHidden" class="section-toggle" @click.stop="showHidden.remote = !showHidden.remote">
           <component :is="showHidden.remote ? EyeOff : Eye" :size="14" />
           <span>+{{ remoteSection.hiddenCount }}</span>
         </button>
+        <span v-if="remoteSection.allHidden" class="section-collapsed-hint">
+          <span class="section-collapsed-count">{{ remoteSection.hiddenCount }} unavailable</span>
+          <ChevronDown :size="14" class="section-chevron" :class="{ 'section-chevron-open': showHidden.remote }" />
+        </span>
       </div>
-      <div class="controls-grid">
+      <div v-if="!remoteSection.allHidden || showHidden.remote" class="controls-grid">
         <button
           v-for="c in remoteSection.visible"
           :key="c.action"
@@ -117,16 +121,20 @@
     </div>
 
     <!-- Charging Controls -->
-    <div class="controls-card">
-      <div class="controls-header">
+    <div class="controls-card" :class="{ 'controls-collapsed': chargingSection.allHidden && !showHidden.charging }">
+      <div class="controls-header" :class="{ 'controls-header-clickable': chargingSection.allHidden }" @click="chargingSection.allHidden && (showHidden.charging = !showHidden.charging)">
         <PlugZap :size="16" class="controls-icon" />
         <span class="controls-title">Charging</span>
-        <button v-if="chargingSection.hiddenCount" class="section-toggle" @click="showHidden.charging = !showHidden.charging">
+        <button v-if="chargingSection.hiddenCount && !chargingSection.allHidden" class="section-toggle" @click.stop="showHidden.charging = !showHidden.charging">
           <component :is="showHidden.charging ? EyeOff : Eye" :size="14" />
           <span>+{{ chargingSection.hiddenCount }}</span>
         </button>
+        <span v-if="chargingSection.allHidden" class="section-collapsed-hint">
+          <span class="section-collapsed-count">{{ chargingSection.hiddenCount }} unavailable</span>
+          <ChevronDown :size="14" class="section-chevron" :class="{ 'section-chevron-open': showHidden.charging }" />
+        </span>
       </div>
-      <div class="controls-grid">
+      <div v-if="!chargingSection.allHidden || showHidden.charging" class="controls-grid">
         <button
           v-for="c in chargingSection.visible"
           :key="c.action"
@@ -145,16 +153,20 @@
     </div>
 
     <!-- Comfort Controls -->
-    <div class="controls-card">
-      <div class="controls-header">
+    <div class="controls-card" :class="{ 'controls-collapsed': comfortSection.allHidden && !showHidden.comfort }">
+      <div class="controls-header" :class="{ 'controls-header-clickable': comfortSection.allHidden }" @click="comfortSection.allHidden && (showHidden.comfort = !showHidden.comfort)">
         <Heater :size="16" class="controls-icon" />
         <span class="controls-title">Comfort</span>
-        <button v-if="comfortSection.hiddenCount" class="section-toggle" @click="showHidden.comfort = !showHidden.comfort">
+        <button v-if="comfortSection.hiddenCount && !comfortSection.allHidden" class="section-toggle" @click.stop="showHidden.comfort = !showHidden.comfort">
           <component :is="showHidden.comfort ? EyeOff : Eye" :size="14" />
           <span>+{{ comfortSection.hiddenCount }}</span>
         </button>
+        <span v-if="comfortSection.allHidden" class="section-collapsed-hint">
+          <span class="section-collapsed-count">{{ comfortSection.hiddenCount }} unavailable</span>
+          <ChevronDown :size="14" class="section-chevron" :class="{ 'section-chevron-open': showHidden.comfort }" />
+        </span>
       </div>
-      <div class="controls-grid">
+      <div v-if="!comfortSection.allHidden || showHidden.comfort" class="controls-grid">
         <button
           v-for="c in comfortSection.visible"
           :key="c.action"
@@ -173,16 +185,20 @@
     </div>
 
     <!-- Security Controls -->
-    <div class="controls-card">
-      <div class="controls-header">
+    <div class="controls-card" :class="{ 'controls-collapsed': securitySection.allHidden && !showHidden.security }">
+      <div class="controls-header" :class="{ 'controls-header-clickable': securitySection.allHidden }" @click="securitySection.allHidden && (showHidden.security = !showHidden.security)">
         <ShieldCheck :size="16" class="controls-icon" />
         <span class="controls-title">Security</span>
-        <button v-if="securitySection.hiddenCount" class="section-toggle" @click="showHidden.security = !showHidden.security">
+        <button v-if="securitySection.hiddenCount && !securitySection.allHidden" class="section-toggle" @click.stop="showHidden.security = !showHidden.security">
           <component :is="showHidden.security ? EyeOff : Eye" :size="14" />
           <span>+{{ securitySection.hiddenCount }}</span>
         </button>
+        <span v-if="securitySection.allHidden" class="section-collapsed-hint">
+          <span class="section-collapsed-count">{{ securitySection.hiddenCount }} unavailable</span>
+          <ChevronDown :size="14" class="section-chevron" :class="{ 'section-chevron-open': showHidden.security }" />
+        </span>
       </div>
-      <div class="controls-grid">
+      <div v-if="!securitySection.allHidden || showHidden.security" class="controls-grid">
         <button
           v-for="c in securitySection.visible"
           :key="c.action"
@@ -201,16 +217,20 @@
     </div>
 
     <!-- Vehicle Controls -->
-    <div class="controls-card">
-      <div class="controls-header">
+    <div class="controls-card" :class="{ 'controls-collapsed': vehicleSection.allHidden && !showHidden.vehicle }">
+      <div class="controls-header" :class="{ 'controls-header-clickable': vehicleSection.allHidden }" @click="vehicleSection.allHidden && (showHidden.vehicle = !showHidden.vehicle)">
         <Car :size="16" class="controls-icon" />
         <span class="controls-title">Vehicle</span>
-        <button v-if="vehicleSection.hiddenCount" class="section-toggle" @click="showHidden.vehicle = !showHidden.vehicle">
+        <button v-if="vehicleSection.hiddenCount && !vehicleSection.allHidden" class="section-toggle" @click.stop="showHidden.vehicle = !showHidden.vehicle">
           <component :is="showHidden.vehicle ? EyeOff : Eye" :size="14" />
           <span>+{{ vehicleSection.hiddenCount }}</span>
         </button>
+        <span v-if="vehicleSection.allHidden" class="section-collapsed-hint">
+          <span class="section-collapsed-count">{{ vehicleSection.hiddenCount }} unavailable</span>
+          <ChevronDown :size="14" class="section-chevron" :class="{ 'section-chevron-open': showHidden.vehicle }" />
+        </span>
       </div>
-      <div class="controls-grid">
+      <div v-if="!vehicleSection.allHidden || showHidden.vehicle" class="controls-grid">
         <button
           v-for="c in vehicleSection.visible"
           :key="c.action"
@@ -448,8 +468,10 @@ function sectionData(list, key) {
   return computed(() => {
     const mapped = list.map(c => ({ ...c, _unavailable: !isControlAvailable(c) }))
     const hiddenCount = mapped.filter(c => c._unavailable).length
+    const availableCount = mapped.length - hiddenCount
+    const allHidden = availableCount === 0
     const visible = mapped.filter(c => !c._unavailable || showHidden.value[key])
-    return { visible, hiddenCount }
+    return { visible, hiddenCount, allHidden }
   })
 }
 
@@ -705,12 +727,19 @@ async function doSetChargeLimit() {
   border-radius: 16px;
   padding: 18px 16px;
 }
+.controls-collapsed {
+  padding: 12px 16px;
+  opacity: 0.6;
+}
+.controls-collapsed:hover { opacity: 0.85; }
 .controls-header {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 16px;
 }
+.controls-collapsed .controls-header { margin-bottom: 0; }
+.controls-header-clickable { cursor: pointer; }
 .controls-icon { font-size: 14px; }
 .controls-title { font-size: 13px; font-weight: 700; color: var(--heading); }
 .controls-warn { font-size: 11px; color: #ffab40; margin-left: auto; }
@@ -732,6 +761,24 @@ async function doSetChargeLimit() {
 .section-toggle:hover {
   color: var(--text);
   border-color: var(--text-secondary, var(--muted));
+}
+
+.section-collapsed-hint {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.section-collapsed-count {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.section-chevron {
+  color: var(--muted);
+  transition: transform 0.2s;
+}
+.section-chevron-open {
+  transform: rotate(180deg);
 }
 
 .controls-grid {
