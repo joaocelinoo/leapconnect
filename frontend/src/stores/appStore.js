@@ -12,7 +12,7 @@ export const useAppStore = defineStore('app', () => {
   const vehicles = ref([])
   const selectedVin = ref(null)
   const vehicleData = ref({})
-  const hasPin = ref(false)
+  const hasPin = ref(sessionStorage.getItem('hasPin') === 'true')
   const loading = ref(false)
   const refreshing = ref(false)
   const picturePackages = ref({})
@@ -61,6 +61,7 @@ export const useAppStore = defineStore('app', () => {
     vehicles.value = result.vehicles || []
     displayName.value = result.display_name || ''
     hasPin.value = false
+    sessionStorage.removeItem('hasPin')
     if (vehicles.value.length === 1) {
       selectedVin.value = vehicles.value[0].vin
       screen.value = 'app'
@@ -110,9 +111,12 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  async function submitPin(pin) {
+  async function submitPin(pin, remember = false) {
     await api('POST', '/api/set-pin', { pin })
     hasPin.value = true
+    if (remember) {
+      sessionStorage.setItem('hasPin', 'true')
+    }
   }
 
   async function logout() {
@@ -127,6 +131,7 @@ export const useAppStore = defineStore('app', () => {
     selectedVin.value = null
     vehicleData.value = {}
     hasPin.value = false
+    sessionStorage.removeItem('hasPin')
     picturePackages.value = {}
     activeTab.value = 'dashboard'
     screen.value = 'login'

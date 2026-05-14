@@ -505,7 +505,7 @@ async function requirePin() {
 
 async function onPinConfirmed({ pin, remember }) {
   try {
-    await store.submitPin(pin)
+    await store.submitPin(pin, remember)
     showPinDialog.value = false
     if (pendingAction.value?.resolve) {
       pendingAction.value.resolve(true)
