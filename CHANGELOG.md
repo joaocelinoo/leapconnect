@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **3 new data endpoints**: `GET /api/vehicles/{vin}/charging-history` (paginated charging session history), `GET /api/vehicles/{vin}/consumption/weekly-rank`, `GET /api/vehicles/{vin}/consumption/last-week`
 - **Seat Control Modal**: new modal in Dashboard for controlling seat heating and ventilation — supports driver, passenger, rear-left, and rear-right positions with 4 levels (Off/Low/Med/High)
 - **Grouped Dashboard controls**: remote controls are now organized into 5 sections — Main, Charging, Comfort, Security, and Vehicle — instead of a single flat grid
+- **Permission-based control visibility**: Dashboard controls are now filtered by vehicle abilities (hardware support) and user rights (account permissions). Each section shows only the commands the vehicle supports and the user is authorized to use; a per-section toggle button reveals hidden commands (displayed greyed out) with a count badge. The Charge Limit card is also hidden when the user lacks the corresponding right/ability.
 - **Details: Charge Plan section**: displays charge limit, scheduled charge status, start/end times, cycles, and recharge flag
 - **Details: Seat Comfort section**: shows driver/passenger seat heating and ventilation levels, steering wheel heat status and remaining minutes
 - **Details: Security section**: shows security active status, sentry mode, left/right mirror heating, and roof opening

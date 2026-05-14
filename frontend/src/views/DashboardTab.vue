@@ -92,13 +92,17 @@
       <div class="controls-header">
         <Shield :size="16" class="controls-icon" />
         <span class="controls-title">Remote Controls</span>
+        <button v-if="remoteSection.hiddenCount" class="section-toggle" @click="showHidden.remote = !showHidden.remote">
+          <component :is="showHidden.remote ? EyeOff : Eye" :size="14" />
+          <span>+{{ remoteSection.hiddenCount }}</span>
+        </button>
       </div>
       <div class="controls-grid">
         <button
-          v-for="c in controls"
+          v-for="c in remoteSection.visible"
           :key="c.action"
           class="ctrl-btn"
-          :class="{ active: isActive(c.action), loading: loadingAction === c.action }"
+          :class="{ active: isActive(c.action), loading: loadingAction === c.action, 'ctrl-unavailable': c._unavailable }"
           :style="{ '--c': c.color }"
           @click="c.modal ? openModal(c.modal) : exec(c.action)"
         >
@@ -117,13 +121,17 @@
       <div class="controls-header">
         <PlugZap :size="16" class="controls-icon" />
         <span class="controls-title">Charging</span>
+        <button v-if="chargingSection.hiddenCount" class="section-toggle" @click="showHidden.charging = !showHidden.charging">
+          <component :is="showHidden.charging ? EyeOff : Eye" :size="14" />
+          <span>+{{ chargingSection.hiddenCount }}</span>
+        </button>
       </div>
       <div class="controls-grid">
         <button
-          v-for="c in chargingControls"
+          v-for="c in chargingSection.visible"
           :key="c.action"
           class="ctrl-btn"
-          :class="{ loading: loadingAction === c.action }"
+          :class="{ loading: loadingAction === c.action, 'ctrl-unavailable': c._unavailable }"
           :style="{ '--c': c.color }"
           @click="c.modal ? openModal(c.modal) : exec(c.action)"
         >
@@ -141,13 +149,17 @@
       <div class="controls-header">
         <Heater :size="16" class="controls-icon" />
         <span class="controls-title">Comfort</span>
+        <button v-if="comfortSection.hiddenCount" class="section-toggle" @click="showHidden.comfort = !showHidden.comfort">
+          <component :is="showHidden.comfort ? EyeOff : Eye" :size="14" />
+          <span>+{{ comfortSection.hiddenCount }}</span>
+        </button>
       </div>
       <div class="controls-grid">
         <button
-          v-for="c in comfortControls"
+          v-for="c in comfortSection.visible"
           :key="c.action"
           class="ctrl-btn"
-          :class="{ loading: loadingAction === c.action }"
+          :class="{ loading: loadingAction === c.action, 'ctrl-unavailable': c._unavailable }"
           :style="{ '--c': c.color }"
           @click="c.modal ? openModal(c.modal) : exec(c.action)"
         >
@@ -165,13 +177,17 @@
       <div class="controls-header">
         <ShieldCheck :size="16" class="controls-icon" />
         <span class="controls-title">Security</span>
+        <button v-if="securitySection.hiddenCount" class="section-toggle" @click="showHidden.security = !showHidden.security">
+          <component :is="showHidden.security ? EyeOff : Eye" :size="14" />
+          <span>+{{ securitySection.hiddenCount }}</span>
+        </button>
       </div>
       <div class="controls-grid">
         <button
-          v-for="c in securityControls"
+          v-for="c in securitySection.visible"
           :key="c.action"
           class="ctrl-btn"
-          :class="{ loading: loadingAction === c.action }"
+          :class="{ loading: loadingAction === c.action, 'ctrl-unavailable': c._unavailable }"
           :style="{ '--c': c.color }"
           @click="exec(c.action)"
         >
@@ -189,13 +205,17 @@
       <div class="controls-header">
         <Car :size="16" class="controls-icon" />
         <span class="controls-title">Vehicle</span>
+        <button v-if="vehicleSection.hiddenCount" class="section-toggle" @click="showHidden.vehicle = !showHidden.vehicle">
+          <component :is="showHidden.vehicle ? EyeOff : Eye" :size="14" />
+          <span>+{{ vehicleSection.hiddenCount }}</span>
+        </button>
       </div>
       <div class="controls-grid">
         <button
-          v-for="c in vehicleControls"
+          v-for="c in vehicleSection.visible"
           :key="c.action"
           class="ctrl-btn"
-          :class="{ loading: loadingAction === c.action }"
+          :class="{ loading: loadingAction === c.action, 'ctrl-unavailable': c._unavailable }"
           :style="{ '--c': c.color }"
           @click="exec(c.action)"
         >
@@ -209,7 +229,7 @@
     </div>
 
     <!-- Charge limit -->
-    <div class="charge-limit-card">
+    <div class="charge-limit-card" v-if="chargeLimitAvailable">
       <div class="charge-limit-header">
         <span class="charge-limit-title">Charge Limit</span>
         <span class="charge-limit-current">Current: {{ s.battery?.charge_soc_setting ?? '—' }}%</span>
@@ -344,48 +364,106 @@ const showSeatModal = ref(false)
 const pendingLimit = ref(props.status?.battery?.charge_soc_setting ?? 80)
 
 const controls = [
-  { action: 'lock', icon: Lock, label: 'Lock', color: '#ffab40' },
-  { action: 'unlock', icon: Unlock, label: 'Unlock', color: '#00e676' },
-  { action: 'trunk/open', icon: TrunkOpenIcon, label: 'Open Trunk', color: '#00d4ff' },
-  { action: 'find', icon: Radio, label: 'Find Car', color: '#00d4ff' },
-  { action: 'windows', icon: Columns2, label: 'Windows', color: '#7c6aff', modal: 'windows' },
-  { action: 'sunshade', icon: Sun, label: 'Sunshade', color: '#ffab40', modal: 'sunshade' },
-  { action: 'climate', icon: Thermometer, label: 'Climate', color: '#00d4ff', modal: 'climate' },
-  { action: 'battery-preheat', icon: BatteryCharging, label: 'Battery Preheat', color: '#00e676' },
+  { action: 'lock', icon: Lock, label: 'Lock', color: '#ffab40', right: 110 },
+  { action: 'unlock', icon: Unlock, label: 'Unlock', color: '#00e676', right: 110 },
+  { action: 'trunk/open', icon: TrunkOpenIcon, label: 'Open Trunk', color: '#00d4ff', right: 130 },
+  { action: 'find', icon: Radio, label: 'Find Car', color: '#00d4ff', right: 120 },
+  { action: 'windows', icon: Columns2, label: 'Windows', color: '#7c6aff', modal: 'windows', right: 230 },
+  { action: 'sunshade', icon: Sun, label: 'Sunshade', color: '#ffab40', modal: 'sunshade', right: 161 },
+  { action: 'climate', icon: Thermometer, label: 'Climate', color: '#00d4ff', modal: 'climate', right: 170 },
+  { action: 'battery-preheat', icon: BatteryCharging, label: 'Battery Preheat', color: '#00e676', right: 190 },
 ]
 
 const chargingControls = [
-  { action: 'charging/start', icon: PlugZap, label: 'Start Charge', color: '#00e676' },
-  { action: 'charging/stop', icon: PlugZap, label: 'Stop Charge', color: '#ff5252' },
-  { action: 'unlock-charger', icon: Plug, label: 'Unlock Charger', color: '#ffab40' },
-  { action: 'healthy-charging/on', icon: ShieldCheck, label: 'Healthy Charge On', color: '#00e676' },
-  { action: 'healthy-charging/off', icon: ShieldOff, label: 'Healthy Charge Off', color: '#ff5252' },
+  { action: 'charging/start', icon: PlugZap, label: 'Start Charge', color: '#00e676', right: 193 },
+  { action: 'charging/stop', icon: PlugZap, label: 'Stop Charge', color: '#ff5252', right: 193 },
+  { action: 'unlock-charger', icon: Plug, label: 'Unlock Charger', color: '#ffab40', right: 192 },
+  { action: 'healthy-charging/on', icon: ShieldCheck, label: 'Healthy Charge On', color: '#00e676', right: 480 },
+  { action: 'healthy-charging/off', icon: ShieldOff, label: 'Healthy Charge Off', color: '#ff5252', right: 480 },
 ]
 
 const comfortControls = [
-  { action: 'seats', icon: Armchair, label: 'Seats', color: '#ff9100', modal: 'seats' },
-  { action: 'steering-wheel-heat/on', icon: Heater, label: 'Wheel Heat On', color: '#ff9100' },
-  { action: 'steering-wheel-heat/off', icon: Heater, label: 'Wheel Heat Off', color: '#5c6478' },
-  { action: 'fuel-heating/on', icon: Flame, label: 'Fuel Heat On', color: '#ff9100' },
-  { action: 'fuel-heating/off', icon: Flame, label: 'Fuel Heat Off', color: '#5c6478' },
-  { action: 'sunroof/open', icon: Sun, label: 'Sunroof Open', color: '#00d4ff' },
-  { action: 'sunroof/close', icon: Sun, label: 'Sunroof Close', color: '#5c6478' },
+  { action: 'seats', icon: Armchair, label: 'Seats', color: '#ff9100', modal: 'seats', right: 301 },
+  { action: 'steering-wheel-heat/on', icon: Heater, label: 'Wheel Heat On', color: '#ff9100', right: 320 },
+  { action: 'steering-wheel-heat/off', icon: Heater, label: 'Wheel Heat Off', color: '#5c6478', right: 320 },
+  { action: 'fuel-heating/on', icon: Flame, label: 'Fuel Heat On', color: '#ff9100', right: 380 },
+  { action: 'fuel-heating/off', icon: Flame, label: 'Fuel Heat Off', color: '#5c6478', right: 380 },
+  { action: 'sunroof/open', icon: Sun, label: 'Sunroof Open', color: '#00d4ff', right: 160 },
+  { action: 'sunroof/close', icon: Sun, label: 'Sunroof Close', color: '#5c6478', right: 160 },
 ]
 
 const securityControls = [
-  { action: 'sentry-mode/on', icon: Eye, label: 'Sentry On', color: '#00e676' },
-  { action: 'sentry-mode/off', icon: EyeOff, label: 'Sentry Off', color: '#5c6478' },
-  { action: 'rearview-mirror-heat/on', icon: AirVent, label: 'Mirror Heat On', color: '#ff9100' },
-  { action: 'rearview-mirror-heat/off', icon: AirVent, label: 'Mirror Heat Off', color: '#5c6478' },
+  { action: 'sentry-mode/on', icon: Eye, label: 'Sentry On', color: '#00e676', right: 220 },
+  { action: 'sentry-mode/off', icon: EyeOff, label: 'Sentry Off', color: '#5c6478', right: 220 },
+  { action: 'rearview-mirror-heat/on', icon: AirVent, label: 'Mirror Heat On', color: '#ff9100', right: 440 },
+  { action: 'rearview-mirror-heat/off', icon: AirVent, label: 'Mirror Heat Off', color: '#5c6478', right: 440 },
 ]
 
 const vehicleControls = [
-  { action: 'on3/on', icon: Power, label: 'ON3 On', color: '#00e676' },
-  { action: 'on3/off', icon: PowerOff, label: 'ON3 Off', color: '#ff5252' },
-  { action: 'battery-preheat-off', icon: BatteryCharging, label: 'Preheat Off', color: '#5c6478' },
-  { action: 'ble-key-restart', icon: Key, label: 'BLE Restart', color: '#7c6aff' },
-  { action: 'hotspot', icon: Wifi, label: 'Hotspot', color: '#00d4ff' },
+  { action: 'on3/on', icon: Power, label: 'ON3 On', color: '#00e676', right: 410 },
+  { action: 'on3/off', icon: PowerOff, label: 'ON3 Off', color: '#ff5252', right: 410 },
+  { action: 'battery-preheat-off', icon: BatteryCharging, label: 'Preheat Off', color: '#5c6478', right: 190 },
+  { action: 'ble-key-restart', icon: Key, label: 'BLE Restart', color: '#7c6aff', right: 430 },
+  { action: 'hotspot', icon: Wifi, label: 'Hotspot', color: '#00d4ff', right: 140 },
 ]
+
+// --- Permission gating ---
+// Ability code → Right codes enabled by that ability (from leapmotor-api ABILITY_TO_RIGHTS)
+const ABILITY_TO_RIGHTS = {
+  1: [110], 2: [120], 3: [130], 4: [150], 6: [170], 9: [171],
+  10: [190], 11: [161], 12: [230], 14: [301], 15: [320], 17: [171],
+  18: [460], 24: [130], 25: [160], 30: [180], 34: [510], 35: [340],
+  36: [230], 38: [360, 361], 40: [380], 42: [370], 43: [370],
+  48: [192], 50: [220], 52: [180],
+}
+const RIGHTS_WITH_ABILITY = new Set(Object.values(ABILITY_TO_RIGHTS).flat())
+
+const userRights = computed(() => {
+  const r = props.vehicle?.rights
+  if (!r) return new Set()
+  return new Set(r.split(',').map(Number).filter(n => !isNaN(n)))
+})
+
+const hwRights = computed(() => {
+  const abilities = props.vehicle?.abilities || []
+  const rights = new Set()
+  for (const a of abilities) {
+    const mapped = ABILITY_TO_RIGHTS[Number(a)]
+    if (mapped) mapped.forEach(r => rights.add(r))
+  }
+  return rights
+})
+
+function isControlAvailable(ctrl) {
+  const right = ctrl.right
+  if (right == null) return true
+  if (!userRights.value.has(right)) return false
+  if (RIGHTS_WITH_ABILITY.has(right) && !hwRights.value.has(right)) return false
+  return true
+}
+
+const showHidden = ref({ remote: false, charging: false, comfort: false, security: false, vehicle: false })
+
+function sectionData(list, key) {
+  return computed(() => {
+    const mapped = list.map(c => ({ ...c, _unavailable: !isControlAvailable(c) }))
+    const hiddenCount = mapped.filter(c => c._unavailable).length
+    const visible = mapped.filter(c => !c._unavailable || showHidden.value[key])
+    return { visible, hiddenCount }
+  })
+}
+
+const remoteSection = sectionData(controls, 'remote')
+const chargingSection = sectionData(chargingControls, 'charging')
+const comfortSection = sectionData(comfortControls, 'comfort')
+const securitySection = sectionData(securityControls, 'security')
+const vehicleSection = sectionData(vehicleControls, 'vehicle')
+
+const chargeLimitAvailable = computed(() => {
+  if (!userRights.value.has(340)) return false
+  if (RIGHTS_WITH_ABILITY.has(340) && !hwRights.value.has(340)) return false
+  return true
+})
 
 function isActive(action) {
   if (action === 'lock') return s.value.doors?.is_locked
@@ -637,6 +715,25 @@ async function doSetChargeLimit() {
 .controls-title { font-size: 13px; font-weight: 700; color: var(--heading); }
 .controls-warn { font-size: 11px; color: #ffab40; margin-left: auto; }
 
+.section-toggle {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.section-toggle:hover {
+  color: var(--text);
+  border-color: var(--text-secondary, var(--muted));
+}
+
 .controls-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -674,6 +771,7 @@ async function doSetChargeLimit() {
   border-color: color-mix(in srgb, var(--c) 33%, transparent);
 }
 .ctrl-btn.loading { cursor: wait; opacity: 0.7; }
+.ctrl-btn.ctrl-unavailable { opacity: 0.35; filter: grayscale(0.6); }
 
 .ctrl-icon {
   font-size: 20px;
