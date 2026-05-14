@@ -56,25 +56,33 @@
     </div>
 
     <!-- Send Destination -->
-    <div class="dest-section">
+    <div v-if="destVisible" class="dest-section" :class="{ unavailable: !canSendDestination }">
       <div class="dest-header">
         <Navigation :size="14" class="dest-icon" />
         <span class="dest-title">Send Destination</span>
+        <span v-if="!canSendDestination" class="dest-unavailable-badge">Unavailable</span>
       </div>
       <p class="dest-hint">Tap the map to select a destination, or enter it manually.</p>
       <div class="dest-form">
-        <input v-model="destAddress" class="dest-input" placeholder="Address" />
-        <input v-model="destName" class="dest-input" placeholder="Name (optional)" />
+        <input v-model="destAddress" class="dest-input" placeholder="Address" :disabled="!canSendDestination" />
+        <input v-model="destName" class="dest-input" placeholder="Name (optional)" :disabled="!canSendDestination" />
         <div class="dest-coords-row">
-          <input v-model.number="destLat" class="dest-input dest-coord" type="number" step="any" placeholder="Latitude" />
-          <input v-model.number="destLng" class="dest-input dest-coord" type="number" step="any" placeholder="Longitude" />
+          <input v-model.number="destLat" class="dest-input dest-coord" type="number" step="any" placeholder="Latitude" :disabled="!canSendDestination" />
+          <input v-model.number="destLng" class="dest-input dest-coord" type="number" step="any" placeholder="Longitude" :disabled="!canSendDestination" />
         </div>
-        <button class="dest-send-btn" :disabled="!canSendDest || sendingDest" @click="doSendDestination">
+        <button class="dest-send-btn" :disabled="!canSendDest || sendingDest || !canSendDestination" @click="doSendDestination">
           <Loader v-if="sendingDest" :size="14" class="spinning" />
           <Navigation v-else :size="14" />
           <span>{{ sendingDest ? 'Sending...' : 'Send to Vehicle' }}</span>
         </button>
       </div>
+    </div>
+    <div v-else-if="!canSendDestination" class="dest-section dest-hidden-toggle">
+      <button class="dest-show-btn" @click="showDestSection = true">
+        <EyeOff :size="13" />
+        <span>Show Send Destination</span>
+        <span class="dest-badge">Unavailable</span>
+      </button>
     </div>
   </div>
 </template>
@@ -85,7 +93,10 @@ import { useAppStore } from '../stores/appStore'
 import { useToast } from '../composables/useToast'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { MapPin, Maximize2, Minimize2, X, Car, Smartphone, Navigation, Loader } from 'lucide-vue-next'
+import { MapPin, Maximize2, Minimize2, X, Car, Smartphone, Navigation, Loader, EyeOff } from 'lucide-vue-next'
+
+const SEND_DEST_RIGHT = 180
+const SEND_DEST_ABILITY = 30
 
 const props = defineProps({
   location: { type: Object, default: () => ({}) },
@@ -113,6 +124,26 @@ const destName = ref('')
 const destLat = ref(null)
 const destLng = ref(null)
 const sendingDest = ref(false)
+const showDestSection = ref(false)
+
+const userRights = computed(() => {
+  const r = props.vehicle?.rights
+  if (!r) return new Set()
+  return new Set(r.split(',').map(Number).filter(n => !isNaN(n)))
+})
+
+const hwAbilities = computed(() => {
+  const abilities = props.vehicle?.abilities || []
+  return new Set(abilities.map(Number))
+})
+
+const canSendDestination = computed(() => {
+  if (!userRights.value.has(SEND_DEST_RIGHT)) return false
+  if (!hwAbilities.value.has(SEND_DEST_ABILITY)) return false
+  return true
+})
+
+const destVisible = computed(() => canSendDestination.value || showDestSection.value)
 
 const vehicleLat = computed(() => props.location?.latitude || 0)
 const vehicleLng = computed(() => props.location?.longitude || 0)
@@ -504,6 +535,52 @@ onBeforeUnmount(() => {
 .dest-section {
   border-top: 1px solid var(--border);
   padding-top: 12px;
+}
+.dest-section.unavailable {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.dest-unavailable-badge {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--muted2);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1px 6px;
+  margin-left: auto;
+}
+.dest-hidden-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dest-show-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 8px 14px;
+  color: var(--muted2);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+  justify-content: center;
+}
+.dest-show-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.dest-badge {
+  font-size: 9px;
+  font-weight: 600;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1px 6px;
 }
 .dest-header {
   display: flex;
