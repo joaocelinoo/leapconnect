@@ -24,11 +24,11 @@
             <div class="cs-gauge-wrapper">
               <svg viewBox="0 0 120 120" class="cs-gauge-svg">
                 <circle cx="60" cy="60" r="52" fill="none" stroke="var(--border)" stroke-width="10" stroke-dasharray="245" stroke-dashoffset="0" stroke-linecap="round" transform="rotate(135 60 60)" />
-                <circle cx="60" cy="60" r="52" fill="none" :stroke="gaugeColor" stroke-width="10" :stroke-dasharray="245" :stroke-dashoffset="245 - gaugeArc" stroke-linecap="round" transform="rotate(135 60 60)" />
+                <circle cx="60" cy="60" r="52" fill="none" :stroke="gaugeColor" stroke-width="10" :stroke-dasharray="gaugeArc + ' 327'" stroke-dashoffset="0" stroke-linecap="round" transform="rotate(135 60 60)" />
               </svg>
               <div class="cs-gauge-value">
                 <span class="cs-gauge-number">{{ gaugeValue }}</span>
-                <span class="cs-gauge-unit">kWh</span>
+                <span class="cs-gauge-unit">%</span>
               </div>
             </div>
             <div class="cs-rank-info">
@@ -152,20 +152,21 @@ let donutChart = null
 // Gauge computed
 const gaugeValue = computed(() => {
   if (!weeklyRank.value?.rank) return '—'
-  return Math.round(weeklyRank.value.rank.hundred_km_ec)
+  return weeklyRank.value.rank.result
 })
 
 const gaugeArc = computed(() => {
-  const val = weeklyRank.value?.rank?.hundred_km_ec ?? 0
-  // 0–30 kWh/100km range, map to full 245 arc (270°)
-  const pct = Math.min(val / 30, 1)
+  const val = weeklyRank.value?.rank?.result ?? 0
+  // 0–100% rank, map to full 245 arc (270°)
+  const pct = Math.min(val / 100, 1)
   return pct * 245
 })
 
 const gaugeColor = computed(() => {
-  const val = weeklyRank.value?.rank?.hundred_km_ec ?? 0
-  if (val <= 14) return '#4caf50'
-  if (val <= 18) return '#ffab40'
+  const val = weeklyRank.value?.rank?.result ?? 100
+  if (val <= 10) return '#4caf50'
+  if (val <= 30) return '#66bb6a'
+  if (val <= 50) return '#ffab40'
   return '#ff5252'
 })
 
