@@ -33,7 +33,7 @@
       <InfoRow v-if="climate.climate_mode != null" label="Climate Mode" :value="climate.climate_mode === 0 ? 'Off' : climate.climate_mode === 1 ? 'Fast Cool' : climate.climate_mode === 3 ? 'Fast Heat' : `${climate.climate_mode}`" color="var(--sub)" />
       <!-- Temperature slider visual -->
       <div v-if="climate.ac_setting != null" class="temp-slider-visual">
-        <div class="temp-slider-label">Temperatura impostata</div>
+        <div class="temp-slider-label">Set Temperature</div>
         <div class="temp-slider-track">
           <div class="temp-slider-knob" :style="{ left: `${((climate.ac_setting - 16) / (30 - 16)) * 100}%` }" />
         </div>
@@ -49,7 +49,7 @@
           <div class="tire-label">{{ t.label }}</div>
         </div>
       </div>
-      <div class="tire-note">Pressione in bar · Ottimale: 2.3 bar</div>
+      <div class="tire-note">Pressure in bar · Optimal: 2.3 bar</div>
     </SectionCard>
 
     <!-- Battery & Charging -->

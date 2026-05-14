@@ -18,7 +18,7 @@
           />
           <label class="pin-remember">
             <input type="checkbox" v-model="remember" />
-            <span>Non chiedere più per questa sessione</span>
+            <span>Remember for this session</span>
           </label>
           <div class="pin-actions">
             <button type="button" class="pin-btn cancel" @click="cancel">Cancel</button>
