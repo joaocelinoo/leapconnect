@@ -1366,10 +1366,12 @@ onBeforeUnmount(destroyCharts)
     justify-content: space-between;
   }
   .header-title { flex: 0 0 auto; }
-  .source-toggle { order: 0; margin: 0 auto; }
+  .source-toggle { order: 2; }
   .history-header .time-toolbar {
+    order: 1;
+    flex: 0 1 auto;
     width: auto;
-    justify-content: flex-end;
+    justify-content: center;
   }
 }
 .source-toggle { display: flex; gap: 2px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
