@@ -39,7 +39,10 @@ from schemas import (
     AuthLoginResponse,
     CertificateStatusResponse,
     CertificateUploadResponse,
+    ChargingHistoryResponse,
     ConnectionStatusResponse,
+    ConsumptionLastWeekResponse,
+    ConsumptionWeeklyRankResponse,
     DailySummaryResponse,
     FullVehicleDataResponse,
     LiveRefreshStatusResponse,
@@ -2361,7 +2364,7 @@ async def piloted_parking(vin: str, request: Request) -> dict:
 # ---------------------------------------------------------------------------
 
 
-@app.get("/api/vehicles/{vin}/charging-history")
+@app.get("/api/vehicles/{vin}/charging-history", response_model=ChargingHistoryResponse)
 async def get_charging_history(
     vin: str,
     start: str | None = None,
@@ -2369,7 +2372,7 @@ async def get_charging_history(
     timezone: str = "GMT+00:00",
     page: int = 1,
     size: int = 10,
-) -> dict:
+) -> ChargingHistoryResponse:
     """Get paginated charging session history."""
     from datetime import date as date_cls
 
@@ -2385,70 +2388,33 @@ async def get_charging_history(
         page_num=page,
         page_size=size,
     )
-    return {
-        "records": [
-            {
-                "start_ts": r.start_ts,
-                "end_ts": r.end_ts,
-                "charge_type": r.charge_type,
-                "energy_kwh": r.energy_kwh,
-                "latitude": r.latitude,
-                "longitude": r.longitude,
-                "timezone": r.timezone,
-                "start_datetime": r.start_datetime.isoformat()
-                if r.start_datetime
-                else None,
-                "end_datetime": r.end_datetime.isoformat() if r.end_datetime else None,
-                "duration_seconds": r.duration_seconds,
-                "is_fast_charge": r.is_fast_charge,
-            }
-            for r in result.records
-        ],
-        "total": result.total,
-        "page_num": result.page_num,
-        "page_size": result.page_size,
-    }
+    return ChargingHistoryResponse.from_result(result.records, page, size)
 
 
-@app.get("/api/vehicles/{vin}/consumption/weekly-rank")
-async def get_consumption_weekly_rank(vin: str) -> dict:
+@app.get(
+    "/api/vehicles/{vin}/consumption/weekly-rank",
+    response_model=ConsumptionWeeklyRankResponse,
+)
+async def get_consumption_weekly_rank(
+    vin: str,
+) -> ConsumptionWeeklyRankResponse:
     """Get weekly energy consumption ranking."""
     client = _get_client()
     vehicle = _find_vehicle(vin)
     result = await client.get_consumption_weekly_rank(vehicle)
-    return {
-        "rank": {
-            "result": result.rank.result,
-            "rank": result.rank.rank,
-            "hundred_km_ec": result.rank.hundred_km_ec,
-            "hundred_mi_kwh_ec": result.rank.hundred_mi_kwh_ec,
-        }
-        if result.rank
-        else None,
-        "weekly": [
-            {
-                "week_start": w.week_start,
-                "week_end": w.week_end,
-                "hundred_km_ec": w.hundred_km_ec,
-                "hundred_mi_kwh_ec": w.hundred_mi_kwh_ec,
-            }
-            for w in result.weekly
-        ],
-    }
+    return ConsumptionWeeklyRankResponse.from_model(result)
 
 
-@app.get("/api/vehicles/{vin}/consumption/last-week")
-async def get_consumption_last_week(vin: str) -> dict:
+@app.get(
+    "/api/vehicles/{vin}/consumption/last-week",
+    response_model=ConsumptionLastWeekResponse,
+)
+async def get_consumption_last_week(vin: str) -> ConsumptionLastWeekResponse:
     """Get last week energy consumption breakdown."""
     client = _get_client()
     vehicle = _find_vehicle(vin)
     result = await client.get_consumption_last_week_breakdown(vehicle)
-    return {
-        "driver_ec": result.driver_ec,
-        "ac_ec": result.ac_ec,
-        "other_ec": result.other_ec,
-        "total_ec": result.total_ec,
-    }
+    return ConsumptionLastWeekResponse.from_model(result)
 
 
 # ---------------------------------------------------------------------------

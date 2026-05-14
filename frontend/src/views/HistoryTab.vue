@@ -6,28 +6,38 @@
         <h2>Data History</h2>
         <p>Performance analysis over time</p>
       </div>
-      <div class="time-toolbar">
-        <button class="toolbar-btn" @click="showDatePicker = !showDatePicker" title="Select date range">
-          <CalendarDays :size="15" />
-        </button>
-        <span class="toolbar-date-label">{{ dateRangeLabel }}</span>
-        <button class="toolbar-pill" @click="goToToday">Today</button>
-        <button class="toolbar-btn" @click="goBack" title="Previous day">
-          <ChevronLeft :size="16" />
-        </button>
-        <button class="toolbar-btn" :disabled="isAtToday" @click="goForward" title="Next day">
-          <ChevronRight :size="16" />
-        </button>
-        <div class="toolbar-menu-wrapper">
-          <button class="toolbar-btn" @click="showToolbarMenu = !showToolbarMenu" title="More options">
-            <MoreVertical :size="16" />
+      <div class="header-right">
+        <div class="source-toggle">
+          <button class="source-btn" :class="{ active: dataSource === 'local' }" @click="dataSource = 'local'">
+            <HardDrive :size="14" /> Local
           </button>
-          <div v-if="showToolbarMenu" class="toolbar-menu">
-            <button class="toolbar-menu-item" @click="exportCsv(); showToolbarMenu = false">
-              <Download :size="14" /> Download CSV
+          <button class="source-btn" :class="{ active: dataSource === 'cloud' }" @click="dataSource = 'cloud'">
+            <Cloud :size="14" /> Cloud
+          </button>
+        </div>
+        <div v-if="dataSource === 'local'" class="time-toolbar">
+          <button class="toolbar-btn" @click="showDatePicker = !showDatePicker" title="Select date range">
+            <CalendarDays :size="15" />
+          </button>
+          <span class="toolbar-date-label">{{ dateRangeLabel }}</span>
+          <button class="toolbar-pill" @click="goToToday">Today</button>
+          <button class="toolbar-btn" @click="goBack" title="Previous day">
+            <ChevronLeft :size="16" />
+          </button>
+          <button class="toolbar-btn" :disabled="isAtToday" @click="goForward" title="Next day">
+            <ChevronRight :size="16" />
+          </button>
+          <div class="toolbar-menu-wrapper">
+            <button class="toolbar-btn" @click="showToolbarMenu = !showToolbarMenu" title="More options">
+              <MoreVertical :size="16" />
             </button>
+            <div v-if="showToolbarMenu" class="toolbar-menu">
+              <button class="toolbar-menu-item" @click="exportCsv(); showToolbarMenu = false">
+                <Download :size="14" /> Download CSV
+              </button>
+            </div>
+            <div v-if="showToolbarMenu" class="toolbar-menu-overlay" @click="showToolbarMenu = false"></div>
           </div>
-          <div v-if="showToolbarMenu" class="toolbar-menu-overlay" @click="showToolbarMenu = false"></div>
         </div>
       </div>
 
@@ -71,12 +81,15 @@
       </div>
     </div>
 
+    <!-- Cloud stats view -->
+    <CloudStatsView v-if="dataSource === 'cloud'" :vin="props.vin" />
+
     <!-- KPI skeleton -->
-    <HistorySkeleton v-if="loadingKpi && !kpiCards.length" :show-kpi="true" :show-charts="false" />
+    <HistorySkeleton v-if="dataSource === 'local' && loadingKpi && !kpiCards.length" :show-kpi="true" :show-charts="false" />
 
     <!-- KPI cards -->
     <transition name="fade">
-      <div v-if="kpiCards.length" class="summary-grid">
+      <div v-if="dataSource === 'local' && kpiCards.length" class="summary-grid">
         <div v-for="s in kpiCards" :key="s.label" class="summary-card">
           <div class="summary-value" :style="{ color: s.color }">{{ s.value }}</div>
           <div class="summary-label">{{ s.label }}</div>
@@ -85,15 +98,15 @@
     </transition>
 
     <!-- Stale indicator -->
-    <div v-if="isStale" class="stale-banner">
+    <div v-if="dataSource === 'local' && isStale" class="stale-banner">
       <span class="stale-dot"></span> Updating data...
     </div>
 
     <!-- Charts skeleton -->
-    <HistorySkeleton v-if="loadingCharts && !data.length" :show-kpi="false" :show-charts="true" :chart-count="4" />
+    <HistorySkeleton v-if="dataSource === 'local' && loadingCharts && !data.length" :show-kpi="false" :show-charts="true" :chart-count="4" />
 
     <!-- Charts -->
-    <template v-if="chartsReady">
+    <template v-if="dataSource === 'local' && chartsReady">
       <!-- Existing core charts -->
       <h3 class="section-title">Battery & Energy</h3>
       <div class="charts-grid">
@@ -216,11 +229,13 @@
       </div>
     </template>
 
-    <div class="history-note" v-if="allSnapshots.length">
-      Real data collected from vehicle · {{ allSnapshots.length }} snapshots available
-    </div>
-    <div class="history-note" v-else>
-      No data yet. Enable automatic collection in Settings to populate history.
+    <div v-if="dataSource === 'local'" class="history-note">
+      <template v-if="allSnapshots.length">
+        Real data collected from vehicle · {{ allSnapshots.length }} snapshots available
+      </template>
+      <template v-else>
+        No data yet. Enable automatic collection in Settings to populate history.
+      </template>
     </div>
   </div>
 </template>
@@ -229,8 +244,9 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { Chart, registerables } from 'chart.js'
 import { api } from '../composables/useApi'
-import { Battery, Map, Zap, Route, Thermometer, BarChart3, Table2, Gauge, Clock, CircleDot, MapPin, Circle, BatteryWarning, CalendarDays, ChevronLeft, ChevronRight, MoreVertical, Download, Maximize2, Minimize2 } from 'lucide-vue-next'
+import { Battery, Map, Zap, Route, Thermometer, BarChart3, Table2, Gauge, Clock, CircleDot, MapPin, Circle, BatteryWarning, CalendarDays, ChevronLeft, ChevronRight, MoreVertical, Download, Maximize2, Minimize2, HardDrive, Cloud } from 'lucide-vue-next'
 import HistorySkeleton from '../components/HistorySkeleton.vue'
+import CloudStatsView from '../components/CloudStatsView.vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
@@ -242,6 +258,7 @@ const props = defineProps({
 })
 
 const viewMode = ref('chart')
+const dataSource = ref('local')
 const showToolbarMenu = ref(false)
 
 // ---------------------------------------------------------------------------
@@ -1350,6 +1367,12 @@ onBeforeUnmount(destroyCharts)
     align-self: auto;
   }
 }
+.header-right { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+@media (min-width: 640px) { .header-right { align-items: flex-end; } }
+.source-toggle { display: flex; gap: 2px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
+.source-btn { display: flex; align-items: center; gap: 5px; padding: 6px 14px; border-radius: 7px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; background: transparent; color: var(--muted); transition: all 0.2s; }
+.source-btn.active { background: var(--btn-bg); color: #00d4ff; }
+.source-btn:hover:not(.active) { color: var(--text); }
 .history-header h2 {
   font-size: 16px;
   font-weight: 700;
