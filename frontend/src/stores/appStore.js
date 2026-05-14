@@ -20,6 +20,7 @@ export const useAppStore = defineStore('app', () => {
   const unreadMessages = ref(0)
   const displayName = ref('')
   const theme = ref('dark')
+  const showVehicleBar = ref(localStorage.getItem('showVehicleBar'))
 
   function applyTheme(t) {
     theme.value = t
@@ -388,6 +389,7 @@ export const useAppStore = defineStore('app', () => {
     theme,
     applyTheme,
     setTheme,
+    showVehicleBar,
     mqttStatus,
     loadMqttStatus,
     liveRefreshStatus,

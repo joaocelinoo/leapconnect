@@ -97,6 +97,10 @@
                 <component :is="store.theme === 'dark' ? Sun : Moon" :size="14" />
                 <span>{{ store.theme === 'dark' ? 'Light Mode' : 'Dark Mode' }}</span>
               </button>
+              <button class="user-menu-item user-menu-action" @click="toggleVehicleBar">
+                <component :is="vehicleBarVisible ? PanelTopClose : PanelTop" :size="14" />
+                <span>{{ vehicleBarVisible ? 'Hide Vehicle Bar' : 'Show Vehicle Bar' }}</span>
+              </button>
               <div class="user-menu-divider" />
               <button class="user-menu-item user-menu-action user-menu-logout" @click="handleLogout">
                 <LogOut :size="14" />
@@ -109,7 +113,7 @@
     </div>
 
     <!-- Vehicle tabs — horizontal swipeable -->
-    <div class="vehicle-tabs-bar">
+    <div v-if="vehicleBarVisible" class="vehicle-tabs-bar">
       <div class="vehicle-tabs-scroll">
         <button
           v-for="v in store.vehicles"
@@ -227,13 +231,27 @@ import MessagesTab from './views/MessagesTab.vue'
 import SettingsTab from './views/SettingsTab.vue'
 import ToastContainer from './components/ToastContainer.vue'
 import MessageDropdown from './components/MessageDropdown.vue'
-import { LayoutDashboard, List, TrendingUp, Mail, Settings, RefreshCw, LogOut, Cloud, CloudOff, Sun, Moon } from 'lucide-vue-next'
+import { LayoutDashboard, List, TrendingUp, Mail, Settings, RefreshCw, LogOut, Cloud, CloudOff, Sun, Moon, PanelTop, PanelTopClose } from 'lucide-vue-next'
 
 const store = useAppStore()
 const { toast } = useToast()
 
 const errorMsg = ref('')
 const showUserMenu = ref(false)
+
+const vehicleBarVisible = computed(() => {
+  const saved = store.showVehicleBar
+  if (saved === 'true') return true
+  if (saved === 'false') return false
+  // Default: show only if multiple vehicles
+  return store.vehicles.length > 1
+})
+
+function toggleVehicleBar() {
+  const newVal = !vehicleBarVisible.value
+  store.showVehicleBar = newVal ? 'true' : 'false'
+  localStorage.setItem('showVehicleBar', store.showVehicleBar)
+}
 
 const userInitials = computed(() => {
   const name = store.displayName || ''
