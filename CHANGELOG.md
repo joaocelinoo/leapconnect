@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Details: Ignition ON2** added to Connectivity section
 - **New MQTT fields**: seat comfort (6 fields), security (5 fields), additional battery/driving/climate/ignition fields published to Home Assistant
 - **Database migration 0003**: added `is_regening` column to `vehicle_snapshots` table for tracking regenerative braking state in history
+- **Vehicle Bar toggle**: the vehicle tabs bar below the navbar is now hidden by default when there is only one vehicle and shown when there are multiple vehicles. A toggle in the user menu (top-right) allows manually showing/hiding it. The preference is persisted in localStorage.
 
 ### Changed
 
@@ -31,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MQTT/HA integration updated**: fixed enum serialization for gear status and HVAC direction; charge plan fields read from new sub-object path; `is_charging` now uses the library's native property instead of a power-based workaround
 - **Slow charging detection fixed**: `isSlowCharging` on the Dashboard now checks `charge_state_label === 'CHARGING' && !battery.dc_input_fast_charge` instead of the removed `AC_CONNECTED` label
 - **ClimateRequest.windlevel** type changed from `str` to `int` to match the updated library
+
+### Fixed
+
+- **PIN "Remember for this session" now works**: checking the remember checkbox in the PIN dialog persists the PIN flag in `sessionStorage`, so it survives page refreshes. The flag is cleared on logout or new login.
+- **PIN dialog hidden behind command modals**: the PIN dialog now renders above command modals (Windows, Sunshade, Climate, Seats) by using a higher z-index.
 
 ## [0.6.1] - 2026-05-07
 
