@@ -385,8 +385,8 @@ fetchAll()
 .cs-bar-label { font-size: 9px; color: var(--muted); white-space: nowrap; }
 
 /* Donut */
-.cs-donut-card { }
-.cs-donut-row { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; justify-content: center; }
+.cs-donut-card { display: flex; flex-direction: column; }
+.cs-donut-row { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; justify-content: center; flex: 1; }
 .cs-donut-wrapper { position: relative; width: 180px; height: 180px; flex-shrink: 0; }
 .cs-donut-wrapper canvas { width: 180px !important; height: 180px !important; }
 .cs-donut-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
