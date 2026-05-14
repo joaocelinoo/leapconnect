@@ -82,7 +82,7 @@ defineExpose({ setError })
 .pin-overlay {
   position: fixed;
   inset: 0;
-  z-index: 5000;
+  z-index: 6000;
   display: flex;
   align-items: center;
   justify-content: center;
