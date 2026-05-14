@@ -33,9 +33,10 @@
             </div>
             <div class="cs-rank-info">
               <span class="cs-rank-badge" :style="{ background: rankBadgeColor }">{{ rankLabel }}</span>
-              <span class="cs-rank-text">Top <span class="cs-rank-pct">{{ weeklyRank.rank?.rank || '—' }}%</span> users</span>
+              <span class="cs-rank-text">Top <span class="cs-rank-pct">{{ rankPctText }}</span> users</span>
             </div>
           </div>
+          <div class="cs-rank-note">The ranking may differ from the official app, which clamps values below 10% to 10% and above 99% to 99%.</div>
         </div>
 
         <!-- Last week breakdown donut -->
@@ -175,6 +176,11 @@ const rankLabel = computed(() => {
   if (r <= 30) return 'Good'
   if (r <= 50) return 'Average'
   return 'Below avg'
+})
+
+const rankPctText = computed(() => {
+  const r = weeklyRank.value?.rank?.result
+  return r != null ? `${r}%` : '—'
 })
 
 const rankBadgeColor = computed(() => {
@@ -356,7 +362,9 @@ fetchAll()
 }
 
 /* Gauge */
+.cs-gauge-card { position: relative; }
 .cs-gauge-card .cs-card-title { text-align: left; }
+.cs-gauge-card .cs-info-icon { position: absolute; top: 16px; right: 16px; }
 .cs-gauge-row { display: flex; flex-direction: column; align-items: center; }
 .cs-gauge-wrapper { position: relative; width: 160px; height: 160px; }
 .cs-gauge-svg { width: 100%; height: 100%; }
@@ -367,6 +375,7 @@ fetchAll()
 .cs-rank-badge { display: inline-block; padding: 4px 14px; border-radius: 12px; font-size: 12px; font-weight: 700; color: #fff; }
 .cs-rank-text { font-size: 12px; color: var(--muted); }
 .cs-rank-pct { color: #4caf50; font-weight: 700; }
+.cs-rank-note { font-size: 11px; color: var(--muted); text-align: center; margin-top: 12px; line-height: 1.4; }
 
 /* Bar chart */
 .cs-bar-chart { display: flex; align-items: flex-end; gap: 8px; height: 160px; padding-top: 20px; }
