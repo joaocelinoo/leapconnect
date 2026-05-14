@@ -163,20 +163,18 @@ const gaugeArc = computed(() => {
 })
 
 const gaugeColor = computed(() => {
-  const val = weeklyRank.value?.rank?.result ?? 100
-  if (val <= 10) return '#4caf50'
-  if (val <= 30) return '#66bb6a'
-  if (val <= 50) return '#ffab40'
-  return '#ff5252'
+  const val = weeklyRank.value?.rank?.result ?? 0
+  if (val > 80) return '#00B359'
+  if (val >= 40) return '#0093FF'
+  return '#FFA900'
 })
 
 const rankLabel = computed(() => {
   const r = weeklyRank.value?.rank?.result
   if (r == null) return '—'
-  if (r <= 10) return 'Excellent'
-  if (r <= 30) return 'Good'
-  if (r <= 50) return 'Average'
-  return 'Below avg'
+  if (r > 80) return 'Excellent'
+  if (r >= 40) return 'Good'
+  return 'Ordinary'
 })
 
 const rankPctText = computed(() => {
@@ -187,10 +185,9 @@ const rankPctText = computed(() => {
 const rankBadgeColor = computed(() => {
   const r = weeklyRank.value?.rank?.result
   if (r == null) return 'var(--border)'
-  if (r <= 10) return '#4caf50'
-  if (r <= 30) return '#ffab40'
-  if (r <= 50) return '#ff9800'
-  return '#ff5252'
+  if (r > 80) return '#00B359'
+  if (r >= 40) return '#0093FF'
+  return '#FFA900'
 })
 
 const driverPct = computed(() => {
