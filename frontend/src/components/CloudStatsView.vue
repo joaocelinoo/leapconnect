@@ -23,7 +23,7 @@
           <div class="cs-gauge-row">
             <div class="cs-gauge-wrapper">
               <svg viewBox="0 0 120 120" class="cs-gauge-svg">
-                <circle cx="60" cy="60" r="52" fill="none" stroke="var(--border)" stroke-width="10" stroke-dasharray="245" stroke-dashoffset="65" stroke-linecap="round" transform="rotate(135 60 60)" />
+                <circle cx="60" cy="60" r="52" fill="none" stroke="var(--border)" stroke-width="10" stroke-dasharray="245" stroke-dashoffset="0" stroke-linecap="round" transform="rotate(135 60 60)" />
                 <circle cx="60" cy="60" r="52" fill="none" :stroke="gaugeColor" stroke-width="10" :stroke-dasharray="245" :stroke-dashoffset="245 - gaugeArc" stroke-linecap="round" transform="rotate(135 60 60)" />
               </svg>
               <div class="cs-gauge-value">
@@ -156,9 +156,9 @@ const gaugeValue = computed(() => {
 
 const gaugeArc = computed(() => {
   const val = weeklyRank.value?.rank?.hundred_km_ec ?? 0
-  // 0–30 kWh/100km range, map to 0–180 of the 245 arc
+  // 0–30 kWh/100km range, map to full 245 arc (270°)
   const pct = Math.min(val / 30, 1)
-  return pct * 180
+  return pct * 245
 })
 
 const gaugeColor = computed(() => {
@@ -357,7 +357,7 @@ fetchAll()
 
 /* Gauge */
 .cs-gauge-card .cs-card-title { text-align: left; }
-.cs-gauge-row { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.cs-gauge-row { display: flex; flex-direction: column; align-items: center; }
 .cs-gauge-wrapper { position: relative; width: 160px; height: 160px; }
 .cs-gauge-svg { width: 100%; height: 100%; }
 .cs-gauge-value { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
