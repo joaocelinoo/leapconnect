@@ -2,44 +2,44 @@
   <div class="history-tab">
     <!-- Header + period selector -->
     <div class="history-header">
-      <div>
+      <div class="header-title">
         <h2>Data History</h2>
         <p>Performance analysis over time</p>
       </div>
-      <div class="header-right">
-        <div class="source-toggle">
-          <button class="source-btn" :class="{ active: dataSource === 'local' }" @click="dataSource = 'local'">
-            <HardDrive :size="14" /> Local
-          </button>
-          <button class="source-btn" :class="{ active: dataSource === 'cloud' }" @click="dataSource = 'cloud'">
-            <Cloud :size="14" /> Cloud
-          </button>
-        </div>
-        <div v-if="dataSource === 'local'" class="time-toolbar">
+      <div class="source-toggle">
+        <button class="source-btn" :class="{ active: dataSource === 'local' }" @click="dataSource = 'local'">
+          <HardDrive :size="14" /> Local
+        </button>
+        <button class="source-btn" :class="{ active: dataSource === 'cloud' }" @click="dataSource = 'cloud'">
+          <Cloud :size="14" /> Cloud
+        </button>
+      </div>
+      <div v-if="dataSource === 'local'" class="time-toolbar">
           <button class="toolbar-btn" @click="showDatePicker = !showDatePicker" title="Select date range">
             <CalendarDays :size="15" />
           </button>
           <span class="toolbar-date-label">{{ dateRangeLabel }}</span>
-          <button class="toolbar-pill" @click="goToToday">Today</button>
-          <button class="toolbar-btn" @click="goBack" title="Previous day">
-            <ChevronLeft :size="16" />
-          </button>
-          <button class="toolbar-btn" :disabled="isAtToday" @click="goForward" title="Next day">
-            <ChevronRight :size="16" />
-          </button>
-          <div class="toolbar-menu-wrapper">
-            <button class="toolbar-btn" @click="showToolbarMenu = !showToolbarMenu" title="More options">
-              <MoreVertical :size="16" />
+          <div class="toolbar-controls">
+            <button class="toolbar-pill" @click="goToToday">Today</button>
+            <button class="toolbar-btn" @click="goBack" title="Previous day">
+              <ChevronLeft :size="16" />
             </button>
-            <div v-if="showToolbarMenu" class="toolbar-menu">
-              <button class="toolbar-menu-item" @click="exportCsv(); showToolbarMenu = false">
-                <Download :size="14" /> Download CSV
+            <button class="toolbar-btn" :disabled="isAtToday" @click="goForward" title="Next day">
+              <ChevronRight :size="16" />
+            </button>
+            <div class="toolbar-menu-wrapper">
+              <button class="toolbar-btn" @click="showToolbarMenu = !showToolbarMenu" title="More options">
+                <MoreVertical :size="16" />
               </button>
+              <div v-if="showToolbarMenu" class="toolbar-menu">
+                <button class="toolbar-menu-item" @click="exportCsv(); showToolbarMenu = false">
+                  <Download :size="14" /> Download CSV
+                </button>
+              </div>
+              <div v-if="showToolbarMenu" class="toolbar-menu-overlay" @click="showToolbarMenu = false"></div>
             </div>
-            <div v-if="showToolbarMenu" class="toolbar-menu-overlay" @click="showToolbarMenu = false"></div>
           </div>
         </div>
-      </div>
 
       <!-- Date Range Picker Dropdown -->
       <div v-if="showDatePicker" class="date-picker-overlay" @click.self="showDatePicker = false"></div>
@@ -1350,25 +1350,28 @@ onBeforeUnmount(destroyCharts)
 
 .history-header {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 12px;
 }
+.header-title { flex: 1; min-width: 0; }
+.source-toggle { order: 0; }
 .history-header .time-toolbar {
-  align-self: center;
+  width: 100%;
+  justify-content: center;
 }
 @media (min-width: 640px) {
   .history-header {
-    flex-direction: row;
+    flex-wrap: nowrap;
     justify-content: space-between;
-    align-items: center;
   }
+  .header-title { flex: 0 0 auto; }
+  .source-toggle { order: 0; margin: 0 auto; }
   .history-header .time-toolbar {
-    align-self: auto;
+    width: auto;
+    justify-content: flex-end;
   }
 }
-.header-right { display: flex; flex-direction: column; gap: 8px; align-items: center; }
-@media (min-width: 640px) { .header-right { align-items: flex-end; } }
 .source-toggle { display: flex; gap: 2px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
 .source-btn { display: flex; align-items: center; gap: 5px; padding: 6px 14px; border-radius: 7px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; background: transparent; color: var(--muted); transition: all 0.2s; }
 .source-btn.active { background: var(--btn-bg); color: #00d4ff; }
@@ -1417,9 +1420,16 @@ onBeforeUnmount(destroyCharts)
   font-size: 13px;
   font-weight: 600;
   color: var(--text);
-  padding: 0 10px;
-  margin-right: 10px;
   white-space: nowrap;
+  flex: 1;
+  text-align: center;
+  padding: 0 16px;
+}
+.toolbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 .toolbar-pill {
   padding: 5px 12px;
@@ -1432,7 +1442,6 @@ onBeforeUnmount(destroyCharts)
   cursor: pointer;
   transition: all 0.15s;
   white-space: nowrap;
-  margin-right: 6px;
 }
 .toolbar-pill:hover {
   background: rgba(0, 184, 212, 0.12);
