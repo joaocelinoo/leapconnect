@@ -74,9 +74,21 @@
             </div>
 
             <!-- Start time -->
-            <div class="acs-row">
+            <div class="acs-field">
               <span class="acs-label">Start Time</span>
-              <input type="time" v-model="form.startTime" class="acs-input" />
+              <div class="acs-time-picker">
+                <div class="acs-time-col">
+                  <button class="acs-time-arrow" @click="stepHour(1)"><ChevronUp :size="18" /></button>
+                  <span class="acs-time-digit">{{ padTwo(formHour) }}</span>
+                  <button class="acs-time-arrow" @click="stepHour(-1)"><ChevronDown :size="18" /></button>
+                </div>
+                <span class="acs-time-sep">:</span>
+                <div class="acs-time-col">
+                  <button class="acs-time-arrow" @click="stepMinute(5)"><ChevronUp :size="18" /></button>
+                  <span class="acs-time-digit">{{ padTwo(formMinute) }}</span>
+                  <button class="acs-time-arrow" @click="stepMinute(-5)"><ChevronDown :size="18" /></button>
+                </div>
+              </div>
             </div>
 
             <!-- Temperature -->
@@ -197,10 +209,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, computed } from 'vue'
 import {
   CalendarClock, Loader, Snowflake, Flame, Wind, RotateCcw,
-  ThermometerSnowflake, Trash2, Plus, Pencil, Clock, ChevronLeft
+  ThermometerSnowflake, Trash2, Plus, Pencil, Clock, ChevronLeft,
+  ChevronUp, ChevronDown
 } from 'lucide-vue-next'
 import { api } from '../composables/useApi'
 import ConfirmDialog from './ConfirmDialog.vue'
@@ -259,6 +272,28 @@ function generateSetId() {
   const epochMs = Date.now()
   const devicePart = Math.random().toString(36).substring(2, 10)
   return `air_set${devicePart}${epochMs}`
+}
+
+// --- time picker helpers ---
+
+const formHour = computed(() => {
+  const parts = (form.startTime || '00:00').split(':')
+  return parseInt(parts[0], 10) || 0
+})
+const formMinute = computed(() => {
+  const parts = (form.startTime || '00:00').split(':')
+  return parseInt(parts[1], 10) || 0
+})
+
+function padTwo(n) { return String(n).padStart(2, '0') }
+
+function stepHour(delta) {
+  let h = (formHour.value + delta + 24) % 24
+  form.startTime = `${padTwo(h)}:${padTwo(formMinute.value)}`
+}
+function stepMinute(delta) {
+  let m = (formMinute.value + delta + 60) % 60
+  form.startTime = `${padTwo(formHour.value)}:${padTwo(m)}`
 }
 
 function formatStartTime(timeStr) {
@@ -481,6 +516,32 @@ watch(() => props.visible, (val) => {
 }
 .acs-field { display: flex; flex-direction: column; gap: 8px; }
 .acs-hint { font-size: 11px; color: var(--muted2); }
+
+/* Time picker */
+.acs-time-picker {
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  background: var(--bg); border: 1px solid rgba(255,255,255,.08);
+  border-radius: 14px; padding: 8px 16px;
+}
+.acs-time-col {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.acs-time-arrow {
+  background: none; border: none; color: var(--muted);
+  cursor: pointer; padding: 4px; border-radius: 8px;
+  transition: all .15s; display: flex; align-items: center; justify-content: center;
+}
+.acs-time-arrow:hover { color: #00d4ff; background: rgba(0,212,255,.1); }
+.acs-time-arrow:active { transform: scale(0.9); }
+.acs-time-digit {
+  font-size: 32px; font-weight: 700; color: var(--text);
+  min-width: 48px; text-align: center; line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.acs-time-sep {
+  font-size: 28px; font-weight: 700; color: var(--muted);
+  padding: 0 2px; align-self: center;
+}
 
 .acs-input {
   padding: 8px 12px; border: 1px solid rgba(255,255,255,.1); border-radius: 10px;
