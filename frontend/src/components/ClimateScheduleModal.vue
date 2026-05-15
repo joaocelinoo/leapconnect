@@ -126,7 +126,7 @@
               <button
                 class="acs-delete"
                 :disabled="!!saving"
-                @click="cancelAll"
+                @click="showCancelConfirm = true"
               >
                 <Trash2 :size="14" />
                 <span>Cancel All Schedules</span>
@@ -139,6 +139,19 @@
         </div>
       </div>
     </Transition>
+
+    <ConfirmDialog
+      :visible="showCancelConfirm"
+      title="Cancel All Schedules?"
+      message="This will remove all climate schedules from the Leapmotor cloud. The vehicle will no longer start climate control automatically."
+      confirm-label="Cancel All"
+      cancel-label="Keep"
+      variant="danger"
+      icon="trash"
+      :loading="cancelling"
+      @confirm="doCancelAll"
+      @cancel="showCancelConfirm = false"
+    />
   </Teleport>
 </template>
 
@@ -148,6 +161,7 @@ import {
   CalendarClock, Loader, Snowflake, Flame, Wind, RotateCcw, ThermometerSnowflake, Trash2
 } from 'lucide-vue-next'
 import { api } from '../composables/useApi'
+import ConfirmDialog from './ConfirmDialog.vue'
 
 const props = defineProps({
   visible: Boolean,
@@ -165,6 +179,8 @@ const operate = ref('manual')
 const circle = ref('out')
 const wshld = ref('0')
 const saving = ref(false)
+const showCancelConfirm = ref(false)
+const cancelling = ref(false)
 
 const selectedDays = reactive(new Set([1, 2, 3, 4, 5]))
 
@@ -253,18 +269,19 @@ async function save() {
   }
 }
 
-async function cancelAll() {
+async function doCancelAll() {
   if (!props.vin) return
-  if (!confirm('Cancel all climate schedules?')) return
-  saving.value = true
+  cancelling.value = true
   try {
     await api('DELETE', `/api/vehicles/${props.vin}/ac-schedule`)
+    showCancelConfirm.value = false
     emit('saved')
     emit('close')
   } catch (err) {
+    showCancelConfirm.value = false
     alert('Failed to cancel schedules: ' + (err.message || err))
   } finally {
-    saving.value = false
+    cancelling.value = false
   }
 }
 </script>
