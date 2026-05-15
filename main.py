@@ -2062,6 +2062,36 @@ async def set_charge_limit(vin: str, request: Request) -> dict:
     return await client.set_charge_limit(vin, int(limit))
 
 
+class ChargeScheduleRequest(BaseModel):
+    enabled: bool
+    soc_limit: int = 80
+    start_time: str
+    end_time: str
+    cycles: str
+    circulation: int = 0
+    recharge: int = 0
+
+
+@app.post("/api/vehicles/{vin}/charge-schedule")
+async def set_charge_schedule(vin: str, body: ChargeScheduleRequest) -> dict:
+    """Set the full charging schedule (start/end time, days, SOC limit)."""
+    client = _get_client()
+    if not (20 <= body.soc_limit <= 100):
+        raise HTTPException(
+            status_code=422, detail="SOC limit must be between 20 and 100"
+        )
+    return await client.set_charge_schedule(
+        vin,
+        enabled=body.enabled,
+        soc_limit=body.soc_limit,
+        start_time=body.start_time,
+        end_time=body.end_time,
+        cycles=body.cycles,
+        circulation=body.circulation,
+        recharge=body.recharge,
+    )
+
+
 @app.post("/api/vehicles/{vin}/send-destination")
 async def send_destination(vin: str, request: Request) -> dict:
     """Send a navigation destination to the vehicle's infotainment system."""

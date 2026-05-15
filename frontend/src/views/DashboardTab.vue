@@ -324,6 +324,14 @@
       @close="showFotaModal = false"
       :on-exec="execFota"
     />
+
+    <ChargeScheduleModal
+      :visible="showChargeScheduleModal"
+      @close="showChargeScheduleModal = false"
+      :on-exec="execChargeSchedule"
+      :charge-plan="s.battery?.charge_plan"
+      :current-soc="s.battery?.charge_soc_setting"
+    />
   </div>
 </template>
 
@@ -344,6 +352,7 @@ import DestinationModal from '../components/DestinationModal.vue'
 import SpeedLimitModal from '../components/SpeedLimitModal.vue'
 import MediaControlModal from '../components/MediaControlModal.vue'
 import FotaModal from '../components/FotaModal.vue'
+import ChargeScheduleModal from '../components/ChargeScheduleModal.vue'
 import {
   Zap, Snowflake, Lock, Unlock, Shield, Loader, Plug,
   Radio, ChevronUp, ChevronDown, Sun, Wind, Flame,
@@ -351,7 +360,7 @@ import {
   ShieldCheck, ShieldOff, Power, PowerOff, Wifi, Car,
   CircleParking, Key, Eye, EyeOff, PlugZap,
   Heater, AirVent, Armchair, Navigation,
-  Gauge, Music, Download
+  Gauge, Music, Download, CalendarClock
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -414,6 +423,7 @@ const showDestinationModal = ref(false)
 const showSpeedLimitModal = ref(false)
 const showMediaModal = ref(false)
 const showFotaModal = ref(false)
+const showChargeScheduleModal = ref(false)
 
 const pendingLimit = ref(props.status?.battery?.charge_soc_setting ?? 80)
 
@@ -436,6 +446,7 @@ const chargingControls = [
   { action: 'battery-preheat-off', icon: BatteryCharging, label: 'Preheat Off', color: '#5c6478', right: 190 },
   { action: 'healthy-charging/on', icon: ShieldCheck, label: 'Healthy Charge On', color: '#00e676', right: 480 },
   { action: 'healthy-charging/off', icon: ShieldOff, label: 'Healthy Charge Off', color: '#ff5252', right: 480 },
+  { action: 'charge-schedule', icon: CalendarClock, label: 'Schedule', color: '#00d4ff', modal: 'chargeSchedule', right: 340 },
 ]
 
 const comfortControls = [
@@ -642,6 +653,7 @@ function openModal(type) {
   else if (type === 'speedLimit') showSpeedLimitModal.value = true
   else if (type === 'media') showMediaModal.value = true
   else if (type === 'fota') showFotaModal.value = true
+  else if (type === 'chargeSchedule') showChargeScheduleModal.value = true
 }
 
 async function execSpeedLimit({ action, body }) {
@@ -675,6 +687,18 @@ async function execFota({ action, body }) {
     toast('Firmware command sent', 'success')
   } catch (err) {
     toast(`FOTA: ${err.message}`, 'error')
+  }
+}
+
+async function execChargeSchedule({ action, body }) {
+  const ok = await requirePin()
+  if (!ok) return
+  try {
+    await store.execControl(props.vehicle.vin, action, body)
+    toast('Charge schedule updated', 'success')
+    await store.refreshAfterCommand()
+  } catch (err) {
+    toast(`Schedule: ${err.message}`, 'error')
   }
 }
 
