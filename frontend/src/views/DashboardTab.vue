@@ -237,7 +237,7 @@
           class="ctrl-btn"
           :class="{ loading: loadingAction === c.action, 'ctrl-unavailable': c._unavailable }"
           :style="{ '--c': c.color }"
-          @click="exec(c.action)"
+          @click="c.modal ? openModal(c.modal) : exec(c.action)"
         >
           <span class="ctrl-icon" :class="{ spinning: loadingAction === c.action }">
             <Loader v-if="loadingAction === c.action" :size="16" />
@@ -299,6 +299,13 @@
       :on-exec="execSeat"
       :seat-comfort="s.seat_comfort"
     />
+
+    <DestinationModal
+      :visible="showDestinationModal"
+      @close="showDestinationModal = false"
+      :location="s.location"
+      :vehicle="props.vehicle"
+    />
   </div>
 </template>
 
@@ -315,13 +322,14 @@ import SunshadeControlModal from '../components/SunshadeControlModal.vue'
 import ClimateControlModal from '../components/ClimateControlModal.vue'
 import TrunkOpenIcon from '../components/icons/TrunkOpenIcon.vue'
 import SeatControlModal from '../components/SeatControlModal.vue'
+import DestinationModal from '../components/DestinationModal.vue'
 import {
   Zap, Snowflake, Lock, Unlock, Shield, Loader, Plug,
   Radio, ChevronUp, ChevronDown, Sun, Wind, Flame,
   Thermometer, ThermometerSnowflake, BatteryCharging, Columns2,
   ShieldCheck, ShieldOff, Power, PowerOff, Wifi, Car,
   CircleParking, Key, Eye, EyeOff, PlugZap,
-  Heater, AirVent, Armchair
+  Heater, AirVent, Armchair, Navigation
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -380,6 +388,7 @@ const showWindowModal = ref(false)
 const showSunshadeModal = ref(false)
 const showClimateModal = ref(false)
 const showSeatModal = ref(false)
+const showDestinationModal = ref(false)
 
 const pendingLimit = ref(props.status?.battery?.charge_soc_setting ?? 80)
 
@@ -425,6 +434,7 @@ const vehicleControls = [
   { action: 'battery-preheat-off', icon: BatteryCharging, label: 'Preheat Off', color: '#5c6478', right: 190 },
   { action: 'ble-key-restart', icon: Key, label: 'BLE Restart', color: '#7c6aff', right: 430 },
   { action: 'hotspot', icon: Wifi, label: 'Hotspot', color: '#00d4ff', right: 140 },
+  { action: 'send-destination', icon: Navigation, label: 'Send Destination', color: '#ff7043', modal: 'destination', right: 180 },
 ]
 
 // --- Permission gating ---
@@ -596,6 +606,7 @@ function openModal(type) {
   else if (type === 'sunshade') showSunshadeModal.value = true
   else if (type === 'climate') showClimateModal.value = true
   else if (type === 'seats') showSeatModal.value = true
+  else if (type === 'destination') showDestinationModal.value = true
 }
 
 async function doSetChargeLimit() {
