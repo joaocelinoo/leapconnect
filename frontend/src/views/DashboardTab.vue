@@ -336,7 +336,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, toValue } from 'vue'
 import { useAppStore } from '../stores/appStore'
 import { useToast } from '../composables/useToast'
 import { formatTime } from '../utils/formatters'
@@ -427,16 +427,21 @@ const showChargeScheduleModal = ref(false)
 
 const pendingLimit = ref(props.status?.battery?.charge_soc_setting ?? 80)
 
-const controls = [
-  { action: 'lock', icon: Lock, label: 'Lock', color: '#ffab40', right: 110 },
-  { action: 'unlock', icon: Unlock, label: 'Unlock', color: '#00e676', right: 110 },
-  { action: 'trunk/open', icon: TrunkOpenIcon, label: 'Open Trunk', color: '#00d4ff', right: 130 },
-  { action: 'trunk/close', icon: ChevronDown, label: 'Close Trunk', color: '#5c6478', right: 130 },
-  { action: 'find', icon: Radio, label: 'Find Car', color: '#00d4ff', right: 120 },
-  { action: 'windows', icon: Columns2, label: 'Windows', color: '#7c6aff', modal: 'windows', right: 230 },
-  { action: 'sunshade', icon: Sun, label: 'Sunshade', color: '#ffab40', modal: 'sunshade', right: 161 },
-  { action: 'climate', icon: Thermometer, label: 'Climate', color: '#00d4ff', modal: 'climate', right: 170 },
-]
+const isT03 = computed(() => /^t03$/i.test(props.vehicle?.car_type || ''))
+
+const controls = computed(() => {
+  const base = [
+    { action: 'lock', icon: Lock, label: 'Lock', color: '#ffab40', right: 110 },
+    { action: 'unlock', icon: Unlock, label: 'Unlock', color: '#00e676', right: 110 },
+    { action: 'trunk/open', icon: TrunkOpenIcon, label: 'Open Trunk', color: '#00d4ff', right: 130 },
+    { action: 'trunk/close', icon: ChevronDown, label: 'Close Trunk', color: '#5c6478', right: 130 },
+    { action: 'find', icon: Radio, label: 'Find Car', color: '#00d4ff', right: 120 },
+    { action: 'windows', icon: Columns2, label: 'Windows', color: '#7c6aff', modal: 'windows', right: 230 },
+    { action: 'sunshade', icon: Sun, label: 'Sunshade', color: '#ffab40', modal: 'sunshade', right: 161 },
+    { action: 'climate', icon: Thermometer, label: 'Climate', color: '#00d4ff', modal: 'climate', right: 170 },
+  ]
+  return isT03.value ? base.filter(c => c.action !== 'trunk/close') : base
+})
 
 const chargingControls = [
   { action: 'charging/start', icon: PlugZap, label: 'Start Charge', color: '#00e676', right: 193 },
@@ -519,7 +524,7 @@ const showHidden = ref({ remote: false, charging: false, comfort: false, securit
 
 function sectionData(list, key) {
   return computed(() => {
-    const mapped = list.map(c => ({ ...c, _unavailable: !isControlAvailable(c) }))
+    const mapped = toValue(list).map(c => ({ ...c, _unavailable: !isControlAvailable(c) }))
     const hiddenCount = mapped.filter(c => c._unavailable).length
     const availableCount = mapped.length - hiddenCount
     const allHidden = availableCount === 0
