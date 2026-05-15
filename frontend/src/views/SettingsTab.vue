@@ -573,10 +573,12 @@
               <div class="raw-tabs">
                 <button class="raw-tab" :class="{ active: rawTab === 'vehicle' }" @click="rawTab = 'vehicle'">Vehicle</button>
                 <button class="raw-tab" :class="{ active: rawTab === 'status' }" @click="rawTab = 'status'">Status</button>
+                <button class="raw-tab" :class="{ active: rawTab === 'lastCmd' }" @click="rawTab = 'lastCmd'">Commands</button>
               </div>
               <div class="raw-panel">
                 <pre v-if="rawTab === 'vehicle'">{{ JSON.stringify(rawData?.vehicle_raw, null, 2) }}</pre>
-                <pre v-else>{{ JSON.stringify(rawData?.status_raw, null, 2) }}</pre>
+                <pre v-else-if="rawTab === 'status'">{{ JSON.stringify(rawData?.status_raw, null, 2) }}</pre>
+                <pre v-else>{{ store.commandHistory.length ? JSON.stringify(store.commandHistory, null, 2) : 'No commands executed yet.' }}</pre>
               </div>
             </div>
           </div>

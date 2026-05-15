@@ -20,6 +20,7 @@ export const useAppStore = defineStore('app', () => {
   const unreadMessages = ref(0)
   const displayName = ref('')
   const theme = ref('dark')
+  const commandHistory = ref([])
   const showVehicleBar = ref(localStorage.getItem('showVehicleBar'))
 
   function applyTheme(t) {
@@ -331,7 +332,10 @@ export const useAppStore = defineStore('app', () => {
   }
 
   async function execControl(vin, action, body = null) {
-    return await api('POST', `/api/vehicles/${vin}/${action}`, body)
+    const result = await api('POST', `/api/vehicles/${vin}/${action}`, body)
+    const entry = { action, body, response: result, timestamp: new Date().toISOString() }
+    commandHistory.value = [entry, ...commandHistory.value].slice(0, 10)
+    return result
   }
 
   async function setChargeLimit(vin, limit) {
@@ -394,6 +398,7 @@ export const useAppStore = defineStore('app', () => {
     loadMqttStatus,
     liveRefreshStatus,
     loadLiveRefreshStatus,
+    commandHistory,
     connectWebSocket,
     disconnectWebSocket,
   }
