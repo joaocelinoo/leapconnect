@@ -306,6 +306,24 @@
       :location="s.location"
       :vehicle="props.vehicle"
     />
+
+    <SpeedLimitModal
+      :visible="showSpeedLimitModal"
+      @close="showSpeedLimitModal = false"
+      :on-exec="execSpeedLimit"
+    />
+
+    <MediaControlModal
+      :visible="showMediaModal"
+      @close="showMediaModal = false"
+      :on-exec="execMedia"
+    />
+
+    <FotaModal
+      :visible="showFotaModal"
+      @close="showFotaModal = false"
+      :on-exec="execFota"
+    />
   </div>
 </template>
 
@@ -323,13 +341,17 @@ import ClimateControlModal from '../components/ClimateControlModal.vue'
 import TrunkOpenIcon from '../components/icons/TrunkOpenIcon.vue'
 import SeatControlModal from '../components/SeatControlModal.vue'
 import DestinationModal from '../components/DestinationModal.vue'
+import SpeedLimitModal from '../components/SpeedLimitModal.vue'
+import MediaControlModal from '../components/MediaControlModal.vue'
+import FotaModal from '../components/FotaModal.vue'
 import {
   Zap, Snowflake, Lock, Unlock, Shield, Loader, Plug,
   Radio, ChevronUp, ChevronDown, Sun, Wind, Flame,
   Thermometer, ThermometerSnowflake, BatteryCharging, Columns2,
   ShieldCheck, ShieldOff, Power, PowerOff, Wifi, Car,
   CircleParking, Key, Eye, EyeOff, PlugZap,
-  Heater, AirVent, Armchair, Navigation
+  Heater, AirVent, Armchair, Navigation,
+  Gauge, Music, Download
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -389,6 +411,9 @@ const showSunshadeModal = ref(false)
 const showClimateModal = ref(false)
 const showSeatModal = ref(false)
 const showDestinationModal = ref(false)
+const showSpeedLimitModal = ref(false)
+const showMediaModal = ref(false)
+const showFotaModal = ref(false)
 
 const pendingLimit = ref(props.status?.battery?.charge_soc_setting ?? 80)
 
@@ -396,6 +421,7 @@ const controls = [
   { action: 'lock', icon: Lock, label: 'Lock', color: '#ffab40', right: 110 },
   { action: 'unlock', icon: Unlock, label: 'Unlock', color: '#00e676', right: 110 },
   { action: 'trunk/open', icon: TrunkOpenIcon, label: 'Open Trunk', color: '#00d4ff', right: 130 },
+  { action: 'trunk/close', icon: ChevronDown, label: 'Close Trunk', color: '#5c6478', right: 130 },
   { action: 'find', icon: Radio, label: 'Find Car', color: '#00d4ff', right: 120 },
   { action: 'windows', icon: Columns2, label: 'Windows', color: '#7c6aff', modal: 'windows', right: 230 },
   { action: 'sunshade', icon: Sun, label: 'Sunshade', color: '#ffab40', modal: 'sunshade', right: 161 },
@@ -435,6 +461,12 @@ const vehicleControls = [
   { action: 'ble-key-restart', icon: Key, label: 'BLE Restart', color: '#7c6aff', right: 430 },
   { action: 'hotspot', icon: Wifi, label: 'Hotspot', color: '#00d4ff', right: 140 },
   { action: 'send-destination', icon: Navigation, label: 'Send Destination', color: '#ff7043', modal: 'destination', right: 180 },
+  { action: 'speed-limit', icon: Gauge, label: 'Speed Limit', color: '#ff9100', modal: 'speedLimit', right: 510 },
+  { action: 'autopark', icon: CircleParking, label: 'Autopark', color: '#7c6aff', right: 150 },
+  { action: 'piloted-parking', icon: CircleParking, label: 'Piloted Park', color: '#00d4ff', right: 350 },
+  { action: 'prepare-car', icon: Car, label: 'Prepare Car', color: '#00e676', right: 360 },
+  { action: 'media', icon: Music, label: 'Media', color: '#7c6aff', modal: 'media', right: 270 },
+  { action: 'fota', icon: Download, label: 'Firmware', color: '#ff5252', modal: 'fota', right: 390 },
 ]
 
 // --- Permission gating ---
@@ -607,6 +639,43 @@ function openModal(type) {
   else if (type === 'climate') showClimateModal.value = true
   else if (type === 'seats') showSeatModal.value = true
   else if (type === 'destination') showDestinationModal.value = true
+  else if (type === 'speedLimit') showSpeedLimitModal.value = true
+  else if (type === 'media') showMediaModal.value = true
+  else if (type === 'fota') showFotaModal.value = true
+}
+
+async function execSpeedLimit({ action, body }) {
+  const ok = await requirePin()
+  if (!ok) return
+  try {
+    await store.execControl(props.vehicle.vin, action, body)
+    toast('Speed limit set', 'success')
+    await store.refreshAfterCommand()
+  } catch (err) {
+    toast(`Speed limit: ${err.message}`, 'error')
+  }
+}
+
+async function execMedia({ action, body }) {
+  const ok = await requirePin()
+  if (!ok) return
+  try {
+    await store.execControl(props.vehicle.vin, action, body)
+    toast(`${action} command sent`, 'success')
+  } catch (err) {
+    toast(`Media: ${err.message}`, 'error')
+  }
+}
+
+async function execFota({ action, body }) {
+  const ok = await requirePin()
+  if (!ok) return
+  try {
+    await store.execControl(props.vehicle.vin, action, body)
+    toast('Firmware command sent', 'success')
+  } catch (err) {
+    toast(`FOTA: ${err.message}`, 'error')
+  }
 }
 
 async function doSetChargeLimit() {

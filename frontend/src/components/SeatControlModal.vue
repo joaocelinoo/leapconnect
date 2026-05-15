@@ -12,87 +12,152 @@
           </div>
 
           <div class="sc-body">
-            <!-- Mode toggle -->
-            <div class="sc-mode-toggle">
-              <button
-                class="sc-mode-btn"
-                :class="{ active: mode === 'heat' }"
-                @click="mode = 'heat'"
-              >
-                <Flame :size="14" />
-                <span>Heating</span>
-              </button>
-              <button
-                class="sc-mode-btn"
-                :class="{ active: mode === 'vent' }"
-                @click="mode = 'vent'"
-              >
-                <Wind :size="14" />
-                <span>Ventilation</span>
-              </button>
+            <!-- Tab toggle -->
+            <div class="sc-tab-toggle">
+              <button class="sc-tab-btn" :class="{ active: tab === 'comfort' }" @click="tab = 'comfort'">Comfort</button>
+              <button class="sc-tab-btn" :class="{ active: tab === 'adjust' }" @click="tab = 'adjust'">Adjust</button>
+              <button class="sc-tab-btn" :class="{ active: tab === 'rear' }" @click="tab = 'rear'">Rear</button>
             </div>
 
-            <!-- Position selector -->
-            <div class="sc-positions">
-              <button
-                v-for="pos in positions"
-                :key="pos.value"
-                class="sc-pos-btn"
-                :class="{ selected: selectedPosition === pos.value }"
-                @click="selectedPosition = pos.value"
-              >
-                <span class="sc-pos-label">{{ pos.label }}</span>
-                <span class="sc-pos-status">{{ getStatusLabel(pos.value) }}</span>
-              </button>
-            </div>
-
-            <!-- Level selector -->
-            <div class="sc-level">
-              <span class="sc-level-label">Level</span>
-              <div class="sc-level-btns">
+            <!-- Comfort tab (heat/ventilation) -->
+            <template v-if="tab === 'comfort'">
+              <!-- Mode toggle -->
+              <div class="sc-mode-toggle">
                 <button
-                  v-for="l in levels"
-                  :key="l.value"
-                  class="sc-level-btn"
-                  :class="{ active: selectedLevel === l.value }"
-                  @click="selectedLevel = l.value"
-                >{{ l.label }}</button>
+                  class="sc-mode-btn"
+                  :class="{ active: mode === 'heat' }"
+                  @click="mode = 'heat'"
+                >
+                  <Flame :size="14" />
+                  <span>Heating</span>
+                </button>
+                <button
+                  class="sc-mode-btn"
+                  :class="{ active: mode === 'vent' }"
+                  @click="mode = 'vent'"
+                >
+                  <Wind :size="14" />
+                  <span>Ventilation</span>
+                </button>
               </div>
-            </div>
 
-            <!-- Current status -->
-            <div v-if="seatComfort" class="sc-status">
-              <div class="sc-status-row">
-                <span>Driver Heat</span>
-                <span class="sc-status-val">{{ seatComfort.driver_seat_heating ?? '—' }}</span>
+              <!-- Position selector -->
+              <div class="sc-positions">
+                <button
+                  v-for="pos in positions"
+                  :key="pos.value"
+                  class="sc-pos-btn"
+                  :class="{ selected: selectedPosition === pos.value }"
+                  @click="selectedPosition = pos.value"
+                >
+                  <span class="sc-pos-label">{{ pos.label }}</span>
+                  <span class="sc-pos-status">{{ getStatusLabel(pos.value) }}</span>
+                </button>
               </div>
-              <div class="sc-status-row">
-                <span>Driver Vent</span>
-                <span class="sc-status-val">{{ seatComfort.driver_seat_ventilation ?? '—' }}</span>
-              </div>
-              <div class="sc-status-row">
-                <span>Passenger Heat</span>
-                <span class="sc-status-val">{{ seatComfort.passenger_seat_heating ?? '—' }}</span>
-              </div>
-              <div class="sc-status-row">
-                <span>Passenger Vent</span>
-                <span class="sc-status-val">{{ seatComfort.passenger_seat_ventilation ?? '—' }}</span>
-              </div>
-              <div class="sc-status-row">
-                <span>Steering Wheel</span>
-                <span class="sc-status-val">{{ seatComfort.steering_wheel_heating ?? '—' }}</span>
-              </div>
-            </div>
 
-            <!-- Apply -->
-            <button
-              class="sc-apply"
-              :disabled="!!loadingAction"
-              @click="apply"
-            >
-              <Loader v-if="loadingAction" :size="16" class="spinning" />
-              <span v-else>Apply</span>
-            </button>
+              <!-- Level selector -->
+              <div class="sc-level">
+                <span class="sc-level-label">Level</span>
+                <div class="sc-level-btns">
+                  <button
+                    v-for="l in levels"
+                    :key="l.value"
+                    class="sc-level-btn"
+                    :class="{ active: selectedLevel === l.value }"
+                    @click="selectedLevel = l.value"
+                  >{{ l.label }}</button>
+                </div>
+              </div>
+
+              <!-- Current status -->
+              <div v-if="seatComfort" class="sc-status">
+                <div class="sc-status-row">
+                  <span>Driver Heat</span>
+                  <span class="sc-status-val">{{ seatComfort.driver_seat_heating ?? '—' }}</span>
+                </div>
+                <div class="sc-status-row">
+                  <span>Driver Vent</span>
+                  <span class="sc-status-val">{{ seatComfort.driver_seat_ventilation ?? '—' }}</span>
+                </div>
+                <div class="sc-status-row">
+                  <span>Passenger Heat</span>
+                  <span class="sc-status-val">{{ seatComfort.passenger_seat_heating ?? '—' }}</span>
+                </div>
+                <div class="sc-status-row">
+                  <span>Passenger Vent</span>
+                  <span class="sc-status-val">{{ seatComfort.passenger_seat_ventilation ?? '—' }}</span>
+                </div>
+                <div class="sc-status-row">
+                  <span>Steering Wheel</span>
+                  <span class="sc-status-val">{{ seatComfort.steering_wheel_heating ?? '—' }}</span>
+                </div>
+              </div>
+
+              <!-- Apply -->
+              <button
+                class="sc-apply"
+                :disabled="!!loadingAction"
+                @click="apply"
+              >
+                <Loader v-if="loadingAction" :size="16" class="spinning" />
+                <span v-else>Apply</span>
+              </button>
+            </template>
+
+            <!-- Adjust tab (seat position) -->
+            <template v-if="tab === 'adjust'">
+              <div class="sc-section-label">Seat Position</div>
+              <div class="sc-positions">
+                <button
+                  v-for="pos in adjustPositions"
+                  :key="pos.value"
+                  class="sc-pos-btn"
+                  :class="{ selected: adjustSeatPos === pos.value }"
+                  @click="adjustSeatPos = pos.value"
+                >
+                  <span class="sc-pos-label">{{ pos.label }}</span>
+                </button>
+              </div>
+
+              <div class="sc-section-label">Adjustment</div>
+              <div class="sc-adjust-grid">
+                <button
+                  v-for="adj in adjustActions"
+                  :key="adj.key"
+                  class="sc-adjust-btn"
+                  :class="{ loading: loadingAction === adj.key }"
+                  :disabled="!!loadingAction"
+                  @click="doSeatAdjust(adj.key, adj.params)"
+                >
+                  <component :is="adj.icon" :size="14" />
+                  <span>{{ adj.label }}</span>
+                </button>
+              </div>
+            </template>
+
+            <!-- Rear seats tab -->
+            <template v-if="tab === 'rear'">
+              <div class="sc-section-label">Rear Seat Control (C16)</div>
+              <div class="sc-positions">
+                <button
+                  v-for="rs in rearSeatOptions"
+                  :key="rs.value"
+                  class="sc-pos-btn"
+                  :class="{ selected: rearSeatInfo === rs.value }"
+                  @click="rearSeatInfo = rs.value"
+                >
+                  <span class="sc-pos-label">{{ rs.label }}</span>
+                </button>
+              </div>
+              <button
+                class="sc-apply"
+                :disabled="!!loadingAction || !rearSeatInfo"
+                @click="doRearSeats"
+              >
+                <Loader v-if="loadingAction" :size="16" class="spinning" />
+                <span v-else>Apply</span>
+              </button>
+            </template>
           </div>
         </div>
       </div>
@@ -102,7 +167,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import { Armchair, Flame, Wind, Loader } from 'lucide-vue-next'
+import { Armchair, Flame, Wind, Loader, ChevronUp, ChevronDown, ArrowLeft, ArrowRight, RotateCcw } from 'lucide-vue-next'
 
 const props = defineProps({
   visible: Boolean,
@@ -112,6 +177,7 @@ const props = defineProps({
 
 defineEmits(['close'])
 
+const tab = ref('comfort')
 const mode = ref('heat')
 const selectedPosition = ref(1)
 const selectedLevel = ref(0)
@@ -129,6 +195,32 @@ const levels = [
   { value: 1, label: 'Low' },
   { value: 2, label: 'Med' },
   { value: 3, label: 'High' },
+]
+
+// Seat adjust
+const adjustSeatPos = ref(1)
+const adjustPositions = [
+  { value: 1, label: 'Driver' },
+  { value: 2, label: 'Passenger' },
+]
+
+const adjustActions = [
+  { key: 'forward', label: 'Forward', icon: ChevronUp, params: { direction: 'forward' } },
+  { key: 'backward', label: 'Backward', icon: ChevronDown, params: { direction: 'backward' } },
+  { key: 'up', label: 'Up', icon: ChevronUp, params: { direction: 'up' } },
+  { key: 'down', label: 'Down', icon: ChevronDown, params: { direction: 'down' } },
+  { key: 'recline-back', label: 'Recline Back', icon: ArrowRight, params: { direction: 'recline_back' } },
+  { key: 'recline-forward', label: 'Recline Fwd', icon: ArrowLeft, params: { direction: 'recline_forward' } },
+  { key: 'reset', label: 'Reset', icon: RotateCcw, params: { direction: 'reset' } },
+]
+
+// Rear seats
+const rearSeatInfo = ref('fold')
+const rearSeatOptions = [
+  { value: 'fold', label: 'Fold' },
+  { value: 'unfold', label: 'Unfold' },
+  { value: 'heat_on', label: 'Heat On' },
+  { value: 'heat_off', label: 'Heat Off' },
 ]
 
 function getStatusLabel(pos) {
@@ -150,6 +242,30 @@ async function apply() {
     await props.onExec({
       action,
       body: { position: selectedPosition.value, level: selectedLevel.value },
+    })
+  } finally {
+    loadingAction.value = null
+  }
+}
+
+async function doSeatAdjust(key, params) {
+  loadingAction.value = key
+  try {
+    await props.onExec({
+      action: 'seat-adjust',
+      body: { position: adjustSeatPos.value, ...params },
+    })
+  } finally {
+    loadingAction.value = null
+  }
+}
+
+async function doRearSeats() {
+  loadingAction.value = 'rear-seats'
+  try {
+    await props.onExec({
+      action: 'rear-seats',
+      body: { seat_info: rearSeatInfo.value },
     })
   } finally {
     loadingAction.value = null
@@ -180,6 +296,31 @@ async function apply() {
   cursor: pointer; padding: 0 4px; line-height: 1;
 }
 .sc-body { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+
+.sc-tab-toggle {
+  display: flex; gap: 4px; background: var(--bg); border-radius: 10px; padding: 3px;
+}
+.sc-tab-btn {
+  flex: 1; padding: 7px 0; border: none; border-radius: 8px; cursor: pointer;
+  background: transparent; color: var(--muted); font-size: 12px; font-weight: 500;
+  transition: all .2s; text-align: center;
+}
+.sc-tab-btn.active { background: var(--card); color: var(--text); box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+
+.sc-section-label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+
+.sc-adjust-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+}
+.sc-adjust-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 12px 8px; border: 1px solid rgba(255,255,255,.08); border-radius: 10px;
+  background: var(--bg); color: var(--text); cursor: pointer;
+  transition: all .2s; font-size: 11px; font-weight: 500;
+}
+.sc-adjust-btn:hover { border-color: var(--amber); background: rgba(255,171,64,.06); }
+.sc-adjust-btn.loading { opacity: 0.5; cursor: wait; }
+.sc-adjust-btn:disabled { pointer-events: none; }
 
 .sc-mode-toggle {
   display: flex; gap: 8px; background: var(--bg); border-radius: 10px; padding: 4px;
