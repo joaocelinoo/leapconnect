@@ -11,7 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **33 new remote command endpoints**: battery preheat off, sentry mode on/off, start/stop charging, steering wheel heat on/off, fuel heating on/off, rearview mirror heat on/off, healthy charging on/off, ON3 on/off, BLE key restart, sunroof open/close, unlock charger, hotspot, autopark, seat heat, seat ventilation, speed limit, music control, video control, FOTA download/install/schedule, rear seats, prepare car, seat adjust, piloted parking
 - **3 new data endpoints**: `GET /api/vehicles/{vin}/charging-history` (paginated charging session history), `GET /api/vehicles/{vin}/consumption/weekly-rank`, `GET /api/vehicles/{vin}/consumption/last-week`
-- **Seat Control Modal**: new modal in Dashboard for controlling seat heating and ventilation — supports driver, passenger, rear-left, and rear-right positions with 4 levels (Off/Low/Med/High)
+- **Seat Control Modal**: new modal in Dashboard for controlling seat heating and ventilation — supports driver, passenger, rear-left, and rear-right positions with 4 levels (Off/Low/Med/High). Extended with Adjust tab (seat position forward/backward/up/down/recline) and Rear tab (fold/unfold/heat on/off for C16 rear seats)
+- **Speed Limit Modal**: new modal to set vehicle speed limit (30–200 km/h slider)
+- **Media Control Modal**: new modal for music and video playback (play/pause/next/previous) with music/video tab toggle
+- **FOTA Modal**: new modal for firmware-over-the-air operations — download, install, and schedule with task ID input and datetime picker. Includes a safety warning banner
+- **Close Trunk command**: added trunk/close button alongside existing trunk/open in Remote Controls
+- **Autopark, Piloted Parking, Prepare Car commands**: added as simple action buttons in Vehicle Controls section
+- **Full command coverage**: Dashboard now exposes all 51 vehicle command endpoints from the backend API
+- **Permission gating for new commands**: all new commands have proper `right` codes assigned — Speed Limit (510), Autopark (150), Piloted Parking (350), Prepare Car (360), Media (270), Firmware (390) — and are hidden/greyed out when the user lacks the corresponding right or the vehicle lacks the hardware ability
 - **Grouped Dashboard controls**: remote controls are now organized into 5 sections — Main, Charging, Comfort, Security, and Vehicle — instead of a single flat grid
 - **Permission-based control visibility**: Dashboard controls are now filtered by vehicle abilities (hardware support) and user rights (account permissions). Each section shows only the commands the vehicle supports and the user is authorized to use; a per-section toggle button reveals hidden commands (displayed greyed out) with a count badge. The Charge Limit card is also hidden when the user lacks the corresponding right/ability.
 - **Details: Charge Plan section**: displays charge limit, scheduled charge status, start/end times, cycles, and recharge flag
