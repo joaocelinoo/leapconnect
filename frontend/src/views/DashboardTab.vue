@@ -426,13 +426,14 @@ const controls = [
   { action: 'windows', icon: Columns2, label: 'Windows', color: '#7c6aff', modal: 'windows', right: 230 },
   { action: 'sunshade', icon: Sun, label: 'Sunshade', color: '#ffab40', modal: 'sunshade', right: 161 },
   { action: 'climate', icon: Thermometer, label: 'Climate', color: '#00d4ff', modal: 'climate', right: 170 },
-  { action: 'battery-preheat', icon: BatteryCharging, label: 'Battery Preheat', color: '#00e676', right: 190 },
 ]
 
 const chargingControls = [
   { action: 'charging/start', icon: PlugZap, label: 'Start Charge', color: '#00e676', right: 193 },
   { action: 'charging/stop', icon: PlugZap, label: 'Stop Charge', color: '#ff5252', right: 193 },
   { action: 'unlock-charger', icon: Plug, label: 'Unlock Charger', color: '#ffab40', right: 192 },
+  { action: 'battery-preheat', icon: BatteryCharging, label: 'Battery Preheat', color: '#00e676', right: 190 },
+  { action: 'battery-preheat-off', icon: BatteryCharging, label: 'Preheat Off', color: '#5c6478', right: 190 },
   { action: 'healthy-charging/on', icon: ShieldCheck, label: 'Healthy Charge On', color: '#00e676', right: 480 },
   { action: 'healthy-charging/off', icon: ShieldOff, label: 'Healthy Charge Off', color: '#ff5252', right: 480 },
 ]
@@ -457,7 +458,6 @@ const securityControls = [
 const vehicleControls = [
   { action: 'on3/on', icon: Power, label: 'ON3 On', color: '#00e676', right: 410 },
   { action: 'on3/off', icon: PowerOff, label: 'ON3 Off', color: '#ff5252', right: 410 },
-  { action: 'battery-preheat-off', icon: BatteryCharging, label: 'Preheat Off', color: '#5c6478', right: 190 },
   { action: 'ble-key-restart', icon: Key, label: 'BLE Restart', color: '#7c6aff', right: 430 },
   { action: 'hotspot', icon: Wifi, label: 'Hotspot', color: '#00d4ff', right: 140 },
   { action: 'send-destination', icon: Navigation, label: 'Send Destination', color: '#ff7043', modal: 'destination', right: 180 },
