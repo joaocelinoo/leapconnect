@@ -8,8 +8,16 @@
               <Thermometer :size="16" class="cc-header-icon" />
               <span class="cc-title">Climate</span>
             </div>
-            <div class="cc-header-status" v-if="climate">
-              <span class="cc-status-dot" :class="{ on: climate.ac_switch }" />
+            <div
+              class="cc-header-status cc-header-status--clickable"
+              v-if="climate"
+              :class="{ 'cc-header-status--loading': loadingAction === 'power' }"
+              @click="togglePower"
+              role="button"
+              :title="climate.ac_switch ? 'Turn off climate' : 'Turn on climate'"
+            >
+              <Loader v-if="loadingAction === 'power'" :size="12" class="spinning" />
+              <component v-else :is="climate.ac_switch ? PowerOff : Power" :size="12" />
               <span class="cc-status-text">{{ climate.ac_switch ? 'ON' : 'OFF' }}</span>
             </div>
             <button class="cc-close" @click="$emit('close')">&times;</button>
@@ -155,7 +163,7 @@
 import { ref, watch } from 'vue'
 import {
   Thermometer, Snowflake, Flame, Wind, ThermometerSnowflake,
-  RotateCcw, Loader, Power
+  RotateCcw, Loader, Power, PowerOff
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -195,6 +203,15 @@ watch(() => props.visible, (val) => {
     if (props.climate.ac_circle_mode != null) circle.value = props.climate.ac_circle_mode ? 'in' : 'out'
   }
 })
+
+async function togglePower() {
+  loadingAction.value = 'power'
+  try {
+    if (props.onExec) await props.onExec({ action: 'ac', body: null })
+  } finally {
+    loadingAction.value = null
+  }
+}
 
 async function doQuickAction(action) {
   loadingAction.value = action
@@ -289,6 +306,20 @@ async function applyCustom() {
   gap: 5px;
   font-size: 11px;
   font-weight: 700;
+}
+
+.cc-header-status--clickable {
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.cc-header-status--clickable:hover {
+  background: var(--btn-bg);
+}
+.cc-header-status--loading {
+  pointer-events: none;
+  opacity: 0.7;
 }
 
 .cc-status-dot {
