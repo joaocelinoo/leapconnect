@@ -2118,6 +2118,16 @@ class ClimateScheduleRequest(BaseModel):
     controls: list[ClimateScheduleEntry]
 
 
+@app.get("/api/vehicles/{vin}/ac-schedule")
+async def get_climate_schedule(vin: str) -> list[dict]:
+    """Retrieve active climate schedules from the cloud."""
+    client = _get_client()
+    try:
+        return await client.get_climate_schedule(vin)
+    except LeapmotorApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @app.post("/api/vehicles/{vin}/ac-schedule")
 async def set_climate_schedule(vin: str, body: ClimateScheduleRequest) -> dict:
     """Set climate schedules via cloud (cmd_id=171, full-state replacement)."""
