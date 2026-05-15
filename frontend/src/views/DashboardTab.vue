@@ -332,6 +332,12 @@
       :charge-plan="s.battery?.charge_plan"
       :current-soc="s.battery?.charge_soc_setting"
     />
+
+    <ClimateScheduleModal
+      :visible="showClimateScheduleModal"
+      @close="showClimateScheduleModal = false"
+      :vin="props.vehicle?.vin"
+    />
   </div>
 </template>
 
@@ -353,6 +359,7 @@ import SpeedLimitModal from '../components/SpeedLimitModal.vue'
 import MediaControlModal from '../components/MediaControlModal.vue'
 import FotaModal from '../components/FotaModal.vue'
 import ChargeScheduleModal from '../components/ChargeScheduleModal.vue'
+import ClimateScheduleModal from '../components/ClimateScheduleModal.vue'
 import {
   Zap, Snowflake, Lock, Unlock, Shield, Loader, Plug,
   Radio, ChevronUp, ChevronDown, Sun, Wind, Flame,
@@ -424,6 +431,7 @@ const showSpeedLimitModal = ref(false)
 const showMediaModal = ref(false)
 const showFotaModal = ref(false)
 const showChargeScheduleModal = ref(false)
+const showClimateScheduleModal = ref(false)
 
 const pendingLimit = ref(props.status?.battery?.charge_soc_setting ?? 80)
 
@@ -439,6 +447,7 @@ const controls = computed(() => {
     { action: 'windows', icon: Columns2, label: 'Windows', color: '#7c6aff', modal: 'windows', right: 230 },
     { action: 'sunshade', icon: Sun, label: 'Sunshade', color: '#ffab40', modal: 'sunshade', right: 161 },
     { action: 'climate', icon: Thermometer, label: 'Climate', color: '#00d4ff', modal: 'climate', right: 170 },
+    { action: 'ac-schedule', icon: CalendarClock, label: 'AC Schedule', color: '#7c6aff', modal: 'climateSchedule', right: 171 },
   ]
   return isT03.value ? base.filter(c => c.action !== 'trunk/close') : base
 })
@@ -659,6 +668,7 @@ function openModal(type) {
   else if (type === 'media') showMediaModal.value = true
   else if (type === 'fota') showFotaModal.value = true
   else if (type === 'chargeSchedule') showChargeScheduleModal.value = true
+  else if (type === 'climateSchedule') showClimateScheduleModal.value = true
 }
 
 async function execSpeedLimit({ action, body }) {
@@ -705,6 +715,11 @@ async function execChargeSchedule({ action, body }) {
   } catch (err) {
     toast(`Schedule: ${err.message}`, 'error')
   }
+}
+
+async function execClimateSchedule() {
+  // Climate schedule is now managed locally by ClimateScheduleModal
+  showClimateScheduleModal.value = true
 }
 
 async function doSetChargeLimit() {

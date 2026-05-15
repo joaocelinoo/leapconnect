@@ -2099,6 +2099,46 @@ async def set_charge_schedule(vin: str, body: ChargeScheduleRequest) -> dict:
     )
 
 
+class ClimateScheduleEntry(BaseModel):
+    mode: str = "wind"
+    on: str = "1"
+    operate: str = "manual"
+    set_id: str
+    start_time: str  # "yyyy-MM-dd HH:mm:00"
+    temperature: str = "26"
+    update_time: str
+    windlevel: str = "3"
+    days: list[int] = []
+    circle: str | None = "out"
+    position: str = "all"
+    wshld: str = "0"
+
+
+class ClimateScheduleRequest(BaseModel):
+    controls: list[ClimateScheduleEntry]
+
+
+@app.post("/api/vehicles/{vin}/ac-schedule")
+async def set_climate_schedule(vin: str, body: ClimateScheduleRequest) -> dict:
+    """Set climate schedules via cloud (cmd_id=171, full-state replacement)."""
+    client = _get_client()
+    controls = [entry.model_dump() for entry in body.controls]
+    try:
+        return await client.set_climate_schedule(vin, controls=controls)
+    except LeapmotorApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.delete("/api/vehicles/{vin}/ac-schedule")
+async def cancel_climate_schedule(vin: str) -> dict:
+    """Cancel all climate schedules (sends empty controls array)."""
+    client = _get_client()
+    try:
+        return await client.cancel_climate_schedule(vin)
+    except LeapmotorApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @app.post("/api/vehicles/{vin}/send-destination")
 async def send_destination(vin: str, request: Request) -> dict:
     """Send a navigation destination to the vehicle's infotainment system."""
