@@ -52,9 +52,9 @@
                 <span class="cc-current-label">Set Temp</span>
                 <span class="cc-current-val">{{ climate.ac_setting }}°C</span>
               </div>
-              <div class="cc-current-item" v-if="climate.ac_air_volume_setting != null">
+              <div class="cc-current-item">
                 <span class="cc-current-label">Fan</span>
-                <span class="cc-current-val">{{ climate.ac_air_volume_setting }}</span>
+                <span class="cc-current-val">{{ climate.ac_air_volume_setting || climate.ac_air_volume || fan }}</span>
               </div>
               <div class="cc-current-item" v-if="climate.ac_circle_mode != null">
                 <span class="cc-current-label">Circ.</span>
@@ -134,8 +134,8 @@
             <div class="cc-control-row">
               <span class="cc-control-label">Windshield</span>
               <div class="cc-mode-control">
-                <button class="cc-mode-btn" :class="{ active: wshld === '1' }" @click="wshld = '1'">Normal</button>
-                <button class="cc-mode-btn" :class="{ active: wshld === '2' }" @click="wshld = '2'">
+                <button class="cc-mode-btn" :class="{ active: wshld === '0' }" @click="wshld = '0'">Normal</button>
+                <button class="cc-mode-btn" :class="{ active: wshld === '1' }" @click="wshld = '1'">
                   <ThermometerSnowflake :size="14" />
                   <span>Defrost</span>
                 </button>
@@ -174,18 +174,18 @@ const props = defineProps({
 
 const emit = defineEmits(['close'])
 
-const temp = ref(24)
-const fan = ref(4)
-const mode = ref('nohotcold')
+const temp = ref(26)
+const fan = ref(3)
+const mode = ref('wind')
 const operate = ref('manual')
 const circle = ref('out')
-const wshld = ref('1')
+const wshld = ref('0')
 const loadingAction = ref(null)
 
 const modes = [
   { value: 'cold', label: 'Cool', icon: Snowflake },
   { value: 'hot', label: 'Heat', icon: Flame },
-  { value: 'nohotcold', label: 'Fan', icon: Wind },
+  { value: 'wind', label: 'Fan', icon: Wind },
 ]
 
 const quickActions = [
@@ -195,19 +195,29 @@ const quickActions = [
   { action: 'defrost', label: 'Defrost', icon: ThermometerSnowflake, color: '#7c6aff' },
 ]
 
-// Initialize from current climate state when modal opens
+// Sync local controls from live climate data (on open + on poll updates)
+function syncFromClimate(c) {
+  if (!c) return
+  if (c.ac_setting != null) temp.value = Math.round(c.ac_setting)
+  const fanVal = c.ac_air_volume_setting || c.ac_air_volume
+  if (fanVal) fan.value = fanVal
+  if (c.ac_circle_mode != null) circle.value = c.ac_circle_mode ? 'in' : 'out'
+}
+
 watch(() => props.visible, (val) => {
-  if (val && props.climate) {
-    if (props.climate.ac_setting != null) temp.value = Math.round(props.climate.ac_setting)
-    if (props.climate.ac_air_volume_setting != null) fan.value = props.climate.ac_air_volume_setting
-    if (props.climate.ac_circle_mode != null) circle.value = props.climate.ac_circle_mode ? 'in' : 'out'
-  }
+  if (val) syncFromClimate(props.climate)
 })
+
+watch(() => props.climate, (c) => {
+  if (props.visible && !loadingAction.value) syncFromClimate(c)
+}, { deep: true })
 
 async function togglePower() {
   loadingAction.value = 'power'
   try {
-    if (props.onExec) await props.onExec({ action: 'ac', body: null })
+    const isOn = props.climate?.ac_switch
+    const action = isOn ? 'ac-off' : 'ac'
+    if (props.onExec) await props.onExec({ action, body: null })
   } finally {
     loadingAction.value = null
   }

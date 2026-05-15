@@ -2001,22 +2001,29 @@ async def close_windows(vin: str, body: WindowsRequest | None = None) -> dict:
 
 class ClimateRequest(BaseModel):
     circle: str | None = None  # "in" or "out"
-    mode: str | None = None  # "cold", "hot", "nohotcold"
-    operate: str | None = None  # "manual" or "auto"
+    mode: str | None = None  # "cold", "hot", "wind"
+    operate: str | None = None  # "manual", "auto", or "close"
     position: str | None = None  # "all"
-    temperature: str | None = None  # e.g. "24"
+    temperature: str | None = None  # e.g. "26"
     windlevel: int | None = None  # 1–7
-    wshld: str | None = None  # "1" (normal) or "2" (defrost)
+    wshld: str | None = None  # "0" (off) or "1" (defrost on)
 
 
 @app.post("/api/vehicles/{vin}/ac")
 async def ac_switch(vin: str, body: ClimateRequest | None = None) -> dict:
-    """Toggle the air conditioning on/off with optional parameters."""
+    """Turn on the air conditioning with optional parameters."""
     client = _get_client()
     params = {
         k: v for k, v in (body.model_dump() if body else {}).items() if v is not None
     } or None
-    return await client.ac_switch(vin, params=params)
+    return await client.ac_on(vin, params=params)
+
+
+@app.post("/api/vehicles/{vin}/ac-off")
+async def ac_off(vin: str) -> dict:
+    """Turn off the air conditioning."""
+    client = _get_client()
+    return await client.ac_off(vin)
 
 
 @app.post("/api/vehicles/{vin}/quick-cool")
