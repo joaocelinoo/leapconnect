@@ -296,7 +296,7 @@ async function applyCustom() {
   left: 0;
   bottom: 0;
   background: linear-gradient(to right, #ffab40, #ffd180);
-  border-radius: 20px 0 0 20px;
+  border-radius: 20px;
   transition: width 0.15s ease;
   pointer-events: none;
 }
