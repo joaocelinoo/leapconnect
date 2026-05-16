@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **ABRP integration**: new service to send live vehicle telemetry to [A Better Route Planner](https://abetterrouteplanner.com) for real-time route planning and car model calibration. Sends 20+ data fields (SOC, speed, location, power, temperatures, tire pressures, etc.) with adaptive frequency — every 10s while driving, 30s while charging, 5min while parked
+- **ABRP settings UI**: new "ABRP" card in Settings → Services with enable/disable toggle, user token input (with show/hide), and send/error counters
+- **ABRP in Services Setup wizard**: ABRP can now be configured during the initial setup flow alongside Data Recording and Home Assistant
+- **ABRP status in user menu**: the top-right user menu now shows ABRP service status (Running/Stopped/Disabled) alongside Live Refresh and Home Assistant
 - **33 new remote command endpoints**: battery preheat off, sentry mode on/off, start/stop charging, steering wheel heat on/off, fuel heating on/off, rearview mirror heat on/off, healthy charging on/off, ON3 on/off, BLE key restart, sunroof open/close, unlock charger, hotspot, autopark, seat heat, seat ventilation, speed limit, music control, video control, FOTA download/install/schedule, rear seats, prepare car, seat adjust, piloted parking
 - **3 new data endpoints**: `GET /api/vehicles/{vin}/charging-history` (paginated charging session history), `GET /api/vehicles/{vin}/consumption/weekly-rank`, `GET /api/vehicles/{vin}/consumption/last-week`
 - **Seat Control Modal**: new modal in Dashboard for controlling seat heating and ventilation — supports driver, passenger, rear-left, and rear-right positions with 4 levels (Off/Low/Med/High). Extended with Adjust tab (seat position forward/backward/up/down/recline) and Rear tab (fold/unfold/heat on/off for C16 rear seats)

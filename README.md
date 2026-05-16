@@ -26,6 +26,7 @@ Web dashboard for monitoring and controlling Leapmotor vehicles via the [leapmot
 - **Raw data viewer**: Full JSON inspection for debugging
 - **Multi-vehicle**: Tab switching for accounts with multiple vehicles
 - **Home Assistant integration**: Optional MQTT export of all vehicle data for smart home
+- **ABRP integration**: Optional live telemetry to [A Better Route Planner](https://abetterrouteplanner.com) for real-time route planning
 - **Local history recording**: Optional SQLite database to track vehicle data over time.
 
 ## Screenshots
