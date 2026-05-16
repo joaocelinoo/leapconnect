@@ -75,23 +75,39 @@
         </div>
       </div>
     </Transition>
+
+    <ConfirmDialog
+      :visible="showLockedWarning"
+      title="Vehicle is locked"
+      message="The sunshade command may not work while the vehicle is locked. Do you want to proceed anyway?"
+      confirm-label="Proceed"
+      cancel-label="Cancel"
+      variant="warning"
+      icon="warning"
+      @confirm="confirmLockedAction"
+      @cancel="cancelLockedAction"
+    />
   </Teleport>
 </template>
 
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { Sun, MoonStar, Loader } from 'lucide-vue-next'
+import ConfirmDialog from './ConfirmDialog.vue'
 
 const props = defineProps({
   visible: Boolean,
   onExec: Function,
   sunshade: { type: Number, default: null },
+  isLocked: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['close'])
 
 const sliderValue = ref(0)
 const loadingAction = ref(null)
+const showLockedWarning = ref(false)
+const pendingAction = ref(null)
 
 const currentValue = computed(() => {
   return props.sunshade != null ? props.sunshade : null
@@ -104,23 +120,47 @@ watch(() => props.visible, (val) => {
   }
 })
 
-async function quickAction(type) {
-  const action = type === 'open' ? 'sunshade/open' : 'sunshade/close'
-  loadingAction.value = type
-  try {
-    if (props.onExec) await props.onExec({ action, body: null })
-  } finally {
-    loadingAction.value = null
+function requestAction(fn) {
+  if (props.isLocked) {
+    pendingAction.value = fn
+    showLockedWarning.value = true
+  } else {
+    fn()
   }
 }
 
+function confirmLockedAction() {
+  showLockedWarning.value = false
+  if (pendingAction.value) pendingAction.value()
+  pendingAction.value = null
+}
+
+function cancelLockedAction() {
+  showLockedWarning.value = false
+  pendingAction.value = null
+}
+
+async function quickAction(type) {
+  requestAction(async () => {
+    const action = type === 'open' ? 'sunshade/open' : 'sunshade/close'
+    loadingAction.value = type
+    try {
+      if (props.onExec) await props.onExec({ action, body: null })
+    } finally {
+      loadingAction.value = null
+    }
+  })
+}
+
 async function applyCustom() {
-  loadingAction.value = 'custom'
-  try {
-    if (props.onExec) await props.onExec({ action: 'sunshade', body: { value: String(sliderValue.value) } })
-  } finally {
-    loadingAction.value = null
-  }
+  requestAction(async () => {
+    loadingAction.value = 'custom'
+    try {
+      if (props.onExec) await props.onExec({ action: 'sunshade', body: { value: String(sliderValue.value) } })
+    } finally {
+      loadingAction.value = null
+    }
+  })
 }
 </script>
 

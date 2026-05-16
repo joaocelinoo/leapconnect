@@ -290,6 +290,7 @@
       @close="showSunshadeModal = false"
       :on-exec="execSunshade"
       :sunshade="s.windows?.sun_shade"
+      :is-locked="s.doors?.is_locked === true"
     />
 
     <ClimateControlModal
