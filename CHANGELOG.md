@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-05-16
+
+### Fixed
+
+- **Transient "Information verification failed" error handling**: after a token refresh or re-login, the Leapmotor API can return error code 39 for a few seconds. The vehicle cache now catches this transient error, performs a full re-login (clear auth + login, aligned with leapmotor-ha strategy), and retries once — instead of surfacing the error to the user.
+- **Scheduler error logging reduced**: `LeapmotorApiError` in the history scheduler now logs at WARNING (one line) instead of ERROR with full traceback. Unexpected non-API exceptions still log at ERROR with traceback.
+
 ## [0.7.0] - 2026-05-16
 
 ### Added
