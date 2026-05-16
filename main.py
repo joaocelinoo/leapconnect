@@ -2079,6 +2079,16 @@ class ChargeScheduleRequest(BaseModel):
     recharge: int = 0
 
 
+@app.get("/api/vehicles/{vin}/charge-schedule")
+async def get_charge_schedule(vin: str) -> dict:
+    """Retrieve the current charge schedule from the cloud."""
+    client = _get_client()
+    try:
+        return await client.get_charge_schedule(vin)
+    except LeapmotorApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @app.post("/api/vehicles/{vin}/charge-schedule")
 async def set_charge_schedule(vin: str, body: ChargeScheduleRequest) -> dict:
     """Set the full charging schedule (start/end time, days, SOC limit)."""
@@ -2379,6 +2389,26 @@ async def video(vin: str, body: MediaRequest) -> dict:
     return await client.video(vin, operation=body.operation)
 
 
+@app.get("/api/vehicles/{vin}/ptc-heating-schedule")
+async def get_ptc_heating_schedule(vin: str) -> list[dict]:
+    """Retrieve PTC battery heating schedules from the cloud."""
+    client = _get_client()
+    try:
+        return await client.get_ptc_heating_schedule(vin)
+    except LeapmotorApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/vehicles/{vin}/prepare-car-schedule")
+async def get_prepare_car_schedule(vin: str) -> list[dict]:
+    """Retrieve prepare-car pre-conditioning schedules from the cloud."""
+    client = _get_client()
+    try:
+        return await client.get_prepare_car_schedule(vin)
+    except LeapmotorApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 class FotaRequest(BaseModel):
     task_id: int
 
@@ -2400,6 +2430,16 @@ async def fota_install(vin: str, body: FotaRequest) -> dict:
 class FotaScheduleRequest(BaseModel):
     task_id: int
     schedule_time: str
+
+
+@app.get("/api/vehicles/{vin}/fota/schedule")
+async def get_fota_schedule(vin: str) -> list[dict]:
+    """Retrieve active FOTA install schedules from the cloud."""
+    client = _get_client()
+    try:
+        return await client.get_fota_schedule(vin)
+    except LeapmotorApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.post("/api/vehicles/{vin}/fota/schedule")

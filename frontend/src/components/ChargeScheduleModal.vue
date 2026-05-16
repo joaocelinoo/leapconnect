@@ -115,12 +115,14 @@
 <script setup>
 import { ref, reactive, watch } from 'vue'
 import { CalendarClock, Loader } from 'lucide-vue-next'
+import { api } from '../composables/useApi'
 
 const props = defineProps({
   visible: Boolean,
   onExec: Function,
   chargePlan: Object,
   currentSoc: Number,
+  vin: String,
 })
 
 defineEmits(['close'])
@@ -132,6 +134,7 @@ const endTime = ref('07:00')
 const circulation = ref(1)
 const recharge = ref(0)
 const loading = ref(false)
+const cloudSchedule = ref(null)
 
 const selectedDays = reactive(new Set([1, 2, 3, 4, 5, 6, 7]))
 
@@ -156,28 +159,67 @@ function formatCycles(cycles) {
   return cycles.split(',').map(d => map[d.trim()] || d).join(', ')
 }
 
-// Sync from current plan when modal opens
-watch(() => props.visible, (val) => {
-  if (val && props.chargePlan) {
-    const p = props.chargePlan
-    enabled.value = p.enabled === 1
-    if (p.soc_setting != null) socLimit.value = p.soc_setting
-    else if (props.currentSoc != null) socLimit.value = props.currentSoc
-    if (p.start) startTime.value = p.start
-    if (p.end) endTime.value = p.end
-    circulation.value = p.circulation ?? 1
-    recharge.value = p.recharge ?? 0
-    selectedDays.clear()
-    if (p.cycles) {
-      p.cycles.split(',').forEach(d => {
-        const n = parseInt(d.trim())
-        if (n >= 1 && n <= 7) selectedDays.add(n)
-      })
-    } else {
-      for (let i = 1; i <= 7; i++) selectedDays.add(i)
+// Sync from current plan when modal opens, then try cloud
+watch(() => props.visible, async (val) => {
+  if (!val) return
+  // First populate from vehicle status (immediate)
+  if (props.chargePlan) {
+    applyPlan(props.chargePlan)
+  }
+  // Then try to fetch richer data from cloud
+  if (props.vin) {
+    try {
+      const cloud = await api('GET', `/api/vehicles/${props.vin}/charge-schedule`)
+      cloudSchedule.value = cloud
+      if (cloud && Object.keys(cloud).length > 0) {
+        applyCloudSchedule(cloud)
+      }
+    } catch (err) {
+      console.error('Failed to fetch charge schedule from cloud:', err)
     }
   }
 })
+
+function applyPlan(p) {
+  enabled.value = p.enabled === 1
+  if (p.soc_setting != null) socLimit.value = p.soc_setting
+  else if (props.currentSoc != null) socLimit.value = props.currentSoc
+  if (p.start) startTime.value = p.start
+  if (p.end) endTime.value = p.end
+  circulation.value = p.circulation ?? 1
+  recharge.value = p.recharge ?? 0
+  selectedDays.clear()
+  if (p.cycles) {
+    p.cycles.split(',').forEach(d => {
+      const n = parseInt(d.trim())
+      if (n >= 1 && n <= 7) selectedDays.add(n)
+    })
+  } else {
+    for (let i = 1; i <= 7; i++) selectedDays.add(i)
+  }
+}
+
+function applyCloudSchedule(c) {
+  // Cloud schedule fields: chargeEnable/charge_enable, chargesoc, starttime, endtime, cycles, circulation, recharge
+  const en = c.chargeEnable ?? c.charge_enable
+  if (en != null) enabled.value = en === 1 || en === '1' || en === true
+  const soc = c.chargesoc ?? c.charge_soc
+  if (soc != null) socLimit.value = parseInt(soc, 10) || 80
+  const st = c.starttime ?? c.start_time
+  if (st) startTime.value = st
+  const et = c.endtime ?? c.end_time
+  if (et) endTime.value = et
+  if (c.circulation != null) circulation.value = parseInt(c.circulation, 10) || 0
+  if (c.recharge != null) recharge.value = parseInt(c.recharge, 10) || 0
+  const cy = c.cycles
+  if (cy) {
+    selectedDays.clear()
+    String(cy).split(',').forEach(d => {
+      const n = parseInt(d.trim())
+      if (n >= 1 && n <= 7) selectedDays.add(n)
+    })
+  }
+}
 
 async function apply() {
   loading.value = true

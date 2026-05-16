@@ -323,6 +323,7 @@
       :visible="showFotaModal"
       @close="showFotaModal = false"
       :on-exec="execFota"
+      :vin="props.vehicle?.vin"
     />
 
     <ChargeScheduleModal
@@ -331,6 +332,7 @@
       :on-exec="execChargeSchedule"
       :charge-plan="s.battery?.charge_plan"
       :current-soc="s.battery?.charge_soc_setting"
+      :vin="props.vehicle?.vin"
     />
 
     <ClimateScheduleModal

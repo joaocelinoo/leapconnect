@@ -17,6 +17,29 @@
               <span>Firmware operations may affect vehicle availability. Use with caution.</span>
             </div>
 
+            <!-- Existing FOTA schedules -->
+            <div v-if="loadingSchedules" class="fo-loading">
+              <Loader :size="16" class="spinning" />
+              <span>Loading schedules…</span>
+            </div>
+            <div v-else-if="existingSchedules.length > 0" class="fo-existing">
+              <div class="fo-existing-title">Scheduled Updates</div>
+              <div
+                v-for="(sch, idx) in existingSchedules"
+                :key="idx"
+                class="fo-schedule-card"
+              >
+                <div class="fo-schedule-row">
+                  <span class="fo-schedule-label">Task ID</span>
+                  <span class="fo-schedule-val">{{ sch.pid || '—' }}</span>
+                </div>
+                <div class="fo-schedule-row">
+                  <span class="fo-schedule-label">Scheduled</span>
+                  <span class="fo-schedule-val">{{ formatScheduleTime(sch.start_time || sch.startTime) }}</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Task ID input -->
             <div class="fo-field">
               <label class="fo-label">Task ID</label>
@@ -71,12 +94,14 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { Download, Play, Clock, AlertTriangle, Loader } from 'lucide-vue-next'
+import { ref, computed, watch } from 'vue'
+import { Download, Play, Clock, AlertTriangle, Loader, Trash2 } from 'lucide-vue-next'
+import { api } from '../composables/useApi'
 
 const props = defineProps({
   visible: Boolean,
   onExec: Function,
+  vin: String,
 })
 
 defineEmits(['close'])
@@ -85,6 +110,8 @@ const taskId = ref(null)
 const scheduleTime = ref('')
 const selectedAction = ref('download')
 const loadingAction = ref(null)
+const existingSchedules = ref([])
+const loadingSchedules = ref(false)
 
 const actions = [
   { value: 'download', label: 'Download', icon: Download, color: '#00d4ff' },
@@ -93,6 +120,28 @@ const actions = [
 ]
 
 const selectedLabel = computed(() => actions.find(a => a.value === selectedAction.value)?.label ?? '')
+
+watch(() => props.visible, async (val) => {
+  if (!val || !props.vin) return
+  loadingSchedules.value = true
+  try {
+    const data = await api('GET', `/api/vehicles/${props.vin}/fota/schedule`)
+    existingSchedules.value = Array.isArray(data) ? data : []
+  } catch (err) {
+    console.error('Failed to fetch FOTA schedules:', err)
+    existingSchedules.value = []
+  } finally {
+    loadingSchedules.value = false
+  }
+})
+
+function formatScheduleTime(ts) {
+  if (!ts) return '—'
+  // ts might be epoch seconds or a date string
+  const d = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts)
+  if (isNaN(d.getTime())) return String(ts)
+  return d.toLocaleString()
+}
 
 async function execute() {
   if (!taskId.value) return
@@ -105,6 +154,13 @@ async function execute() {
       body.schedule_time = scheduleTime.value
     }
     await props.onExec({ action, body })
+    // Refresh schedules after action
+    if (props.vin) {
+      try {
+        const data = await api('GET', `/api/vehicles/${props.vin}/fota/schedule`)
+        existingSchedules.value = Array.isArray(data) ? data : []
+      } catch (_) { /* ignore */ }
+    }
   } finally {
     loadingAction.value = null
   }
@@ -174,6 +230,26 @@ async function execute() {
 }
 .fo-apply:hover { opacity: 0.9; }
 .fo-apply:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Existing schedules */
+.fo-loading {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--muted); padding: 8px 0;
+}
+.fo-existing { display: flex; flex-direction: column; gap: 8px; }
+.fo-existing-title {
+  font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.fo-schedule-card {
+  background: var(--bg); border-radius: 10px; padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.fo-schedule-row {
+  display: flex; justify-content: space-between; align-items: center;
+}
+.fo-schedule-label { font-size: 12px; color: var(--muted2); }
+.fo-schedule-val { font-size: 13px; font-weight: 600; color: var(--text); }
 
 .modal-enter-active, .modal-leave-active { transition: opacity .2s; }
 .modal-enter-from, .modal-leave-to { opacity: 0; }
