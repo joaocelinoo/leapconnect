@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-16
+
 ### Added
 
 - **ABRP integration**: new service to send live vehicle telemetry to [A Better Route Planner](https://abetterrouteplanner.com) for real-time route planning and car model calibration. Sends 20+ data fields (SOC, speed, location, power, temperatures, tire pressures, etc.) with adaptive frequency — every 10s while driving, 30s while charging, 5min while parked
