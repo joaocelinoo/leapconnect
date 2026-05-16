@@ -113,6 +113,17 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  const abrpStatus = ref({ enabled: false, is_running: false })
+
+  async function loadAbrpStatus() {
+    try {
+      const data = await api('GET', '/api/abrp')
+      abrpStatus.value = { enabled: data.enabled, is_running: data.is_running }
+    } catch {
+      // ignore
+    }
+  }
+
   async function submitPin(pin, remember = false) {
     await api('POST', '/api/set-pin', { pin })
     hasPin.value = true
@@ -398,6 +409,8 @@ export const useAppStore = defineStore('app', () => {
     loadMqttStatus,
     liveRefreshStatus,
     loadLiveRefreshStatus,
+    abrpStatus,
+    loadAbrpStatus,
     commandHistory,
     connectWebSocket,
     disconnectWebSocket,

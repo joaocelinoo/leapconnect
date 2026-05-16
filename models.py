@@ -92,3 +92,11 @@ class MqttSettings:
     use_tls: bool = False
     discovery_prefix: str = "homeassistant"
     topic_prefix: str = "leapconnect"
+
+
+@dataclass
+class AbrpSettings:
+    """ABRP (A Better Route Planner) telemetry settings."""
+
+    enabled: bool = False
+    user_token: str = ""

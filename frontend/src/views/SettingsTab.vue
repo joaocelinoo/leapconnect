@@ -313,6 +313,65 @@
         <div v-if="pinSuccess" class="field-success" style="margin-top:4px;text-align:right;font-size:11px">{{ pinSuccess }}</div>
         <div v-if="pinError" class="field-error" style="margin-top:4px;text-align:right;font-size:11px">{{ pinError }}</div>
       </SectionCard>
+
+      <SectionCard title="ABRP" :icon="Navigation">
+        <p class="rate-limit-hint" style="margin-bottom:10px">Send live telemetry to <a href="https://abetterrouteplanner.com" target="_blank" rel="noopener">A Better Route Planner</a> for real-time route planning.</p>
+        <div class="scheduler-service">
+          <div class="service-status">
+            <span class="status-dot" :class="abrp.is_running ? 'running' : 'stopped'" />
+            <span class="service-text">
+              {{ abrp.is_running ? 'Running' : abrp.enabled ? 'Stopped' : 'Disabled' }}
+              <span v-if="abrp.is_running" class="service-interval">· adaptive</span>
+            </span>
+          </div>
+          <button
+            class="service-btn"
+            :class="abrp.enabled ? 'btn-stop' : 'btn-start'"
+            :disabled="abrpUpdating || (!abrp.enabled && !abrpForm.user_token)"
+            @click="toggleAbrp(!abrp.enabled)"
+          >
+            {{ abrp.enabled ? 'Disable' : 'Enable' }}
+          </button>
+        </div>
+
+        <div class="form-divider" style="margin-top:12px">User Token</div>
+        <p class="section-desc" style="margin-bottom:8px">
+          Open your vehicle settings in ABRP, click <b>Live Data</b> and copy the generic token.
+        </p>
+
+        <div class="interval-row">
+          <span class="interval-label" style="margin-right:10px">Token</span>
+          <div class="interval-control" style="flex:1">
+            <div class="pin-input-wrap" style="flex:1">
+              <input
+                v-model="abrpForm.user_token"
+                :type="showAbrpToken ? 'text' : 'password'"
+                class="pin-input"
+                style="width:100%;letter-spacing:0"
+                placeholder="Paste your ABRP live data token"
+              />
+              <button class="pin-eye-btn" tabindex="-1" @click="showAbrpToken = !showAbrpToken" :title="showAbrpToken ? 'Hide' : 'Show'">
+                <svg v-if="!showAbrpToken" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              </button>
+            </div>
+            <button
+              class="interval-set-btn"
+              :disabled="abrpUpdating || !abrpForm.user_token"
+              @click="saveAbrp"
+            >{{ abrpUpdating ? '…' : 'Set' }}</button>
+          </div>
+        </div>
+
+        <div v-if="abrpSuccess" class="field-success" style="margin-top:6px;text-align:right;font-size:11px">{{ abrpSuccess }}</div>
+        <div v-if="abrp.last_error" class="status-error" style="margin-top:6px">{{ abrp.last_error }}</div>
+
+        <div class="scheduler-status" v-if="abrp.total_sends || abrp.total_errors">
+          <div class="status-detail">
+            Sends: {{ abrp.total_sends }} · Errors: {{ abrp.total_errors }}
+          </div>
+        </div>
+      </SectionCard>
     </template>
 
     <!-- ═══════════════ ADVANCED ═══════════════ -->
@@ -596,7 +655,7 @@ import ToggleSwitch from '../components/ToggleSwitch.vue'
 import LogViewer from '../components/LogViewer.vue'
 import { api } from '../composables/useApi'
 import { useAppStore } from '../stores/appStore'
-import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal } from 'lucide-vue-next'
+import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation } from 'lucide-vue-next'
 
 const store = useAppStore()
 
@@ -917,6 +976,58 @@ function formatTime(iso) {
   return d.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
+// -- ABRP state -------------------------------------------------------------
+const abrp = reactive({
+  enabled: false,
+  user_token: '',
+  is_running: false,
+  last_error: null,
+  total_sends: 0,
+  total_errors: 0,
+})
+
+const abrpForm = reactive({ user_token: '' })
+const showAbrpToken = ref(false)
+const abrpUpdating = ref(false)
+const abrpSuccess = ref('')
+
+async function loadAbrp() {
+  try {
+    const data = await api('GET', '/api/abrp')
+    Object.assign(abrp, data)
+    abrpForm.user_token = data.user_token || ''
+  } catch { /* ignore */ }
+}
+
+async function toggleAbrp(val) {
+  abrpUpdating.value = true
+  abrpSuccess.value = ''
+  try {
+    const payload = { enabled: val }
+    if (val) {
+      payload.user_token = abrpForm.user_token
+    }
+    const data = await api('PUT', '/api/abrp', payload)
+    Object.assign(abrp, data)
+  } catch { /* ignore */ }
+  finally { abrpUpdating.value = false }
+}
+
+async function saveAbrp() {
+  abrpUpdating.value = true
+  abrpSuccess.value = ''
+  try {
+    const data = await api('PUT', '/api/abrp', {
+      enabled: abrp.enabled,
+      user_token: abrpForm.user_token,
+    })
+    Object.assign(abrp, data)
+    abrpSuccess.value = 'Credentials saved'
+    setTimeout(() => { abrpSuccess.value = '' }, 4000)
+  } catch { /* ignore */ }
+  finally { abrpUpdating.value = false }
+}
+
 async function loadAccount() {
   try {
     const data = await api('GET', '/api/status')
@@ -1120,6 +1231,7 @@ onMounted(() => {
   loadCertsStatus()
   loadPreferences()
   loadMqtt()
+  loadAbrp()
   loadVehiclePin()
   loadLogLevels()
 })

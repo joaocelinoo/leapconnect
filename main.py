@@ -35,6 +35,7 @@ from starlette.websockets import WebSocketDisconnect
 from models import MqttSettings, UserPreferences, VehicleSnapshot
 from persistence.sqlite_adapter import SQLAlchemyVehicleHistoryRepository
 from schemas import (
+    AbrpStatusResponse,
     AccountSetupResponse,
     AuthLoginResponse,
     CertificateStatusResponse,
@@ -68,6 +69,7 @@ from schemas import (
     VehicleStatusResponse,
     VehicleStatusSchema,
 )
+from services.abrp import AbrpService
 from services.mqtt_ha import HomeAssistantMqttService
 from services.scheduler import VehicleDataScheduler
 from services.vehicle_cache import VehicleStatusCache
@@ -157,6 +159,7 @@ _image_packages: dict[str, CarImagePackage] = {}  # vin -> CarImagePackage
 _history_repo: SQLAlchemyVehicleHistoryRepository | None = None
 _scheduler: VehicleDataScheduler | None = None
 _mqtt_service: HomeAssistantMqttService | None = None
+_abrp_service: AbrpService | None = None
 _vehicle_cache: VehicleStatusCache | None = None
 
 # Live refresh — periodic cache refresh for VINs with active WebSocket clients
@@ -354,6 +357,10 @@ async def _auto_connect() -> None:
         if _scheduler:
             _scheduler.set_client(_client, _vehicles)
             _scheduler.start()
+
+        # Wire ABRP service to vehicle cache
+        if _abrp_service:
+            _abrp_service.set_vehicles(_vehicles, _vehicle_cache)
     except Exception as exc:
         _LOGGER.warning("Auto-connect: failed (%s), app will run offline", exc)
         _connected = False
@@ -427,6 +434,16 @@ async def lifespan(app: FastAPI):
 
     _scheduler.set_on_status_callback(_on_scheduler_status)
 
+    # Initialize ABRP telemetry service
+    global _abrp_service
+    _abrp_service = AbrpService()
+    abrp_settings = await _load_abrp_settings()
+    _abrp_service.update_settings(
+        enabled=abrp_settings.enabled,
+        user_token=abrp_settings.user_token,
+    )
+    _LOGGER.info("ABRP service initialised: enabled=%s", abrp_settings.enabled)
+
     # Initialize live refresh from saved setting
     global _live_refresh_interval
     live_raw = await _history_repo.get_setting("live_refresh_interval")
@@ -443,6 +460,8 @@ async def lifespan(app: FastAPI):
     yield
 
     _stop_live_refresh()
+    if _abrp_service:
+        await _abrp_service.stop()
     if _mqtt_service:
         await _mqtt_service.stop()
     if _scheduler:
@@ -835,6 +854,9 @@ async def save_account(request: Request) -> AccountSetupResponse:
             _scheduler.set_client(_client, _vehicles)
             _scheduler.start()
 
+        if _abrp_service:
+            _abrp_service.set_vehicles(_vehicles, _vehicle_cache)
+
         # Start live refresh if configured
         if _live_refresh_interval > 0:
             _start_live_refresh()
@@ -892,6 +914,9 @@ async def reconnect() -> ReconnectResponse:
             _scheduler.set_client(_client, _vehicles)
             _scheduler.start()
 
+        if _abrp_service:
+            _abrp_service.set_vehicles(_vehicles, _vehicle_cache)
+
         # Start live refresh if configured
         if _live_refresh_interval > 0:
             _start_live_refresh()
@@ -918,6 +943,8 @@ async def disconnect() -> StatusResponse:
     _stop_live_refresh()
     if _scheduler:
         _scheduler.set_client(None, [])
+    if _abrp_service:
+        _abrp_service.set_vehicles([], None)
     if _sync_client:
         _sync_client.close()
     _sync_client = None
@@ -1894,6 +1921,64 @@ async def test_mqtt_connection(request: Request) -> MqttTestResponse:
             return MqttTestResponse(status="ok", message="Connection successful")
     except Exception as exc:
         return MqttTestResponse(status="error", message=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Routes — ABRP (A Better Route Planner)
+# ---------------------------------------------------------------------------
+
+
+async def _load_abrp_settings():
+    """Load ABRP settings from the database."""
+    from models import AbrpSettings
+
+    if not _history_repo:
+        return AbrpSettings()
+    settings = AbrpSettings()
+    enabled = await _history_repo.get_setting("abrp_enabled")
+    settings.enabled = enabled == "1" if enabled else False
+    settings.user_token = await _history_repo.get_setting("abrp_user_token") or ""
+    return settings
+
+
+async def _save_abrp_settings(settings) -> None:
+    """Persist ABRP settings to the database."""
+    if not _history_repo:
+        return
+    await _history_repo.save_setting("abrp_enabled", "1" if settings.enabled else "0")
+    await _history_repo.save_setting("abrp_user_token", settings.user_token)
+
+
+@app.get("/api/abrp", response_model=AbrpStatusResponse)
+async def get_abrp_status() -> AbrpStatusResponse:
+    """Get current ABRP integration status."""
+    if not _abrp_service:
+        return AbrpStatusResponse()
+    d = _abrp_service.status_dict()
+    return AbrpStatusResponse(**d)
+
+
+@app.put("/api/abrp", response_model=AbrpStatusResponse)
+async def update_abrp_settings(request: Request) -> AbrpStatusResponse:
+    """Update ABRP settings."""
+    if not _abrp_service or not _history_repo:
+        raise HTTPException(status_code=503, detail="ABRP service not available")
+
+    body = await request.json()
+
+    _abrp_service.update_settings(
+        enabled=body.get("enabled"),
+        user_token=body.get("user_token"),
+    )
+
+    # Ensure vehicles are wired
+    if _abrp_service.settings.enabled and _vehicles:
+        _abrp_service.set_vehicles(_vehicles, _vehicle_cache)
+
+    await _save_abrp_settings(_abrp_service.settings)
+
+    d = _abrp_service.status_dict()
+    return AbrpStatusResponse(**d)
 
 
 # ---------------------------------------------------------------------------

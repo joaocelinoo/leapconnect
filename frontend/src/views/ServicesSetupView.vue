@@ -118,11 +118,41 @@
         </Transition>
       </div>
 
+      <!-- ─── ABRP ─── -->
+      <div class="service-card">
+        <div class="service-header">
+          <div class="service-icon abrp-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="3 11 22 2 13 21 11 13 3 11" />
+            </svg>
+          </div>
+          <div class="service-info">
+            <h3>ABRP</h3>
+            <p>Send live telemetry to A Better Route Planner for real-time route planning and car model calibration.</p>
+          </div>
+          <button
+            class="toggle-btn"
+            :class="{ active: abrpEnabled }"
+            @click="abrpEnabled = !abrpEnabled"
+          >
+            <span class="toggle-track"><span class="toggle-thumb" /></span>
+          </button>
+        </div>
+        <Transition name="expand">
+          <div v-if="abrpEnabled" class="service-options">
+            <div class="form-group">
+              <label>User Token</label>
+              <input v-model="abrpForm.user_token" type="password" placeholder="Live data token from ABRP settings" />
+            </div>
+          </div>
+        </Transition>
+      </div>
+
       <!-- ─── Actions ─── -->
       <div v-if="error" class="setup-error">{{ error }}</div>
 
       <button class="btn-primary" :disabled="submitting" @click="handleContinue">
-        {{ submitting ? 'Saving…' : (historyEnabled || mqttEnabled) ? 'Save & Continue' : 'Skip & Continue' }}
+        {{ submitting ? 'Saving…' : (historyEnabled || mqttEnabled || abrpEnabled) ? 'Save & Continue' : 'Skip & Continue' }}
       </button>
     </div>
   </div>
@@ -155,6 +185,12 @@ const mqttForm = reactive({
   username: '',
   password: '',
   use_tls: false,
+})
+
+// ABRP
+const abrpEnabled = ref(false)
+const abrpForm = reactive({
+  user_token: '',
 })
 
 function formatSeconds(s) {
@@ -221,6 +257,14 @@ async function handleContinue() {
       // Also set the MQTT polling interval on the scheduler
       await api('PUT', '/api/scheduler', {
         mqtt_interval_seconds: mqttInterval.value,
+      })
+    }
+
+    // Save ABRP settings
+    if (abrpEnabled.value && abrpForm.user_token) {
+      await api('PUT', '/api/abrp', {
+        enabled: true,
+        user_token: abrpForm.user_token,
       })
     }
 
@@ -323,6 +367,8 @@ async function handleContinue() {
 .history-icon svg { color: #7c6aff; }
 .ha-icon { background: #00d4ff22; border: 1px solid #00d4ff44; }
 .ha-icon svg { color: #00d4ff; }
+.abrp-icon { background: #4caf5022; border: 1px solid #4caf5044; }
+.abrp-icon svg { color: #4caf50; }
 
 .service-info {
   flex: 1;

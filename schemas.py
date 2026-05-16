@@ -684,6 +684,15 @@ class MqttTestResponse(BaseModel):
     message: str
 
 
+class AbrpStatusResponse(BaseModel):
+    enabled: bool = False
+    user_token: str = ""
+    is_running: bool = False
+    last_error: str | None = None
+    total_sends: int = 0
+    total_errors: int = 0
+
+
 # ---------------------------------------------------------------------------
 # Charging History
 # ---------------------------------------------------------------------------

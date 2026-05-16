@@ -85,6 +85,13 @@
                     {{ store.mqttStatus.connected ? 'Online' : store.mqttStatus.enabled ? 'Offline' : 'Disabled' }}
                   </span>
                 </div>
+                <div class="svc-row">
+                  <span class="svc-dot" :class="store.abrpStatus.is_running ? 'on' : store.abrpStatus.enabled ? 'warn' : 'off'" />
+                  <span class="svc-label">ABRP</span>
+                  <span class="svc-value" :class="store.abrpStatus.is_running ? 'on' : store.abrpStatus.enabled ? 'warn' : ''">
+                    {{ store.abrpStatus.is_running ? 'Running' : store.abrpStatus.enabled ? 'Stopped' : 'Disabled' }}
+                  </span>
+                </div>
               </div>
               <div class="user-menu-divider" />
               <!-- Cloud action -->
@@ -340,6 +347,7 @@ function toggleUserMenu() {
   if (showUserMenu.value) {
     store.loadMqttStatus()
     store.loadLiveRefreshStatus()
+    store.loadAbrpStatus()
   }
 }
 
@@ -394,6 +402,7 @@ onMounted(async () => {
     store.loadUnreadCount()
     store.loadMqttStatus()
     store.loadLiveRefreshStatus()
+    store.loadAbrpStatus()
     unreadInterval = setInterval(() => store.loadUnreadCount(), 60000)
   }
   // Tick data age every 10s
