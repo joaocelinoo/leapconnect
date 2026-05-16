@@ -14,9 +14,15 @@
           <span v-if="s.doors?.bbcm_back_door_status" class="badge badge-trunk"><TrunkOpenIcon :size="14" /></span>
         </div>
       </div>
-      <div class="hero-info">
-        <div class="hero-name">{{ vehicle.vehicle_nickname || vehicle.car_type || 'Leapmotor' }}</div>
-        <div class="hero-vin">{{ vehicle.vin }}</div>
+      <div class="hero-bottom">
+        <div class="hero-info">
+          <div class="hero-name">{{ vehicle.vehicle_nickname || vehicle.car_type || 'Leapmotor' }}</div>
+          <div class="hero-vin">{{ vehicle.vin }}</div>
+        </div>
+        <div v-if="vehicleAddress" class="hero-location" @click="showLocationModal = true">
+          <MapPin :size="12" class="hero-loc-icon" />
+          <span class="hero-loc-text">{{ vehicleAddress }}</span>
+        </div>
       </div>
     </div>
 
@@ -340,11 +346,23 @@
       @close="showClimateScheduleModal = false"
       :vin="props.vehicle?.vin"
     />
+
+    <!-- Location modal -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showLocationModal" class="loc-modal-overlay" @click.self="showLocationModal = false">
+          <div class="loc-modal">
+            <button class="loc-modal-close" @click="showLocationModal = false">&times;</button>
+            <LocationCard :location="s.location" :vehicle="props.vehicle" />
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, toValue } from 'vue'
+import { ref, computed, watch, toValue } from 'vue'
 import { useAppStore } from '../stores/appStore'
 import { useToast } from '../composables/useToast'
 import { formatTime } from '../utils/formatters'
@@ -362,6 +380,7 @@ import MediaControlModal from '../components/MediaControlModal.vue'
 import FotaModal from '../components/FotaModal.vue'
 import ChargeScheduleModal from '../components/ChargeScheduleModal.vue'
 import ClimateScheduleModal from '../components/ClimateScheduleModal.vue'
+import LocationCard from '../components/LocationCard.vue'
 import {
   Zap, Snowflake, Lock, Unlock, Shield, Loader, Plug,
   Radio, ChevronUp, ChevronDown, Sun, Wind, Flame,
@@ -369,7 +388,7 @@ import {
   ShieldCheck, ShieldOff, Power, PowerOff, Wifi, Car,
   CircleParking, Key, Eye, EyeOff, PlugZap,
   Heater, AirVent, Armchair, Navigation,
-  Gauge, Music, Download, CalendarClock
+  Gauge, Music, Download, CalendarClock, MapPin
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -383,6 +402,39 @@ const loadingAction = ref(null)
 const carImageKey = ref(Date.now())
 
 const s = computed(() => props.status || {})
+
+// --- Reverse geocoding for hero location ---
+const vehicleAddress = ref('')
+let _lastGeoKey = ''
+
+async function reverseGeocode(lat, lng) {
+  const key = `${lat.toFixed(4)},${lng.toFixed(4)}`
+  if (key === _lastGeoKey) return
+  _lastGeoKey = key
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=17&addressdetails=1`,
+      { headers: { 'Accept-Language': 'it' } }
+    )
+    if (!res.ok) return
+    const data = await res.json()
+    const a = data.address || {}
+    const road = a.road || a.pedestrian || a.footway || ''
+    const city = a.city || a.town || a.village || a.municipality || ''
+    const parts = [road, city].filter(Boolean)
+    vehicleAddress.value = parts.length ? parts.join(', ') : data.display_name?.split(',').slice(0, 3).join(',') || ''
+  } catch {
+    // Silently ignore geocoding failures
+  }
+}
+
+watch(
+  () => [s.value.location?.latitude, s.value.location?.longitude],
+  ([lat, lng]) => {
+    if (lat && lng) reverseGeocode(lat, lng)
+  },
+  { immediate: true }
+)
 
 const battColor = computed(() => {
   const soc = s.value.battery?.soc
@@ -434,6 +486,7 @@ const showMediaModal = ref(false)
 const showFotaModal = ref(false)
 const showChargeScheduleModal = ref(false)
 const showClimateScheduleModal = ref(false)
+const showLocationModal = ref(false)
 
 const pendingLimit = ref(props.status?.battery?.charge_soc_setting ?? 80)
 
@@ -789,9 +842,53 @@ async function doSetChargeLimit() {
 .badge-ac { background: rgba(0,212,255,0.12); border: 1px solid rgba(0,212,255,0.45); }
 .badge-lock { background: rgba(255,171,64,0.15); border: 1px solid rgba(255,171,64,0.5); }
 .badge-trunk { background: rgba(255,171,64,0.15); border: 1px solid rgba(255,171,64,0.5); }
-.hero-info { margin-top: 4px; }
+.hero-bottom {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  margin-top: 4px; gap: 12px;
+}
+.hero-info { min-width: 0; }
 .hero-name { font-size: 18px; font-weight: 700; color: var(--text); }
 .hero-vin { font-size: 11px; color: var(--muted2); font-family: var(--mono); margin-top: 2px; }
+.hero-location {
+  display: flex; align-items: center; gap: 4px;
+  cursor: pointer; flex-shrink: 1; min-width: 0;
+  padding: 4px 10px; border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+  transition: background .2s;
+}
+.hero-location:hover { background: rgba(255,255,255,0.08); }
+.hero-loc-icon { color: var(--muted); flex-shrink: 0; }
+.hero-loc-text {
+  font-size: 11px; color: var(--muted); line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  text-align: right;
+}
+
+/* Location modal */
+.loc-modal-overlay {
+  position: fixed; inset: 0; z-index: 9000;
+  background: rgba(0,0,0,.55); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+}
+.loc-modal {
+  position: relative;
+  width: 94vw; max-width: 600px; max-height: 90vh;
+  overflow-y: auto;
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.4);
+}
+.loc-modal .location-card {
+  border-radius: 16px;
+}
+.loc-modal-close {
+  position: absolute; top: 8px; right: 12px; z-index: 10;
+  background: rgba(0,0,0,.4); border: none; color: #fff;
+  font-size: 22px; width: 32px; height: 32px; border-radius: 50%;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  line-height: 1; transition: background .2s;
+}
+.loc-modal-close:hover { background: rgba(0,0,0,.6); }
 
 /* Stats row */
 .stats-row { /* responsive via Tailwind classes */ }
