@@ -13,6 +13,8 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from leapmotor_api.exceptions import LeapmotorApiError
+
 from models import SchedulerSettings, VehicleSnapshot
 
 if TYPE_CHECKING:
@@ -273,6 +275,10 @@ class VehicleDataScheduler:
                     vehicle.vin,
                     status.battery.soc,
                 )
+            except LeapmotorApiError as exc:
+                self._total_errors += 1
+                self._last_error = f"{vehicle.vin}: {exc}"
+                _LOGGER.warning("Scheduler: API error polling %s: %s", vehicle.vin, exc)
             except Exception as exc:
                 self._total_errors += 1
                 self._last_error = f"{vehicle.vin}: {exc}"
