@@ -13,6 +13,8 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
+from leapmotor_api.exceptions import LeapmotorApiError
+
 if TYPE_CHECKING:
     from leapmotor_api.async_client import AsyncLeapmotorApiClient
     from leapmotor_api.models import Vehicle, VehicleStatus
@@ -96,7 +98,7 @@ class VehicleStatusCache:
                 return cached[0]
 
             _LOGGER.debug("Cache MISS for %s — fetching from API", vin)
-            status = await self._client.get_vehicle_status(vehicle)
+            status = await self._fetch_with_retry(vehicle)
             self._cache[vin] = (status, time.time())
             await self._notify_update(vin, status)
             return status
@@ -113,10 +115,39 @@ class VehicleStatusCache:
 
         async with self._locks[vin]:
             _LOGGER.debug("Force refresh for %s", vin)
-            status = await self._client.get_vehicle_status(vehicle)
+            status = await self._fetch_with_retry(vehicle)
             self._cache[vin] = (status, time.time())
             await self._notify_update(vin, status)
             return status
+
+    async def _fetch_with_retry(self, vehicle: Vehicle) -> VehicleStatus:
+        """Fetch vehicle status with one retry for transient server-side errors.
+
+        Error code 39 ("Information verification failed") is returned by the
+        Leapmotor API after a token refresh or re-login.
+        clear auth, perform a full re-login, then retry.
+        """
+        assert self._client is not None  # caller must ensure client is set
+        try:
+            return await self._client.get_vehicle_status(vehicle)
+        except LeapmotorApiError as exc:
+            msg = str(exc).lower()
+            if "try again" in msg or "verification failed" in msg:
+                _LOGGER.warning(
+                    "Transient API error for %s, performing full re-login: %s",
+                    vehicle.vin,
+                    exc,
+                )
+                try:
+                    self._client.client._clear_auth()
+                    await self._client.login()
+                except Exception as login_exc:
+                    _LOGGER.warning(
+                        "Re-login failed for %s: %s", vehicle.vin, login_exc
+                    )
+                    raise exc from login_exc
+                return await self._client.get_vehicle_status(vehicle)
+            raise
 
     def get_cached(self, vin: str) -> VehicleStatus | None:
         """Return the cached status without fetching, or None if not cached."""
