@@ -42,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Updated leapmotor-api to v0.2.0**: major library update with 30+ new remote commands, typed enums for permissions/gear/HVAC, new sub-objects (ChargePlan, SeatComfortStatus, SecurityStatus), and expanded vehicle status fields
+- **Updated leapmotor-api to v0.3.0**: major library update with 30+ new remote commands, typed enums for permissions/gear/HVAC, new sub-objects (ChargePlan, SeatComfortStatus, SecurityStatus), and expanded vehicle status fields
 - **schemas.py rewritten**: all enum fields (`rights`, `abilities`, `module_rights`, `gear_status`, `ac_cooling_and_heating`) now properly serialize enum values; charge plan fields relocated to `battery.charge_plan` sub-object; added `ChargePlanSchema`, `SeatComfortSchema`, and `SecuritySchema`
 - **MQTT/HA integration updated**: fixed enum serialization for gear status and HVAC direction; charge plan fields read from new sub-object path; `is_charging` now uses the library's native property instead of a power-based workaround
 - **Slow charging detection fixed**: `isSlowCharging` on the Dashboard now checks `charge_state_label === 'CHARGING' && !battery.dc_input_fast_charge` instead of the removed `AC_CONNECTED` label
