@@ -16,18 +16,24 @@ Web dashboard for monitoring and controlling Leapmotor vehicles via the [leapmot
 
 ## Features
 
-- **Live vehicle status**: Battery, range, speed, odometer, temperature, lock status and more
-- **Remote controls**: Lock/unlock, trunk, windows, sunshade, climate (A/C, quick cool/heat, defrost), battery preheat, find car
-- **Charge limit**: Adjustable charge limit slider
-- **Vehicle details**: Doors, windows, tire pressure, climate, connectivity, ignition
-- **Location**: OpenStreetMap embedded view with coordinates
-- **Mileage & energy**: Delivery history, total mileage
-- **Car picture**: Dinamic image reflecting lock status, doors, windows, sunshade, and lights
-- **Raw data viewer**: Full JSON inspection for debugging
+- **Live vehicle status**: Battery, range, speed, odometer, temperature, lock status and more — with configurable auto-refresh via WebSocket
+- **51 remote commands**: Lock/unlock, trunk, windows, sunroof, sunshade, climate (A/C, quick cool/heat, defrost), battery preheat, start/stop charging, charge schedule, climate schedule, seat heating & ventilation, steering wheel heat, sentry mode, speed limit, send destination, media playback, firmware OTA, find car, and more
+- **Charge management**: Adjustable charge limit slider, charge schedule programming (days, times, SOC target), healthy charging toggle, start/stop charging, unlock charger
+- **Climate scheduling**: Create, edit, and delete scheduled climate pre-conditioning timers
+- **Vehicle details**: Battery & charging info, doors, windows, tire pressure, climate, seat comfort, security, connectivity, charge plan, and vehicle info
+- **Location**: OpenStreetMap embedded view with coordinates and send-to-car destination picker
+- **History & analytics**: Interactive charts for SOC, range, speed, efficiency, charging sessions, energy consumption, vampire drain, tire pressure, usage heatmap, trip map with GPS traces, and CSV export
+- **Cloud statistics**: Weekly energy consumption ranking and distribution from Leapmotor cloud
+- **Vehicle messages**: Notifications from Leapmotor with unread count and pagination
+- **Car picture**: Dynamic image reflecting lock status, doors, windows, sunshade, and lights
+- **Permission gating**: Controls filtered by vehicle hardware abilities and user account permissions
 - **Multi-vehicle**: Tab switching for accounts with multiple vehicles
-- **Home Assistant integration**: Optional MQTT export of all vehicle data for smart home
+- **Home Assistant integration**: Optional MQTT export of all vehicle data for smart home automation
 - **ABRP integration**: Optional live telemetry to [A Better Route Planner](https://abetterrouteplanner.com) for real-time route planning
-- **Local history recording**: Optional SQLite database to track vehicle data over time.
+- **Local history recording**: Optional SQLite database to track and visualize vehicle data over time
+- **Dark & light theme**: Switchable UI theme
+- **Live log viewer**: Real-time application logs in the browser for troubleshooting
+- **Guided setup wizard**: Step-by-step first-run configuration for certificates, account, and services
 
 ## Screenshots
 
