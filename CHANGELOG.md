@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-05-19
+
+### Fixed
+
+- **Missing production dependency**: moved `httpx` from dev dependencies to main dependencies — required at runtime by the ABRP service
+
 ## [0.7.1] - 2026-05-16
 
 ### Fixed
