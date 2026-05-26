@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Update proxy target from localhost to 127.0.0.1 to fix Docker Compose connectivity issues on some platforms (e.g. Windows 8.1)
+- **Geolocation no longer requested automatically**: the browser geolocation prompt was triggered immediately when opening the Details page or Destination Modal, causing an error on non-HTTPS connections. Now geolocation is only requested when the user clicks the "Locate" button
+- **Destination Modal: added Locate button**: new button on the map (top-left) to manually request the user's position, with loading animation and error toasts
 
 ## [0.7.2] - 2026-05-19
 
