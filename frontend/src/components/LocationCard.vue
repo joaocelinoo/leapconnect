@@ -210,9 +210,6 @@ function initMap() {
 
   // Map click handler for destination
   map.on('click', onMapClick)
-
-  // Request device location automatically
-  requestDeviceLocation()
 }
 
 function onMapClick(e) {

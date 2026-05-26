@@ -15,6 +15,10 @@
             <!-- Map -->
             <div ref="mapWrapper" class="dm-map-wrapper">
               <div ref="mapEl" class="dm-map-container" />
+              <!-- Locate me button -->
+              <button class="dm-locate-btn" @click="requestDeviceLocation" :disabled="locatingDevice" title="Find my location">
+                <Crosshair :size="16" :class="{ spinning: locatingDevice }" />
+              </button>
               <div class="dm-map-legend">
                 <span class="dm-legend-item"><span class="dm-legend-dot vehicle" /> Vehicle</span>
                 <span class="dm-legend-item"><span class="dm-legend-dot device" /> You</span>
@@ -55,7 +59,7 @@ import { useAppStore } from '../stores/appStore'
 import { useToast } from '../composables/useToast'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { Navigation, Loader } from 'lucide-vue-next'
+import { Navigation, Loader, Crosshair } from 'lucide-vue-next'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -82,6 +86,7 @@ const destName = ref('')
 const destLat = ref(null)
 const destLng = ref(null)
 const sending = ref(false)
+const locatingDevice = ref(false)
 
 const vehicleLat = computed(() => props.location?.latitude || 0)
 const vehicleLng = computed(() => props.location?.longitude || 0)
@@ -139,7 +144,6 @@ function initMap() {
   }
 
   map.on('click', onMapClick)
-  requestDeviceLocation()
 }
 
 function destroyMap() {
@@ -188,10 +192,19 @@ async function reverseGeocode(lat, lng) {
 }
 
 function requestDeviceLocation() {
-  if (!navigator.geolocation || !window.isSecureContext) return
+  if (!navigator.geolocation) {
+    toast('Geolocation is not supported by this browser', 'error')
+    return
+  }
+  if (!window.isSecureContext) {
+    toast('Geolocation requires HTTPS', 'error')
+    return
+  }
 
+  locatingDevice.value = true
   navigator.geolocation.getCurrentPosition(
     (pos) => {
+      locatingDevice.value = false
       const { latitude, longitude } = pos.coords
       if (map) {
         if (deviceMarker) {
@@ -207,10 +220,19 @@ function requestDeviceLocation() {
             [latitude, longitude]
           )
           map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 })
+        } else {
+          map.setView([latitude, longitude], 14)
         }
       }
     },
-    () => { /* ignore errors silently in modal */ },
+    (err) => {
+      locatingDevice.value = false
+      if (err.code === err.PERMISSION_DENIED) {
+        toast('Location permission denied', 'error')
+      } else {
+        toast('Could not get location', 'error')
+      }
+    },
     { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
   )
 }
@@ -347,6 +369,39 @@ onBeforeUnmount(() => { destroyMap() })
 .dm-map-container {
   width: 100%;
   height: 100%;
+}
+.dm-locate-btn {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1000;
+  width: 32px;
+  height: 32px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #00e676;
+  transition: all 0.2s;
+  box-shadow: var(--shadow-card);
+}
+.dm-locate-btn:hover:not(:disabled) {
+  background: var(--elevated);
+  color: #00ff88;
+}
+.dm-locate-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.dm-locate-btn .spinning {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 .dm-map-legend {
   position: absolute;
