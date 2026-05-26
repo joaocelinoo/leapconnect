@@ -134,8 +134,10 @@ class HomeAssistantMqttService:
             try:
                 img_bytes = image_package.compose(status, format="PNG")
                 await self._publish(f"{prefix}/image", img_bytes, retain=True)
-            except Exception:
-                _LOGGER.debug("Failed to compose car image for MQTT")
+            except Exception as exc:
+                _LOGGER.warning("Failed to compose car image for MQTT: %s", exc)
+        else:
+            _LOGGER.debug("No image package available for %s", vin)
 
     async def publish_messages(self, vin: str, messages: list[dict]) -> None:
         """Publish vehicle messages to MQTT."""

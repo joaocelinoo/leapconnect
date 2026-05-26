@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Geolocation no longer requested automatically**: the browser geolocation prompt was triggered immediately when opening the Details page or Destination Modal, causing an error on non-HTTPS connections. Now geolocation is only requested when the user clicks the "Locate" button
 - **Destination Modal: added Locate button**: new button on the map (top-left) to manually request the user's position, with loading animation and error toasts
 - **MQTT state publishing fixed**: state payloads were never published to Home Assistant because some vehicle status fields (gear, climate mode, charge state, etc.) are returned as plain `int` by the API instead of enum objects. Accessing `.value` on them caused an `AttributeError` that was silently swallowed, preventing all sensor updates. Now uses a safe `_enum_val` helper. Also improved error isolation so discovery, state JSON, and individual sensors are published independently — a failure in one no longer blocks the others. Scheduler MQTT errors now log at WARNING level for visibility.
+- **MQTT dynamic car image auto-load**: the vehicle image package is now automatically downloaded on the first MQTT poll if not already cached, so the HA image entity works without requiring the frontend to be opened first.
 
 ## [0.7.2] - 2026-05-19
 
