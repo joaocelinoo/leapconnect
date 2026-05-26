@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Update proxy target from localhost to 127.0.0.1 to fix Docker Compose connectivity issues on some platforms (e.g. Windows 8.1)
+
 ## [0.7.2] - 2026-05-19
 
 ### Fixed
