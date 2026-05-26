@@ -96,17 +96,27 @@ class HomeAssistantMqttService:
 
         # Ensure discovery configs are published
         if vin not in self._discovery_sent:
-            await self._publish_discovery(vehicle, device_id, device_name)
-            self._discovery_sent.add(vin)
+            try:
+                await self._publish_discovery(vehicle, device_id, device_name)
+                self._discovery_sent.add(vin)
+            except Exception as exc:
+                _LOGGER.error("MQTT discovery publish failed for %s: %s", vin, exc)
+                return
 
         # Publish state values
         prefix = f"{self._settings.topic_prefix}/{vin}"
 
-        state_data = self._build_state_payload(status)
-        await self._publish(f"{prefix}/state", json.dumps(state_data), retain=True)
+        try:
+            state_data = self._build_state_payload(status)
+            await self._publish(f"{prefix}/state", json.dumps(state_data), retain=True)
+        except Exception as exc:
+            _LOGGER.warning("MQTT state payload failed for %s: %s", vin, exc)
 
         # Publish individual sensor values for HA
-        await self._publish_sensors(prefix, status)
+        try:
+            await self._publish_sensors(prefix, status)
+        except Exception as exc:
+            _LOGGER.warning("MQTT sensor publish failed for %s: %s", vin, exc)
 
         # Publish location
         if status.location and status.location.latitude and status.location.longitude:
@@ -151,6 +161,12 @@ class HomeAssistantMqttService:
         """Build a comprehensive JSON payload from all VehicleStatus fields."""
         data: dict[str, Any] = {}
 
+        def _enum_val(v):
+            """Safely extract .value from an enum, or return the raw value."""
+            if v is None:
+                return None
+            return v.value if hasattr(v, "value") else v
+
         # Battery
         if status.battery:
             b = status.battery
@@ -163,9 +179,7 @@ class HomeAssistantMqttService:
             data["battery_power_kw"] = b.battery_power
             data["battery_charging_power_kw"] = b.charging_power_kw
             data["battery_discharging_power_kw"] = b.discharging_power_kw
-            data["battery_charge_state"] = (
-                b.charge_state.value if b.charge_state is not None else None
-            )
+            data["battery_charge_state"] = _enum_val(b.charge_state)
             data["battery_charge_remain_time"] = b.charge_remain_time
             data["battery_charge_soc_setting"] = b.charge_plan.soc_setting
             data["battery_charge_time_setting"] = b.charge_plan.time_setting
@@ -191,9 +205,7 @@ class HomeAssistantMqttService:
             d = status.driving
             data["speed"] = d.speed
             data["total_mileage"] = d.total_mileage
-            data["gear_status"] = (
-                d.gear_status.value if d.gear_status is not None else None
-            )
+            data["gear_status"] = _enum_val(d.gear_status)
             data["vehicle_state"] = d.vehicle_state
             data["speed_limit"] = d.speed_limit
             data["speed_limit_active"] = d.speed_limit_active
@@ -216,28 +228,16 @@ class HomeAssistantMqttService:
             data["ac_wind_direction"] = c.ac_wind_direction
             data["ac_temp_mode"] = c.ac_temp_mode
             data["ac_circle_mode"] = c.ac_circle_mode
-            data["ac_cooling_and_heating"] = (
-                c.ac_cooling_and_heating.value
-                if c.ac_cooling_and_heating is not None
-                else None
-            )
+            data["ac_cooling_and_heating"] = _enum_val(c.ac_cooling_and_heating)
             data["min_single_temp"] = c.min_single_temp
             data["ptc_state"] = c.ptc_state
             data["ptc_power_setting_value"] = c.ptc_power_setting_value
             data["interior_temp"] = c.interior_temp
-            data["recirculation_mode"] = (
-                c.recirculation_mode.value if c.recirculation_mode is not None else None
-            )
-            data["windshield_defrost"] = (
-                c.windshield_defrost.value if c.windshield_defrost is not None else None
-            )
+            data["recirculation_mode"] = _enum_val(c.recirculation_mode)
+            data["windshield_defrost"] = _enum_val(c.windshield_defrost)
             data["rear_window_heating"] = c.rear_window_heating
-            data["climate_mode"] = (
-                c.climate_mode.value if c.climate_mode is not None else None
-            )
-            data["ac_operate_mode"] = (
-                c.ac_operate_mode.value if c.ac_operate_mode is not None else None
-            )
+            data["climate_mode"] = _enum_val(c.climate_mode)
+            data["ac_operate_mode"] = _enum_val(c.ac_operate_mode)
 
         # Doors
         if status.doors:
@@ -306,11 +306,7 @@ class HomeAssistantMqttService:
         # Security
         if status.security:
             sec = status.security
-            data["vehicle_security_active"] = (
-                sec.vehicle_security_active.value
-                if sec.vehicle_security_active is not None
-                else None
-            )
+            data["vehicle_security_active"] = _enum_val(sec.vehicle_security_active)
             data["sentry_mode"] = sec.sentry_mode
             data["left_mirror_heating"] = sec.left_mirror_heating
             data["right_mirror_heating"] = sec.right_mirror_heating
@@ -382,9 +378,11 @@ class HomeAssistantMqttService:
                 f"{prefix}/gear_status",
                 _str(
                     status.driving.gear_status.value
-                    if status.driving.gear_status is not None
-                    else None
-                ),
+                    if hasattr(status.driving.gear_status, "value")
+                    else status.driving.gear_status
+                )
+                if status.driving.gear_status is not None
+                else "",
                 retain=True,
             )
 

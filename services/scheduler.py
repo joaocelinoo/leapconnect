@@ -301,5 +301,7 @@ class VehicleDataScheduler:
                 else:
                     status = await self._client.get_vehicle_status(vehicle)
                 await self._on_status_callback(vehicle, status)
-            except Exception:
-                _LOGGER.debug("Scheduler: MQTT poll failed for %s", vehicle.vin)
+            except Exception as exc:
+                _LOGGER.warning(
+                    "Scheduler: MQTT poll failed for %s: %s", vehicle.vin, exc
+                )
