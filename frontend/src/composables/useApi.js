@@ -18,7 +18,12 @@ export async function api(method, path, body = null) {
     if (_onUnauthorized) _onUnauthorized()
     throw new Error('Session expired')
   }
-  const data = await res.json()
+  let data
+  try {
+    data = await res.json()
+  } catch {
+    throw new Error(`HTTP ${res.status}: ${res.statusText || 'Unknown error'}`)
+  }
   if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
   return data
 }
