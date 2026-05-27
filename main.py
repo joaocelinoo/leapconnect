@@ -2154,7 +2154,10 @@ async def set_charge_limit(vin: str, request: Request) -> dict:
         raise HTTPException(
             status_code=422, detail="Charge limit must be between 20 and 100"
         )
-    return await client.set_charge_limit(vin, int(limit))
+    try:
+        return await client.set_charge_limit(vin, int(limit))
+    except LeapmotorApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 class ChargeScheduleRequest(BaseModel):
