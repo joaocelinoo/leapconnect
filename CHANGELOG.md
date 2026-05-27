@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Charge limit error reporting**: setting the charge limit from the web UI or Home Assistant returned a plain-text "Internal Server Error" (not JSON), causing the frontend to show a confusing JSON parse error. The `/api/vehicles/{vin}/charge-limit` endpoint now catches `LeapmotorApiError` and returns a proper JSON 502 response with the actual error message. Also hardened the frontend `useApi` helper to gracefully handle non-JSON error responses.
+
 ## [0.7.3] - 2026-05-26
 
 ### Fixed
