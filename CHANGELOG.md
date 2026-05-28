@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **MQTT: expanded Home Assistant controls** — the MQTT integration now exposes nearly all vehicle commands available in the web UI, up from the previous 4 buttons (lock, unlock, trunk open, find). New entities include:
+  - **20 button entities**: lock, unlock, trunk open/close, find, windows open/close, charging start/stop, battery preheat on/off, unlock charger, sunroof open/close, ON3 on/off, BLE key restart, hotspot, autopark, windshield defrost
+  - **6 switch entities** (with state feedback): Air Conditioning, Sentry Mode, Steering Wheel Heat, Fuel Heating, Rearview Mirror Heat, Healthy Charging
+  - **AC Temperature number entity**: slider control (16–32°C)
+  - **Permission gating**: all MQTT entities are only registered if the vehicle has the corresponding right + hardware ability, matching the same permission logic used by the web UI. Vehicles with limited capabilities won't show unsupported controls in HA.
+
 ### Fixed
 - **Charge limit error reporting**: setting the charge limit from the web UI or Home Assistant returned a plain-text "Internal Server Error" (not JSON), causing the frontend to show a confusing JSON parse error. The `/api/vehicles/{vin}/charge-limit` endpoint now catches `LeapmotorApiError` and returns a proper JSON 502 response with the actual error message. Also hardened the frontend `useApi` helper to gracefully handle non-JSON error responses.
 - **Charge limit fails on vehicles without charge plan in status**: on some models (e.g. T03), `status.battery.charge_plan` is empty even when a schedule exists on the cloud. The library's `set_charge_limit()` relied on that field, failing with "Current charging plan is incomplete". Fixed in `leapmotor-api` v0.3.1: the method now retrieves the plan via the dedicated `get_charge_schedule()` API call and falls back to sensible defaults if no schedule exists.

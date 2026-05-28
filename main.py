@@ -1790,8 +1790,65 @@ async def _handle_mqtt_command(vin: str, command: str) -> None:
             result = await _client.unlock_vehicle(vin)
         elif command == "trunk_open":
             result = await _client.open_trunk(vin)
+        elif command == "trunk_close":
+            result = await _client.close_trunk(vin)
         elif command == "find":
             result = await _client.find_vehicle(vin)
+        elif command == "windows_open":
+            result = await _client.open_windows(vin)
+        elif command == "windows_close":
+            result = await _client.close_windows(vin)
+        elif command == "charging_start":
+            result = await _client.start_charging(vin)
+        elif command == "charging_stop":
+            result = await _client.stop_charging(vin)
+        elif command == "battery_preheat":
+            result = await _client.battery_preheat(vin)
+        elif command == "battery_preheat_off":
+            result = await _client.battery_preheat_off(vin)
+        elif command == "unlock_charger":
+            result = await _client.unlock_charger(vin)
+        elif command == "sunroof_open":
+            result = await _client.open_sunroof(vin)
+        elif command == "sunroof_close":
+            result = await _client.close_sunroof(vin)
+        elif command == "on3_on":
+            result = await _client.on3_on(vin)
+        elif command == "on3_off":
+            result = await _client.on3_off(vin)
+        elif command == "ble_key_restart":
+            result = await _client.ble_key_restart(vin)
+        elif command == "hotspot":
+            result = await _client.hotspot(vin)
+        elif command == "autopark":
+            result = await _client.autopark(vin)
+        elif command == "defrost":
+            result = await _client.windshield_defrost(vin)
+        # Switch on/off commands
+        elif command == "ac_on":
+            result = await _client.ac_on(vin)
+        elif command == "ac_off":
+            result = await _client.ac_off(vin)
+        elif command == "sentry_mode_on":
+            result = await _client.sentry_mode_on(vin)
+        elif command == "sentry_mode_off":
+            result = await _client.sentry_mode_off(vin)
+        elif command == "steering_wheel_heat_on":
+            result = await _client.steering_wheel_heat_on(vin)
+        elif command == "steering_wheel_heat_off":
+            result = await _client.steering_wheel_heat_off(vin)
+        elif command == "fuel_heating_on":
+            result = await _client.fuel_heating_on(vin)
+        elif command == "fuel_heating_off":
+            result = await _client.fuel_heating_off(vin)
+        elif command == "rearview_mirror_heat_on":
+            result = await _client.rearview_mirror_heat_on(vin)
+        elif command == "rearview_mirror_heat_off":
+            result = await _client.rearview_mirror_heat_off(vin)
+        elif command == "healthy_charging_on":
+            result = await _client.healthy_charging_on(vin)
+        elif command == "healthy_charging_off":
+            result = await _client.healthy_charging_off(vin)
         else:
             _LOGGER.warning("MQTT: unknown command '%s' for %s", command, vin)
             return
@@ -1843,6 +1900,16 @@ async def _handle_mqtt_settings(key: str, value: int) -> None:
                 _LOGGER.info("Charge limit set to %d%% for %s", value, v.vin)
             except Exception as exc:
                 _LOGGER.exception("Failed to set charge limit for %s: %s", v.vin, exc)
+    elif key == "ac_temperature":
+        if not _client:
+            _LOGGER.warning("MQTT ac_temperature change ignored: no API client")
+            return
+        for v in _vehicles:
+            try:
+                await _client.ac_on(v.vin, params={"temperature": str(value)})
+                _LOGGER.info("AC temperature set to %d°C for %s", value, v.vin)
+            except Exception as exc:
+                _LOGGER.exception("Failed to set AC temp for %s: %s", v.vin, exc)
     else:
         _LOGGER.warning("MQTT: unknown setting key '%s'", key)
 
