@@ -42,3 +42,6 @@ data/*
 # Traefik generated certificates
 traefik/certs/
 !data/.gitkeep
+
+app.key
+app.crt

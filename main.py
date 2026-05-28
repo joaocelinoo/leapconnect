@@ -16,7 +16,7 @@ import shutil
 import time
 import tomllib
 import zipfile
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -430,9 +430,6 @@ async def lifespan(app: FastAPI):
     async def _on_scheduler_status(vehicle, status):
         if _mqtt_service and _mqtt_service.is_connected:
             image_pkg = _image_packages.get(vehicle.vin)
-            if not image_pkg:
-                with suppress(Exception):
-                    image_pkg = await _get_image_package(vehicle.vin)
             await _mqtt_service.publish_vehicle_status(vehicle, status, image_pkg)
 
     _scheduler.set_on_status_callback(_on_scheduler_status)
@@ -1221,8 +1218,8 @@ async def get_vehicle_status(vin: str) -> VehicleStatusResponse:
             vehicle_is_regening=status.is_regening,
             vehicle_is_parked=status.is_parked,
             vehicle_is_locked=status.is_locked,
-            vehicle_latitude=status.location.latitude,
-            vehicle_longitude=status.location.longitude,
+            vehicle_latitude=None,
+            vehicle_longitude=None,
             climate_outdoor_temp=status.climate.outdoor_temp,
             tire_front_left_pressure=status.tires.front_left_kpa
             if status.tires
