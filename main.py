@@ -493,7 +493,9 @@ app.add_middleware(
 @app.exception_handler(LeapmotorApiError)
 async def leapmotor_api_error_handler(request: Request, exc: LeapmotorApiError):
     """Return a proper JSON 502 response for any unhandled LeapmotorApiError."""
-    _LOGGER.warning("LeapmotorApiError on %s %s: %s", request.method, request.url.path, exc)
+    _LOGGER.warning(
+        "LeapmotorApiError on %s %s: %s", request.method, request.url.path, exc
+    )
     return JSONResponse(status_code=502, content={"detail": str(exc)})
 
 
