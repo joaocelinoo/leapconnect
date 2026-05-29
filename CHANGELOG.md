@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Transition detection & event tracking**: new fast-polling loop (default 10s, configurable 5–300s) that detects state transitions in real-time and persists them to a lightweight `vehicle_events` table. Captures:
+  - Boolean transitions: regenerative braking start/stop, charging start/stop, plug/unplug, park/drive, lock/unlock, ignition on/off
+  - Threshold transitions: speed crosses zero (moving start/stop), battery SOC changes ≥5%, charge state changes
+  - On each transition: saves both a compact event row (for analytics/duration tracking) and a full vehicle snapshot (for complete telemetry at the moment of change)
+  - Deduplication window (default 10s, configurable) prevents DB flooding during rapid oscillations
+  - Runs independently of the WebSocket live refresh — captures events even when no UI is open
+- **Database migration 0004**: added `vehicle_events` table (`id`, `vin`, `timestamp`, `event_type`, `field_name`, `old_value`, `new_value`) with indexes on vin, timestamp, and event_type
+- **Events API endpoint**: `GET /api/vehicles/{vin}/events?days=30&event_type=regen_start` for querying recorded events
+- **Scheduler settings extended**: new configuration fields `transition_detection_enabled`, `transition_poll_interval_seconds`, `transition_min_event_interval_seconds` — exposed via `PUT /api/scheduler` and persisted to DB
+- **Frontend: Transition Detection settings card** in Services section — toggle, poll interval, and dedup interval controls
+- **Frontend: Events timeline view** in History tab — new "Events" source toggle with filterable timeline showing color-coded events (regen=green, charge=blue, drive=orange, security=purple, SOC=pink), timestamps, and old→new value transitions
+
 - **MQTT: expanded Home Assistant controls** — the MQTT integration now exposes nearly all vehicle commands available in the web UI, up from the previous 4 buttons (lock, unlock, trunk open, find). New entities include:
   - **20 button entities**: lock, unlock, trunk open/close, find, windows open/close, charging start/stop, battery preheat on/off, unlock charger, sunroof open/close, ON3 on/off, BLE key restart, hotspot, autopark, windshield defrost
   - **6 switch entities** (with state feedback): Air Conditioning, Sentry Mode, Steering Wheel Heat, Fuel Heating, Rearview Mirror Heat, Healthy Charging

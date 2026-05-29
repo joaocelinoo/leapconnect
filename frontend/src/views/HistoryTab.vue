@@ -13,6 +13,9 @@
         <button class="source-btn" :class="{ active: dataSource === 'cloud' }" @click="dataSource = 'cloud'">
           <Cloud :size="14" /> Cloud
         </button>
+        <button class="source-btn" :class="{ active: dataSource === 'events' }" @click="dataSource = 'events'; loadEvents()">
+          <Activity :size="14" /> Events
+        </button>
       </div>
       <div v-if="dataSource === 'local'" class="time-toolbar">
           <button class="toolbar-btn" @click="showDatePicker = !showDatePicker" title="Select date range">
@@ -83,6 +86,60 @@
 
     <!-- Cloud stats view -->
     <CloudStatsView v-if="dataSource === 'cloud'" :vin="props.vin" />
+
+    <!-- Events view -->
+    <div v-if="dataSource === 'events'" class="events-section">
+      <div class="events-toolbar">
+        <select v-model="eventsFilter" class="events-filter" @change="loadEvents()">
+          <option value="">All events</option>
+          <option value="regen_start">Regen start</option>
+          <option value="regen_stop">Regen stop</option>
+          <option value="charge_start">Charge start</option>
+          <option value="charge_stop">Charge stop</option>
+          <option value="plugged_in">Plugged in</option>
+          <option value="unplugged">Unplugged</option>
+          <option value="driving_start">Driving start</option>
+          <option value="parked">Parked</option>
+          <option value="locked">Locked</option>
+          <option value="unlocked">Unlocked</option>
+          <option value="ignition_on">Ignition on</option>
+          <option value="ignition_off">Ignition off</option>
+          <option value="moving_start">Moving start</option>
+          <option value="moving_stop">Moving stop</option>
+          <option value="soc_change">SOC change</option>
+          <option value="charge_state_change">Charge state change</option>
+        </select>
+        <select v-model="eventsDays" class="events-filter" @change="loadEvents()">
+          <option :value="1">Today</option>
+          <option :value="7">Last 7 days</option>
+          <option :value="30">Last 30 days</option>
+          <option :value="90">Last 90 days</option>
+        </select>
+        <span class="events-count">{{ events.length }} events</span>
+      </div>
+
+      <div v-if="eventsLoading" class="events-loading">Loading events...</div>
+
+      <div v-else-if="events.length === 0" class="events-empty">
+        <Activity :size="32" />
+        <p>No events detected yet</p>
+        <p class="events-empty-hint">Events are recorded when the vehicle changes state (regen, charging, parking, etc.)</p>
+      </div>
+
+      <div v-else class="events-timeline">
+        <div v-for="(event, idx) in events" :key="idx" class="event-row">
+          <div class="event-dot" :class="eventDotClass(event.event_type)" />
+          <div class="event-content">
+            <span class="event-type">{{ formatEventType(event.event_type) }}</span>
+            <span class="event-field">{{ event.field_name }}</span>
+            <span v-if="event.old_value && event.new_value" class="event-values">
+              {{ event.old_value }} → {{ event.new_value }}
+            </span>
+          </div>
+          <div class="event-time">{{ formatEventTime(event.timestamp) }}</div>
+        </div>
+      </div>
+    </div>
 
     <!-- KPI skeleton -->
     <HistorySkeleton v-if="dataSource === 'local' && loadingKpi && !kpiCards.length" :show-kpi="true" :show-charts="false" />
@@ -244,7 +301,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { Chart, registerables } from 'chart.js'
 import { api } from '../composables/useApi'
-import { Battery, Map, Zap, Route, Thermometer, BarChart3, Table2, Gauge, Clock, CircleDot, MapPin, Circle, BatteryWarning, CalendarDays, ChevronLeft, ChevronRight, MoreVertical, Download, Maximize2, Minimize2, HardDrive, Cloud } from 'lucide-vue-next'
+import { Battery, Map, Zap, Route, Thermometer, BarChart3, Table2, Gauge, Clock, CircleDot, MapPin, Circle, BatteryWarning, CalendarDays, ChevronLeft, ChevronRight, MoreVertical, Download, Maximize2, Minimize2, HardDrive, Cloud, Activity } from 'lucide-vue-next'
 import HistorySkeleton from '../components/HistorySkeleton.vue'
 import CloudStatsView from '../components/CloudStatsView.vue'
 import L from 'leaflet'
@@ -260,6 +317,50 @@ const props = defineProps({
 const viewMode = ref('chart')
 const dataSource = ref('local')
 const showToolbarMenu = ref(false)
+
+// ---------------------------------------------------------------------------
+// Events state
+// ---------------------------------------------------------------------------
+const events = ref([])
+const eventsLoading = ref(false)
+const eventsFilter = ref('')
+const eventsDays = ref(7)
+
+async function loadEvents() {
+  if (!props.vin) return
+  eventsLoading.value = true
+  try {
+    let url = `/api/vehicles/${props.vin}/events?days=${eventsDays.value}`
+    if (eventsFilter.value) url += `&event_type=${eventsFilter.value}`
+    const data = await api('GET', url)
+    events.value = (data.events || []).reverse() // newest first
+  } catch {
+    events.value = []
+  } finally {
+    eventsLoading.value = false
+  }
+}
+
+function formatEventType(type) {
+  return type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+function formatEventTime(ts) {
+  const d = new Date(ts)
+  const now = new Date()
+  const isToday = d.toDateString() === now.toDateString()
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return isToday ? time : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`
+}
+
+function eventDotClass(type) {
+  if (type.includes('regen')) return 'dot-regen'
+  if (type.includes('charge') || type.includes('plugged')) return 'dot-charge'
+  if (type.includes('driving') || type.includes('moving')) return 'dot-drive'
+  if (type.includes('lock') || type.includes('ignition')) return 'dot-security'
+  if (type.includes('soc')) return 'dot-soc'
+  return 'dot-default'
+}
 
 // ---------------------------------------------------------------------------
 // Custom date range picker
@@ -1936,5 +2037,135 @@ onBeforeUnmount(destroyCharts)
 @keyframes shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+
+/* Events section */
+.events-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.events-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.events-filter {
+  background: var(--btn-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.events-count {
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: auto;
+}
+
+.events-loading {
+  text-align: center;
+  color: var(--muted);
+  padding: 40px;
+  font-size: 13px;
+}
+
+.events-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 60px 20px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.events-empty p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.events-empty-hint {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.events-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.event-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--btn-bg);
+  transition: background 0.15s;
+}
+
+.event-row:hover {
+  background: var(--card-bg);
+}
+
+.event-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-regen { background: #4ade80; }
+.dot-charge { background: #60a5fa; }
+.dot-drive { background: #f59e0b; }
+.dot-security { background: #a78bfa; }
+.dot-soc { background: #f472b6; }
+.dot-default { background: var(--muted); }
+
+.event-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.event-type {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.event-field {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.event-values {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.event-time {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 </style>

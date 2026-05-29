@@ -396,14 +396,20 @@ async def lifespan(app: FastAPI):
         interval_minutes=saved.interval_minutes,
         mqtt_interval_seconds=saved.mqtt_interval_seconds,
         rate_limit_seconds=saved.rate_limit_seconds,
+        transition_detection_enabled=saved.transition_detection_enabled,
+        transition_poll_interval_seconds=saved.transition_poll_interval_seconds,
+        transition_min_event_interval_seconds=saved.transition_min_event_interval_seconds,
     )
     _LOGGER.info(
         "Scheduler settings loaded: enabled=%s, history=%d min,"
-        " mqtt=%d sec, rate_limit=%d sec",
+        " mqtt=%d sec, rate_limit=%d sec, transition=%s (poll=%ds, dedup=%ds)",
         saved.enabled,
         saved.interval_minutes,
         saved.mqtt_interval_seconds,
         saved.rate_limit_seconds,
+        saved.transition_detection_enabled,
+        saved.transition_poll_interval_seconds,
+        saved.transition_min_event_interval_seconds,
     )
 
     # Initialize MQTT Home Assistant service
@@ -1550,6 +1556,29 @@ async def get_vehicle_daily_summary(vin: str, days: int = 30) -> DailySummaryRes
     )
 
 
+@app.get("/api/vehicles/{vin}/events")
+async def get_vehicle_events(vin: str, days: int = 30, event_type: str | None = None):
+    """Get state-transition events for analytics and duration tracking."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="History not available")
+    events = await _history_repo.get_events(vin, days=days, event_type=event_type)
+    return {
+        "vin": vin,
+        "days": days,
+        "count": len(events),
+        "events": [
+            {
+                "timestamp": e.timestamp.isoformat(),
+                "event_type": e.event_type,
+                "field_name": e.field_name,
+                "old_value": e.old_value,
+                "new_value": e.new_value,
+            }
+            for e in events
+        ],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Routes — User Preferences
 # ---------------------------------------------------------------------------
@@ -1630,9 +1659,16 @@ async def update_scheduler_settings(request: Request) -> SchedulerStatusResponse
     interval = body.get("interval_minutes")
     mqtt_interval = body.get("mqtt_interval_seconds")
     rate_limit = body.get("rate_limit_seconds")
+    transition_enabled = body.get("transition_detection_enabled")
+    transition_poll = body.get("transition_poll_interval_seconds")
+    transition_min_event = body.get("transition_min_event_interval_seconds")
 
     if enabled is not None and not isinstance(enabled, bool):
         raise HTTPException(status_code=422, detail="'enabled' must be a boolean")
+    if transition_enabled is not None and not isinstance(transition_enabled, bool):
+        raise HTTPException(
+            status_code=422, detail="'transition_detection_enabled' must be a boolean"
+        )
     if interval is not None:
         try:
             interval = int(interval)
@@ -1663,6 +1699,9 @@ async def update_scheduler_settings(request: Request) -> SchedulerStatusResponse
         interval_minutes=interval,
         mqtt_interval_seconds=mqtt_interval,
         rate_limit_seconds=rate_limit,
+        transition_detection_enabled=transition_enabled,
+        transition_poll_interval_seconds=transition_poll,
+        transition_min_event_interval_seconds=transition_min_event,
     )
 
     # Persist to DB

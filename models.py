@@ -71,6 +71,10 @@ class SchedulerSettings:
     interval_minutes: int = DEFAULT_INTERVAL_MINUTES
     mqtt_interval_seconds: int = 60
     rate_limit_seconds: int = 10
+    # Transition detection settings
+    transition_detection_enabled: bool = True
+    transition_poll_interval_seconds: int = 10
+    transition_min_event_interval_seconds: int = 10
 
 
 @dataclass
@@ -100,3 +104,15 @@ class AbrpSettings:
 
     enabled: bool = False
     user_token: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class VehicleEvent:
+    """A single state-transition event detected for a vehicle."""
+
+    vin: str
+    timestamp: datetime
+    event_type: str  # e.g. "regen_start", "regen_stop", "charge_start"
+    field_name: str  # e.g. "is_regening", "battery_soc"
+    old_value: str | None = None
+    new_value: str | None = None

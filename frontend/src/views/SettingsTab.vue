@@ -201,6 +201,57 @@
         </div>
       </SectionCard>
 
+      <SectionCard title="Transition Detection" :icon="Activity">
+        <p class="rate-limit-hint" style="margin-bottom:10px">Fast polling (every {{ scheduler.transition_poll_interval_seconds }}s) to detect state changes like regenerative braking, charging start/stop, and driving events. Saves an event + snapshot only when a transition occurs.</p>
+        <div class="scheduler-service">
+          <div class="service-status">
+            <span class="status-dot" :class="scheduler.transition_detection_enabled ? 'running' : 'stopped'" />
+            <span class="service-text">
+              {{ scheduler.transition_detection_enabled ? 'Active' : 'Disabled' }}
+              <span v-if="scheduler.transition_detection_enabled" class="service-interval">· poll every {{ scheduler.transition_poll_interval_seconds }}s</span>
+            </span>
+          </div>
+          <button
+            class="service-btn"
+            :class="scheduler.transition_detection_enabled ? 'btn-stop' : 'btn-start'"
+            :disabled="schedulerUpdating"
+            @click="updateScheduler({ transition_detection_enabled: !scheduler.transition_detection_enabled })"
+          >
+            {{ scheduler.transition_detection_enabled ? 'Disable' : 'Enable' }}
+          </button>
+        </div>
+
+        <div class="interval-row">
+          <span class="interval-label">Poll interval</span>
+          <div class="interval-control">
+            <button class="interval-btn" @click="pendingTransitionPoll = Math.max(5, pendingTransitionPoll - 5)">−</button>
+            <span class="interval-value">{{ pendingTransitionPoll }}s</span>
+            <button class="interval-btn" @click="pendingTransitionPoll = Math.min(300, pendingTransitionPoll + 5)">+</button>
+            <button
+              class="interval-set-btn"
+              :disabled="pendingTransitionPoll === scheduler.transition_poll_interval_seconds || schedulerUpdating"
+              @click="updateScheduler({ transition_poll_interval_seconds: pendingTransitionPoll })"
+            >Set</button>
+          </div>
+        </div>
+
+        <div class="interval-row">
+          <span class="interval-label">Dedup interval</span>
+          <div class="interval-control">
+            <button class="interval-btn" @click="pendingTransitionDedup = Math.max(1, pendingTransitionDedup - 5)">−</button>
+            <span class="interval-value">{{ pendingTransitionDedup }}s</span>
+            <button class="interval-btn" @click="pendingTransitionDedup = Math.min(300, pendingTransitionDedup + 5)">+</button>
+            <button
+              class="interval-set-btn"
+              :disabled="pendingTransitionDedup === scheduler.transition_min_event_interval_seconds || schedulerUpdating"
+              @click="updateScheduler({ transition_min_event_interval_seconds: pendingTransitionDedup })"
+            >Set</button>
+          </div>
+        </div>
+
+        <p class="rate-limit-hint" style="margin-top:8px">Monitored: regen, charging, plug, parking, lock, ignition, speed, SOC (±5%), charge state</p>
+      </SectionCard>
+
       <SectionCard title="Live Refresh" :icon="RefreshCw">
         <p class="rate-limit-hint" style="margin-bottom:10px">Automatically push fresh vehicle data to the dashboard via WebSocket. Only active when the page is open.</p>
         <div class="scheduler-service">
@@ -655,7 +706,7 @@ import ToggleSwitch from '../components/ToggleSwitch.vue'
 import LogViewer from '../components/LogViewer.vue'
 import { api } from '../composables/useApi'
 import { useAppStore } from '../stores/appStore'
-import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation } from 'lucide-vue-next'
+import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity } from 'lucide-vue-next'
 
 const store = useAppStore()
 
@@ -732,6 +783,9 @@ const scheduler = reactive({
   interval_minutes: 15,
   mqtt_interval_seconds: 60,
   rate_limit_seconds: 10,
+  transition_detection_enabled: true,
+  transition_poll_interval_seconds: 10,
+  transition_min_event_interval_seconds: 10,
   is_running: false,
   last_run: null,
   last_error: null,
@@ -742,6 +796,8 @@ const scheduler = reactive({
 const pendingInterval = ref(15)
 const pendingMqttInterval = ref(60)
 const pendingRateLimit = ref(10)
+const pendingTransitionPoll = ref(10)
+const pendingTransitionDedup = ref(10)
 const schedulerUpdating = ref(false)
 
 async function loadScheduler() {
@@ -751,6 +807,8 @@ async function loadScheduler() {
     pendingInterval.value = data.interval_minutes
     pendingMqttInterval.value = data.mqtt_interval_seconds
     pendingRateLimit.value = data.rate_limit_seconds ?? 10
+    pendingTransitionPoll.value = data.transition_poll_interval_seconds ?? 10
+    pendingTransitionDedup.value = data.transition_min_event_interval_seconds ?? 10
   } catch {
     // scheduler not available yet
   }
@@ -765,6 +823,8 @@ async function updateScheduler(patch) {
     pendingInterval.value = data.interval_minutes
     pendingMqttInterval.value = data.mqtt_interval_seconds
     pendingRateLimit.value = data.rate_limit_seconds ?? 10
+    pendingTransitionPoll.value = data.transition_poll_interval_seconds ?? 10
+    pendingTransitionDedup.value = data.transition_min_event_interval_seconds ?? 10
   } catch {
     await loadScheduler()
   } finally {

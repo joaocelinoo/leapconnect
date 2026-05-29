@@ -21,7 +21,7 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
-from models import SchedulerSettings, VehicleSnapshot
+from models import SchedulerSettings, VehicleEvent, VehicleSnapshot
 
 from .repository import VehicleHistoryRepository
 
@@ -62,6 +62,20 @@ class VehicleSnapshotRow(Base):
     tire_rl_pressure = Column(Float, nullable=True)
     tire_rr_pressure = Column(Float, nullable=True)
     is_regening = Column(Boolean, nullable=True)
+
+
+class VehicleEventRow(Base):
+    """Lightweight state-transition event for analytics."""
+
+    __tablename__ = "vehicle_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    vin = Column(String(20), nullable=False, index=True)
+    timestamp = Column(DateTime, nullable=False, index=True)
+    event_type = Column(String(50), nullable=False, index=True)
+    field_name = Column(String(50), nullable=False)
+    old_value = Column(String(50), nullable=True)
+    new_value = Column(String(50), nullable=True)
 
 
 class AppSettingRow(Base):
@@ -151,8 +165,10 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
             # If the table already has columns from later migrations,
             # it was created by create_all — stamp at head.
             columns = {c["name"] for c in inspector.get_columns("vehicle_snapshots")}
-            if "is_regening" in columns:
+            if inspector.has_table("vehicle_events"):
                 stamp_rev = script.get_current_head()
+            elif "is_regening" in columns:
+                stamp_rev = "0003"
             elif "charging_power_kw" in columns:
                 stamp_rev = "0002"
             else:
@@ -211,6 +227,56 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
         async with self._session_factory() as session:
             session.add(row)
             await session.commit()
+
+    async def save_event(self, event: VehicleEvent) -> None:
+        """Persist a single state-transition event."""
+        row = VehicleEventRow(
+            vin=event.vin,
+            timestamp=event.timestamp,
+            event_type=event.event_type,
+            field_name=event.field_name,
+            old_value=event.old_value,
+            new_value=event.new_value,
+        )
+        async with self._session_factory() as session:
+            session.add(row)
+            await session.commit()
+
+    async def get_events(
+        self,
+        vin: str,
+        *,
+        days: int = 30,
+        event_type: str | None = None,
+    ) -> list[VehicleEvent]:
+        """Return events for *vin* over the last *days* days."""
+        since = datetime.now(UTC) - timedelta(days=days)
+        conditions = [
+            VehicleEventRow.vin == vin,
+            VehicleEventRow.timestamp >= since,
+        ]
+        if event_type:
+            conditions.append(VehicleEventRow.event_type == event_type)
+        stmt = (
+            select(VehicleEventRow)
+            .where(*conditions)
+            .order_by(VehicleEventRow.timestamp.asc())
+        )
+        async with self._session_factory() as session:
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+
+        return [
+            VehicleEvent(
+                vin=r.vin,
+                timestamp=r.timestamp,
+                event_type=r.event_type,
+                field_name=r.field_name,
+                old_value=r.old_value,
+                new_value=r.new_value,
+            )
+            for r in rows
+        ]
 
     # -- read ----------------------------------------------------------------
 
@@ -356,6 +422,9 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                             "scheduler_interval",
                             "scheduler_mqtt_interval_seconds",
                             "scheduler_rate_limit_seconds",
+                            "scheduler_transition_detection_enabled",
+                            "scheduler_transition_poll_interval",
+                            "scheduler_transition_min_event_interval",
                         ]
                     )
                 )
@@ -369,6 +438,16 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                 rows.get("scheduler_mqtt_interval_seconds", "60")
             ),
             rate_limit_seconds=int(rows.get("scheduler_rate_limit_seconds", "10")),
+            transition_detection_enabled=rows.get(
+                "scheduler_transition_detection_enabled", "1"
+            )
+            == "1",
+            transition_poll_interval_seconds=int(
+                rows.get("scheduler_transition_poll_interval", "10")
+            ),
+            transition_min_event_interval_seconds=int(
+                rows.get("scheduler_transition_min_event_interval", "10")
+            ),
         )
 
     async def save_scheduler_settings(self, settings: SchedulerSettings) -> None:
@@ -378,6 +457,15 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
             "scheduler_interval": str(settings.interval_minutes),
             "scheduler_mqtt_interval_seconds": str(settings.mqtt_interval_seconds),
             "scheduler_rate_limit_seconds": str(settings.rate_limit_seconds),
+            "scheduler_transition_detection_enabled": "1"
+            if settings.transition_detection_enabled
+            else "0",
+            "scheduler_transition_poll_interval": str(
+                settings.transition_poll_interval_seconds
+            ),
+            "scheduler_transition_min_event_interval": str(
+                settings.transition_min_event_interval_seconds
+            ),
         }
         async with self._session_factory() as session:
             for key, value in pairs.items():

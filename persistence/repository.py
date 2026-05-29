@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import abc
 
-from models import VehicleSnapshot
+from models import VehicleEvent, VehicleSnapshot
 
 
 class VehicleHistoryRepository(abc.ABC):
@@ -56,3 +56,17 @@ class VehicleHistoryRepository(abc.ABC):
     @abc.abstractmethod
     async def close(self) -> None:
         """Release resources."""
+
+    @abc.abstractmethod
+    async def save_event(self, event: VehicleEvent) -> None:
+        """Persist a single state-transition event."""
+
+    @abc.abstractmethod
+    async def get_events(
+        self,
+        vin: str,
+        *,
+        days: int = 30,
+        event_type: str | None = None,
+    ) -> list[VehicleEvent]:
+        """Return events for *vin* over the last *days* days."""
