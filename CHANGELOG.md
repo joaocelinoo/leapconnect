@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Updated leapmotor-api to v0.3.1**: fixes `set_charge_limit()` for vehicles where the charge plan is not included in the vehicle status response
 - The former single `Energy charged` KPI card in history tab is now split into `Total charged` and `Charged (grid)` for better clarity and accurate cost calculation
 - `Regen efficiency` now uses the segment-based regen value for accuracy
+- **Vehicle usage pie chart now shows percentages**: the "Parked vs In use" doughnut chart previously displayed raw snapshot counts; it now shows percentage values with labels like "Parked (85%)" and "In use (15%)"
 
 ## [0.7.3] - 2026-05-26
 

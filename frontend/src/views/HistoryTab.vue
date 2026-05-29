@@ -1302,15 +1302,23 @@ function buildCharts() {
   if (usagePieCanvas.value && snaps.length > 0) {
     const parked = snaps.filter(s => s.drive_is_parked === true).length
     const driving = snaps.length - parked
+    const parkedPct = Math.round((parked / snaps.length) * 100)
+    const drivingPct = 100 - parkedPct
     charts.push(new Chart(usagePieCanvas.value, {
       type: 'doughnut',
       data: {
-        labels: ['Parked', 'In use'],
-        datasets: [{ data: [parked, driving], backgroundColor: [getChartColors().grid, '#00d4ff'], borderColor: [getChartColors().tick, '#00d4ff'], borderWidth: 1 }],
+        labels: [`Parked`, `In use`],
+        datasets: [{ data: [parkedPct, drivingPct], backgroundColor: [getChartColors().grid, '#00d4ff'], borderColor: [getChartColors().tick, '#00d4ff'], borderWidth: 1 }],
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: true, position: 'bottom', labels: { color: getChartColors().label, font: { size: 11 } } }, tooltip: { ...chartDefaults.value.plugins.tooltip } },
+        plugins: {
+          legend: { display: true, position: 'bottom', labels: { color: getChartColors().label, font: { size: 11 } } },
+          tooltip: {
+            ...chartDefaults.value.plugins.tooltip,
+            callbacks: { label: (ctx) => ` ${ctx.label}: ${ctx.raw}%` }
+          },
+        },
       },
     }))
   }
