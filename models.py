@@ -61,6 +61,8 @@ class UserPreferences:
 
     electricity_price_kwh: float = 0.25
     theme: str = "dark"
+    downsampling_enabled: bool = True
+    downsampling_max_points: int = 2000
 
 
 @dataclass

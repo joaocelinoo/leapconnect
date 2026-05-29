@@ -606,6 +606,8 @@ const allSnapshots = ref([])
 const allData = ref([])
 const todaySnapshots = ref([])
 const electricityPriceKwh = ref(0.25)
+const downsamplingEnabled = ref(true)
+const downsamplingMaxPoints = ref(2000)
 
 function applyData(daily, snaps, allSnaps) {
   allSnapshots.value = allSnaps
@@ -692,7 +694,11 @@ async function fetchRangeSnapshots(from, to) {
   try {
     const fromStr = from.toISOString().slice(0, 10)
     const toStr = to.toISOString().slice(0, 10)
-    const res = await api('GET', `/api/vehicles/${props.vin}/history?from_date=${fromStr}&to_date=${toStr}`)
+    let url = `/api/vehicles/${props.vin}/history?from_date=${fromStr}&to_date=${toStr}`
+    if (downsamplingEnabled.value) {
+      url += `&max_points=${downsamplingMaxPoints.value}`
+    }
+    const res = await api('GET', url)
     const snaps = res.snapshots || []
     allSnapshots.value = snaps
     todaySnapshots.value = snaps.map(s => ({
@@ -735,6 +741,8 @@ onMounted(async () => {
   try {
     const prefs = await api('GET', '/api/preferences')
     electricityPriceKwh.value = prefs.electricity_price_kwh
+    downsamplingEnabled.value = prefs.downsampling_enabled ?? true
+    downsamplingMaxPoints.value = prefs.downsampling_max_points ?? 2000
   } catch { /* use default */ }
 })
 

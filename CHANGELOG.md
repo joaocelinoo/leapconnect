@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **New KPI: "Charged (grid)"** — shows only the energy drawn from the electrical grid (used for cost calculation)
 - **New KPI: "Regen energy"** — dedicated card showing energy recovered from regenerative braking (kWh), computed from valid positive energy deltas during non-charging segments (with zero-energy gap filtering)
 - **History API: `from_date`/`to_date` parameters** — the `/api/vehicles/{vin}/history` endpoint now accepts optional `from_date` and `to_date` (YYYY-MM-DD) query params for fetching only a specific date range of snapshots, enabling much faster on-demand loading
+- **History API: server-side downsampling (`max_points`)** — when a date range contains more snapshots than `max_points`, the server returns a downsampled subset that preserves state-transition boundaries (charge start/stop) for accurate KPIs while reducing payload size by 10–20×
+- **Downsampling settings** — new configurable setting in Data Collection (Services tab): enable/disable downsampling and choose the max points limit (500–10,000). Saved in local DB and used automatically by the History tab
 
 ### Fixed
 - **History page extremely slow to load**: the frontend was downloading **all** 35k+ snapshots on every page open (with `days=3650`). Now only today's snapshots + lightweight daily summaries are fetched on initial load; detailed snapshots for other date ranges are fetched on-demand when the user selects a period. This reduces the initial payload from ~15 MB to ~200 KB.

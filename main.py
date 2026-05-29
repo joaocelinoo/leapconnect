@@ -1523,13 +1523,17 @@ async def get_full_vehicle_data(vin: str) -> FullVehicleDataResponse:
 
 @app.get("/api/vehicles/{vin}/history", response_model=VehicleHistoryResponse)
 async def get_vehicle_history(
-    vin: str, days: int = 30, from_date: str | None = None, to_date: str | None = None
+    vin: str,
+    days: int = 30,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    max_points: int | None = None,
 ) -> VehicleHistoryResponse:
     """Get historical vehicle snapshots for a given time period."""
     if not _history_repo:
         raise HTTPException(status_code=503, detail="History not available")
     snapshots = await _history_repo.get_history(
-        vin, days=days, from_date=from_date, to_date=to_date
+        vin, days=days, from_date=from_date, to_date=to_date, max_points=max_points
     )
     return VehicleHistoryResponse(
         vin=vin,
@@ -1620,6 +1624,8 @@ async def get_preferences() -> PreferencesResponse:
     return PreferencesResponse(
         electricity_price_kwh=prefs.electricity_price_kwh,
         theme=prefs.theme,
+        downsampling_enabled=prefs.downsampling_enabled,
+        downsampling_max_points=prefs.downsampling_max_points,
     )
 
 
@@ -1647,10 +1653,35 @@ async def update_preferences(request: Request) -> PreferencesResponse:
                 status_code=422, detail="'theme' must be 'dark' or 'light'"
             )
         await _history_repo.save_setting("theme", theme)
+    ds_enabled = body.get("downsampling_enabled")
+    if ds_enabled is not None:
+        if not isinstance(ds_enabled, bool):
+            raise HTTPException(
+                status_code=422, detail="'downsampling_enabled' must be a boolean"
+            )
+        await _history_repo.save_setting(
+            "downsampling_enabled", str(ds_enabled).lower()
+        )
+    ds_max_points = body.get("downsampling_max_points")
+    if ds_max_points is not None:
+        try:
+            ds_max_points = int(ds_max_points)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=422, detail="'downsampling_max_points' must be an integer"
+            ) from exc
+        if ds_max_points < 100 or ds_max_points > 50000:
+            raise HTTPException(
+                status_code=422,
+                detail="'downsampling_max_points' must be between 100 and 50000",
+            )
+        await _history_repo.save_setting("downsampling_max_points", str(ds_max_points))
     prefs = await _load_preferences()
     return PreferencesResponse(
         electricity_price_kwh=prefs.electricity_price_kwh,
         theme=prefs.theme,
+        downsampling_enabled=prefs.downsampling_enabled,
+        downsampling_max_points=prefs.downsampling_max_points,
     )
 
 
@@ -1658,9 +1689,13 @@ async def _load_preferences() -> UserPreferences:
     """Load user preferences from DB, falling back to defaults."""
     raw = await _history_repo.get_setting("electricity_price_kwh")
     theme_raw = await _history_repo.get_setting("theme")
+    ds_enabled_raw = await _history_repo.get_setting("downsampling_enabled")
+    ds_max_points_raw = await _history_repo.get_setting("downsampling_max_points")
     return UserPreferences(
         electricity_price_kwh=float(raw) if raw else 0.25,
         theme=theme_raw if theme_raw in ("dark", "light") else "dark",
+        downsampling_enabled=ds_enabled_raw != "false" if ds_enabled_raw else True,
+        downsampling_max_points=int(ds_max_points_raw) if ds_max_points_raw else 2000,
     )
 
 

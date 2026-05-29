@@ -287,6 +287,7 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
         days: int = 30,
         from_date: str | None = None,
         to_date: str | None = None,
+        max_points: int | None = None,
     ) -> list[VehicleSnapshot]:
         if from_date and to_date:
             # Use explicit date range (YYYY-MM-DD)
@@ -324,6 +325,10 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
         async with self._session_factory() as session:
             result = await session.execute(stmt)
             rows = result.scalars().all()
+
+        # Downsample if max_points is specified and we have more rows
+        if max_points and len(rows) > max_points:
+            rows = self._downsample_rows(rows, max_points)
 
         return [
             VehicleSnapshot(
@@ -369,6 +374,36 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
             )
             for r in rows
         ]
+
+    @staticmethod
+    def _downsample_rows(rows: list, max_points: int) -> list:
+        """Downsample rows to max_points while preserving state transitions.
+
+        Always keeps: first row, last row, and any row where charging/plugged
+        state changes compared to the previous row (critical for KPI accuracy).
+        Remaining budget is filled with evenly-spaced samples.
+        """
+        n = len(rows)
+        # Mark transition boundary indices (always keep these)
+        keep = {0, n - 1}
+        for i in range(1, n):
+            if rows[i].is_charging != rows[i - 1].is_charging:
+                keep.add(i)
+                keep.add(i - 1)
+            if rows[i].is_plugged != rows[i - 1].is_plugged:
+                keep.add(i)
+                keep.add(i - 1)
+
+        # Fill remaining budget with evenly-spaced samples
+        remaining_budget = max_points - len(keep)
+        if remaining_budget > 0:
+            step = max(1, n / (remaining_budget + 1))
+            pos = step
+            while pos < n and len(keep) < max_points:
+                keep.add(int(pos))
+                pos += step
+
+        return [rows[i] for i in sorted(keep)]
 
     async def get_daily_summary(
         self,

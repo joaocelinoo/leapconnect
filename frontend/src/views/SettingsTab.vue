@@ -199,6 +199,44 @@
             {{ scheduler.last_error }}
           </div>
         </div>
+
+        <div class="divider" />
+
+        <p class="rate-limit-hint" style="margin-bottom:8px">
+          <strong>History downsampling</strong> — limits the number of data points returned when loading large date ranges in History. Keeps transition boundaries (charge start/stop) for KPI accuracy.
+        </p>
+        <div class="scheduler-service">
+          <div class="service-status">
+            <span class="status-dot" :class="downsamplingEnabled ? 'running' : 'stopped'" />
+            <span class="service-text">
+              {{ downsamplingEnabled ? 'Enabled' : 'Disabled' }}
+              <span v-if="downsamplingEnabled" class="service-interval">· max {{ downsamplingMaxPoints }} points</span>
+            </span>
+          </div>
+          <button
+            class="service-btn"
+            :class="downsamplingEnabled ? 'btn-stop' : 'btn-start'"
+            :disabled="downsamplingSaving"
+            @click="toggleDownsampling"
+          >
+            {{ downsamplingEnabled ? 'Disable' : 'Enable' }}
+          </button>
+        </div>
+        <div v-if="downsamplingEnabled" class="interval-row">
+          <span class="interval-label">Max points</span>
+          <div class="interval-control">
+            <button class="interval-btn" @click="pendingMaxPoints = Math.max(500, pendingMaxPoints - 500)">−</button>
+            <span class="interval-value">{{ pendingMaxPoints }}</span>
+            <button class="interval-btn" @click="pendingMaxPoints = Math.min(10000, pendingMaxPoints + 500)">+</button>
+            <button
+              class="interval-set-btn"
+              :disabled="pendingMaxPoints === downsamplingMaxPoints || downsamplingSaving"
+              @click="saveDownsampling"
+            >Set</button>
+          </div>
+        </div>
+        <div v-if="downsamplingSuccess" class="field-success">{{ downsamplingSuccess }}</div>
+        <div v-if="downsamplingError" class="field-error">{{ downsamplingError }}</div>
       </SectionCard>
 
       <SectionCard title="Transition Detection" :icon="Activity">
@@ -1229,6 +1267,60 @@ const pinSaving = ref(false)
 const pinSuccess = ref('')
 const pinError = ref('')
 
+// -- Downsampling settings --------------------------------------------------
+const downsamplingEnabled = ref(true)
+const downsamplingMaxPoints = ref(2000)
+const pendingMaxPoints = ref(2000)
+const downsamplingSaving = ref(false)
+const downsamplingSuccess = ref('')
+const downsamplingError = ref('')
+
+async function loadDownsamplingSettings() {
+  try {
+    const data = await api('GET', '/api/preferences')
+    downsamplingEnabled.value = data.downsampling_enabled ?? true
+    downsamplingMaxPoints.value = data.downsampling_max_points ?? 2000
+    pendingMaxPoints.value = data.downsampling_max_points ?? 2000
+  } catch { /* ignore */ }
+}
+
+async function toggleDownsampling() {
+  downsamplingSaving.value = true
+  downsamplingError.value = ''
+  try {
+    const data = await api('PUT', '/api/preferences', {
+      downsampling_enabled: !downsamplingEnabled.value,
+    })
+    downsamplingEnabled.value = data.downsampling_enabled
+    downsamplingSuccess.value = downsamplingEnabled.value ? 'Enabled' : 'Disabled'
+    setTimeout(() => { downsamplingSuccess.value = '' }, 3000)
+  } catch (err) {
+    downsamplingError.value = err.message
+  } finally {
+    downsamplingSaving.value = false
+  }
+}
+
+async function saveDownsampling() {
+  if (pendingMaxPoints.value === downsamplingMaxPoints.value) return
+  downsamplingSaving.value = true
+  downsamplingError.value = ''
+  downsamplingSuccess.value = ''
+  try {
+    const data = await api('PUT', '/api/preferences', {
+      downsampling_max_points: pendingMaxPoints.value,
+    })
+    downsamplingMaxPoints.value = data.downsampling_max_points
+    pendingMaxPoints.value = data.downsampling_max_points
+    downsamplingSuccess.value = 'Saved'
+    setTimeout(() => { downsamplingSuccess.value = '' }, 3000)
+  } catch (err) {
+    downsamplingError.value = err.message
+  } finally {
+    downsamplingSaving.value = false
+  }
+}
+
 async function loadVehiclePin() {
   try {
     const data = await api('GET', '/api/vehicle-pin')
@@ -1290,6 +1382,7 @@ onMounted(() => {
   loadAccount()
   loadCertsStatus()
   loadPreferences()
+  loadDownsamplingSettings()
   loadMqtt()
   loadAbrp()
   loadVehiclePin()
@@ -1439,6 +1532,12 @@ onMounted(() => {
   margin: 1rem 0 0.7rem;
   padding-top: 0.8rem;
   border-top: 1px solid var(--divider);
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid var(--divider);
+  margin: 14px 0;
 }
 
 .file-upload {
