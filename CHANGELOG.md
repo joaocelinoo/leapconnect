@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **6 switch entities** (with state feedback): Air Conditioning, Sentry Mode, Steering Wheel Heat, Fuel Heating, Rearview Mirror Heat, Healthy Charging
   - **AC Temperature number entity**: slider control (16–32°C)
   - **Permission gating**: all MQTT entities are only registered if the vehicle has the corresponding right + hardware ability, matching the same permission logic used by the web UI. Vehicles with limited capabilities won't show unsupported controls in HA.
+- **MQTT: cloud statistics sensors** — Leapmotor cloud consumption data is now published to Home Assistant via MQTT Discovery. New sensor entities: Consumption Rank (%), Consumption kWh/100km, Weekly Energy Total, Weekly Energy Driving, Weekly Energy A/C, Weekly Energy Other
 - **New KPI: "Total charged"** — shows the combined energy from grid charging + regenerative braking
 - **New KPI: "Charged (grid)"** — shows only the energy drawn from the electrical grid (used for cost calculation)
 - **New KPI: "Regen energy"** — dedicated card showing energy recovered from regenerative braking (kWh), computed from valid positive energy deltas during non-charging segments (with zero-energy gap filtering)

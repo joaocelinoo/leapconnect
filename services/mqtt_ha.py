@@ -769,6 +769,48 @@ class HomeAssistantMqttService:
                 "unit": "%",
                 "icon": "mdi:blinds",
             },
+            # Cloud statistics
+            {
+                "key": "cloud_consumption_rank",
+                "name": "Consumption Rank",
+                "unit": "%",
+                "icon": "mdi:podium",
+            },
+            {
+                "key": "cloud_consumption_kwh_100km",
+                "name": "Consumption (cloud)",
+                "dc": "energy",
+                "unit": "kWh/100km",
+                "icon": "mdi:leaf",
+            },
+            {
+                "key": "cloud_weekly_total_ec",
+                "name": "Weekly Energy Total",
+                "dc": "energy",
+                "unit": "kWh",
+                "icon": "mdi:chart-bar",
+            },
+            {
+                "key": "cloud_weekly_driver_ec",
+                "name": "Weekly Energy Driving",
+                "dc": "energy",
+                "unit": "kWh",
+                "icon": "mdi:car-electric",
+            },
+            {
+                "key": "cloud_weekly_ac_ec",
+                "name": "Weekly Energy A/C",
+                "dc": "energy",
+                "unit": "kWh",
+                "icon": "mdi:air-conditioner",
+            },
+            {
+                "key": "cloud_weekly_other_ec",
+                "name": "Weekly Energy Other",
+                "dc": "energy",
+                "unit": "kWh",
+                "icon": "mdi:flash",
+            },
         ]
 
         for s in sensors:
@@ -1180,6 +1222,27 @@ class HomeAssistantMqttService:
         await self._publish(
             f"{prefix}/polling_interval", str(mqtt_interval_seconds), retain=True
         )
+
+    async def publish_cloud_stats(self, vin: str, cloud_stats: dict[str, Any]) -> None:
+        """Publish Leapmotor cloud statistics to MQTT sensor topics.
+
+        Expected cloud_stats keys:
+        - consumption_rank: str (e.g. "15%")
+        - consumption_kwh_100km: float
+        - weekly_total_ec: float (kWh total last week)
+        - weekly_driver_ec: float (kWh driving)
+        - weekly_ac_ec: float (kWh A/C)
+        - weekly_other_ec: float (kWh other)
+        """
+        if not self._connected or not self._settings.enabled:
+            return
+
+        prefix = f"{self._settings.topic_prefix}/{vin}"
+        _str = lambda v: str(v) if v is not None else ""  # noqa: E731
+
+        for key, value in cloud_stats.items():
+            if value is not None:
+                await self._publish(f"{prefix}/cloud_{key}", _str(value), retain=True)
 
     async def _publish(
         self, topic: str, payload: str | bytes, *, retain: bool = False

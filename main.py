@@ -441,6 +441,31 @@ async def lifespan(app: FastAPI):
                     image_pkg = await _get_image_package(vehicle.vin)
             await _mqtt_service.publish_vehicle_status(vehicle, status, image_pkg)
 
+            # Publish cloud stats (consumption rank + weekly breakdown)
+            try:
+                client = _get_client()
+                cloud_stats: dict = {}
+                with suppress(Exception):
+                    rank_result = await client.get_consumption_weekly_rank(vehicle)
+                    if rank_result and rank_result.rank:
+                        cloud_stats["consumption_rank"] = rank_result.rank.rank
+                        cloud_stats["consumption_kwh_100km"] = (
+                            rank_result.rank.hundred_km_ec
+                        )
+                with suppress(Exception):
+                    breakdown = await client.get_consumption_last_week_breakdown(
+                        vehicle
+                    )
+                    if breakdown:
+                        cloud_stats["weekly_total_ec"] = breakdown.total_ec
+                        cloud_stats["weekly_driver_ec"] = breakdown.driver_ec
+                        cloud_stats["weekly_ac_ec"] = breakdown.ac_ec
+                        cloud_stats["weekly_other_ec"] = breakdown.other_ec
+                if cloud_stats:
+                    await _mqtt_service.publish_cloud_stats(vehicle.vin, cloud_stats)
+            except Exception as exc:
+                _LOGGER.debug("Cloud stats MQTT publish skipped: %s", exc)
+
     _scheduler.set_on_status_callback(_on_scheduler_status)
 
     # Initialize ABRP telemetry service
