@@ -24,8 +24,13 @@ class VehicleHistoryRepository(abc.ABC):
         vin: str,
         *,
         days: int = 30,
+        from_date: str | None = None,
+        to_date: str | None = None,
     ) -> list[VehicleSnapshot]:
         """Return snapshots for *vin* over the last *days* days.
+
+        If from_date/to_date are provided (YYYY-MM-DD), they take precedence
+        over the days parameter.
 
         Ordered by timestamp.
         """

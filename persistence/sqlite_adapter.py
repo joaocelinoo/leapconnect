@@ -285,18 +285,42 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
         vin: str,
         *,
         days: int = 30,
+        from_date: str | None = None,
+        to_date: str | None = None,
     ) -> list[VehicleSnapshot]:
-        if days == 1:
+        if from_date and to_date:
+            # Use explicit date range (YYYY-MM-DD)
+            since = datetime.fromisoformat(f"{from_date}T00:00:00+00:00")
+            until = datetime.fromisoformat(f"{to_date}T23:59:59+00:00")
+            stmt = (
+                select(VehicleSnapshotRow)
+                .where(
+                    VehicleSnapshotRow.vin == vin,
+                    VehicleSnapshotRow.timestamp >= since,
+                    VehicleSnapshotRow.timestamp <= until,
+                )
+                .order_by(VehicleSnapshotRow.timestamp.asc())
+            )
+        elif days == 1:
             # "Today": from midnight of the current day
             now = datetime.now(UTC)
             since = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            stmt = (
+                select(VehicleSnapshotRow)
+                .where(
+                    VehicleSnapshotRow.vin == vin, VehicleSnapshotRow.timestamp >= since
+                )
+                .order_by(VehicleSnapshotRow.timestamp.asc())
+            )
         else:
             since = datetime.now(UTC) - timedelta(days=days)
-        stmt = (
-            select(VehicleSnapshotRow)
-            .where(VehicleSnapshotRow.vin == vin, VehicleSnapshotRow.timestamp >= since)
-            .order_by(VehicleSnapshotRow.timestamp.asc())
-        )
+            stmt = (
+                select(VehicleSnapshotRow)
+                .where(
+                    VehicleSnapshotRow.vin == vin, VehicleSnapshotRow.timestamp >= since
+                )
+                .order_by(VehicleSnapshotRow.timestamp.asc())
+            )
         async with self._session_factory() as session:
             result = await session.execute(stmt)
             rows = result.scalars().all()

@@ -1522,11 +1522,15 @@ async def get_full_vehicle_data(vin: str) -> FullVehicleDataResponse:
 
 
 @app.get("/api/vehicles/{vin}/history", response_model=VehicleHistoryResponse)
-async def get_vehicle_history(vin: str, days: int = 30) -> VehicleHistoryResponse:
+async def get_vehicle_history(
+    vin: str, days: int = 30, from_date: str | None = None, to_date: str | None = None
+) -> VehicleHistoryResponse:
     """Get historical vehicle snapshots for a given time period."""
     if not _history_repo:
         raise HTTPException(status_code=503, detail="History not available")
-    snapshots = await _history_repo.get_history(vin, days=days)
+    snapshots = await _history_repo.get_history(
+        vin, days=days, from_date=from_date, to_date=to_date
+    )
     return VehicleHistoryResponse(
         vin=vin,
         days=days,

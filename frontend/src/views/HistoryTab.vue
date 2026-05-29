@@ -78,8 +78,11 @@
           </div>
         </div>
         <div class="date-picker-actions">
-          <button class="dp-cancel" @click="showDatePicker = false">Cancel</button>
-          <button class="dp-select" :disabled="!customFrom || !customTo" @click="applyCustomRange()">Select</button>
+          <button class="dp-cancel" @click="showDatePicker = false" :disabled="loadingRange">Cancel</button>
+          <button class="dp-select" :disabled="!customFrom || !customTo || loadingRange" @click="applyCustomRange()">
+            <span v-if="loadingRange" class="dp-spinner"></span>
+            {{ loadingRange ? 'Loading...' : 'Select' }}
+          </button>
         </div>
       </div>
     </div>
@@ -287,8 +290,8 @@
     </template>
 
     <div v-if="dataSource === 'local'" class="history-note">
-      <template v-if="allSnapshots.length">
-        Real data collected from vehicle · {{ allSnapshots.length }} snapshots available
+      <template v-if="allSnapshots.length || allData.length">
+        Real data collected from vehicle · {{ allSnapshots.length }} snapshots in current view
       </template>
       <template v-else>
         No data yet. Enable automatic collection in Settings to populate history.
@@ -453,9 +456,15 @@ function applyPreset(preset) {
   customTo.value = to
 }
 
-function applyCustomRange() {
+async function applyCustomRange() {
+  loadingRange.value = true
   customRangeActive.value = true
-  showDatePicker.value = false
+  try {
+    await fetchRangeSnapshots(customFrom.value, customTo.value)
+  } finally {
+    loadingRange.value = false
+    showDatePicker.value = false
+  }
 }
 
 function formatCalDate(d) {
@@ -496,6 +505,7 @@ function goToToday() {
   customFrom.value = today
   customTo.value = today
   customRangeActive.value = true
+  fetchRangeSnapshots(today, today)
 }
 
 function goBack() {
@@ -505,6 +515,7 @@ function goBack() {
     customFrom.value = yesterday
     customTo.value = yesterday
     customRangeActive.value = true
+    fetchRangeSnapshots(yesterday, yesterday)
     return
   }
   const rangeMs = customTo.value.getTime() - customFrom.value.getTime()
@@ -515,6 +526,7 @@ function goBack() {
   customFrom.value = newFrom
   customTo.value = newTo
   customRangeActive.value = true
+  fetchRangeSnapshots(newFrom, newTo)
 }
 
 function goForward() {
@@ -530,6 +542,7 @@ function goForward() {
   customFrom.value = newFrom
   customTo.value = newTo
   customRangeActive.value = true
+  fetchRangeSnapshots(newFrom, newTo)
 }
 
 function exportCsv() {
@@ -556,6 +569,7 @@ const loadingKpi = ref(true)
 const loadingCharts = ref(true)
 const chartsReady = ref(false)
 const isStale = ref(false)
+const loadingRange = ref(false)
 
 const CACHE_KEY_PREFIX = 'history_cache_'
 const CACHE_MAX_AGE_MS = 5 * 60 * 1000 // 5 minutes
@@ -642,22 +656,21 @@ async function fetchHistory() {
   }
 
   try {
-    const [dailyRes, snapshotRes, allSnapshotRes] = await Promise.all([
+    // Only fetch daily summaries + today's snapshots on initial load (lightweight)
+    const [dailyRes, snapshotRes] = await Promise.all([
       api('GET', `/api/vehicles/${props.vin}/history/daily?days=3650`),
       api('GET', `/api/vehicles/${props.vin}/history?days=1`),
-      api('GET', `/api/vehicles/${props.vin}/history?days=3650`),
     ])
     const daily = dailyRes.daily || []
     const snaps = snapshotRes.snapshots || []
-    const allSnaps = allSnapshotRes.snapshots || []
 
     // Progressive loading: KPI first
-    applyData(daily, snaps, allSnaps)
+    applyData(daily, snaps, snaps)
     loadingKpi.value = false
     isStale.value = false
 
     // Save to cache
-    saveToCache(daily, snaps, allSnaps)
+    saveToCache(daily, snaps, snaps)
 
     // Charts slightly deferred for progressive feel
     await nextTick()
@@ -665,6 +678,41 @@ async function fetchHistory() {
     loadingCharts.value = false
   } catch (err) {
     console.error('[HistoryTab] fetchHistory failed:', err)
+    loadingKpi.value = false
+    loadingCharts.value = false
+    chartsReady.value = true
+  }
+}
+
+async function fetchRangeSnapshots(from, to) {
+  if (!props.vin || !from || !to) return
+  loadingKpi.value = true
+  loadingCharts.value = true
+  chartsReady.value = false
+  try {
+    const fromStr = from.toISOString().slice(0, 10)
+    const toStr = to.toISOString().slice(0, 10)
+    const res = await api('GET', `/api/vehicles/${props.vin}/history?from_date=${fromStr}&to_date=${toStr}`)
+    const snaps = res.snapshots || []
+    allSnapshots.value = snaps
+    todaySnapshots.value = snaps.map(s => ({
+      date: formatTimestamp(s.timestamp),
+      battery: s.battery_soc ?? 0,
+      range: s.battery_expected_mileage ?? 0,
+      kmDriven: 0,
+      batteryEnergy: (s.battery_dump_energy ?? 0) / 1000.0,
+      chargingPower: s.battery_charging_power_kw ?? 0,
+      dischargingPower: s.battery_discharge_power_kw ?? 0,
+      temp: s.climate_outdoor_temp ?? 0,
+      chargeSessions: s.battery_is_charging ? 1 : 0,
+      sampleCount: 1,
+    }))
+    loadingKpi.value = false
+    await nextTick()
+    chartsReady.value = true
+    loadingCharts.value = false
+  } catch (err) {
+    console.error('[HistoryTab] fetchRangeSnapshots failed:', err)
     loadingKpi.value = false
     loadingCharts.value = false
     chartsReady.value = true
@@ -694,18 +742,8 @@ onMounted(async () => {
 // Filtered snapshots for selected period
 // ---------------------------------------------------------------------------
 const filteredSnapshots = computed(() => {
-  if (customRangeActive.value && customFrom.value && customTo.value) {
-    const from = customFrom.value.getTime()
-    const to = customTo.value.getTime() + 86400000 - 1 // end of day
-    return allSnapshots.value.filter(s => {
-      const t = new Date(s.timestamp).getTime()
-      return t >= from && t <= to
-    })
-  }
-  // Default: today
-  const now = new Date()
-  const since = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  return allSnapshots.value.filter(s => new Date(s.timestamp) >= since)
+  // allSnapshots already contains only the current range's data (fetched on-demand)
+  return allSnapshots.value
 })
 
 // ---------------------------------------------------------------------------
@@ -720,13 +758,8 @@ const isToday = computed(() => {
 const data = computed(() => {
   if (customRangeActive.value && customFrom.value && customTo.value) {
     if (isSameDay(customFrom.value, customTo.value)) {
-      // Single day view: use snapshot data
-      const from = customFrom.value.getTime()
-      const to = customTo.value.getTime() + 86400000 - 1
-      return allSnapshots.value.filter(s => {
-        const t = new Date(s.timestamp).getTime()
-        return t >= from && t <= to
-      }).map(s => ({
+      // Single day view: use snapshot data directly
+      return allSnapshots.value.map(s => ({
         date: formatTimestamp(s.timestamp),
         battery: s.battery_soc ?? 0,
         range: s.battery_expected_mileage ?? 0,
@@ -1784,6 +1817,9 @@ onBeforeUnmount(destroyCharts)
   font-weight: 600;
   cursor: pointer;
   transition: opacity 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .dp-select:disabled {
   opacity: 0.4;
@@ -1791,6 +1827,17 @@ onBeforeUnmount(destroyCharts)
 }
 .dp-select:hover:not(:disabled) {
   background: #00a0b8;
+}
+.dp-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: dp-spin 0.6s linear infinite;
+}
+@keyframes dp-spin {
+  to { transform: rotate(360deg); }
 }
 
 @media (max-width: 520px) {
