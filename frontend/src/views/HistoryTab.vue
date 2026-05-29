@@ -756,14 +756,40 @@ const kpiCards = computed(() => {
   const snaps = filteredSnapshots.value
   if (!snaps.length) return []
 
-  let energyUsed = 0
-  let energyCharged = 0
-  for (let i = 1; i < snaps.length; i++) {
-    const curr = (snaps[i].battery_dump_energy ?? 0) / 1000
-    const prev = (snaps[i - 1].battery_dump_energy ?? 0) / 1000
-    const delta = curr - prev
-    if (delta < 0) energyUsed += Math.abs(delta)
-    else energyCharged += delta
+  // Segment-based energy calculation to avoid noise amplification from rapid polling.
+  // We split snapshots into contiguous charging/non-charging segments and use NET
+  // energy change per segment, so measurement oscillations cancel out.
+  let energyUsed = 0    // net decrease during non-charging segments
+  let energyCharged = 0 // net increase during charging/plugged segments
+  let regenEnergy = 0   // regen recovered during non-charging segments
+
+  let i = 0
+  while (i < snaps.length) {
+    const isChargingSegment = !!(snaps[i].battery_is_charging || snaps[i].vehicle_is_plugged)
+    let j = i + 1
+    while (j < snaps.length && !!(snaps[j].battery_is_charging || snaps[j].vehicle_is_plugged) === isChargingSegment) {
+      j++
+    }
+    // Segment from index i to j-1
+    const startE = (snaps[i].battery_dump_energy ?? 0) / 1000
+    const endE = (snaps[j - 1].battery_dump_energy ?? 0) / 1000
+    const segDelta = endE - startE
+
+    if (isChargingSegment) {
+      if (segDelta > 0) energyCharged += segDelta
+    } else {
+      if (segDelta < 0) energyUsed += Math.abs(segDelta)
+      // Within non-charging segments, sum valid positive deltas as regen.
+      // Skip zero-energy readings (data gaps from sleep) to avoid false positives.
+      for (let k = i + 1; k < j; k++) {
+        const prevE = (snaps[k - 1].battery_dump_energy ?? 0) / 1000
+        const currE = (snaps[k].battery_dump_energy ?? 0) / 1000
+        if (prevE > 0 && currE > 0 && currE > prevE) {
+          regenEnergy += currE - prevE
+        }
+      }
+    }
+    i = j
   }
 
   const mileages = snaps.map(s => s.drive_total_mileage).filter(m => m != null && m > 0)
@@ -782,13 +808,6 @@ const kpiCards = computed(() => {
 
   const co2Saved = totalKm * 0.12
 
-  let regenEnergy = 0
-  for (let i = 1; i < snaps.length; i++) {
-    const curr = (snaps[i].battery_dump_energy ?? 0) / 1000
-    const prev = (snaps[i - 1].battery_dump_energy ?? 0) / 1000
-    const delta = curr - prev
-    if (delta > 0 && !snaps[i].vehicle_is_plugged) regenEnergy += delta
-  }
   const regenEfficiency = energyUsed > 0 ? (regenEnergy / energyUsed) * 100 : 0
 
   const highSocSnaps = snaps.filter(s => (s.battery_soc ?? 0) >= 95 && s.battery_expected_mileage)
@@ -802,7 +821,9 @@ const kpiCards = computed(() => {
   return [
     { label: 'km driven', value: Math.round(totalKm).toLocaleString(), color: '#00d4ff' },
     { label: 'Energy used', value: `${energyUsed.toFixed(1)} kWh`, color: '#ffab40' },
-    { label: 'Energy charged', value: `${energyCharged.toFixed(1)} kWh`, color: '#00e676' },
+    { label: 'Total charged', value: `${(energyCharged + regenEnergy).toFixed(1)} kWh`, color: '#00e676' },
+    { label: 'Charged (grid)', value: `${energyCharged.toFixed(1)} kWh`, color: '#66bb6a' },
+    { label: 'Regen energy', value: `${regenEnergy.toFixed(1)} kWh`, color: '#26c6da' },
     { label: 'Charge sessions', value: chargeSessions, color: '#7c6aff' },
     { label: 'kWh/100km', value: consumption > 0 ? consumption.toFixed(1) : '\u2014', color: '#ff7043' },
     { label: 'Cost (\u20ac)', value: cost > 0 ? `\u20ac${cost.toFixed(2)}` : '\u2014', color: '#ffd54f' },

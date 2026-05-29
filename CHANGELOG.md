@@ -19,19 +19,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Scheduler settings extended**: new configuration fields `transition_detection_enabled`, `transition_poll_interval_seconds`, `transition_min_event_interval_seconds` — exposed via `PUT /api/scheduler` and persisted to DB
 - **Frontend: Transition Detection settings card** in Services section — toggle, poll interval, and dedup interval controls
 - **Frontend: Events timeline view** in History tab — new "Events" source toggle with filterable timeline showing color-coded events (regen=green, charge=blue, drive=orange, security=purple, SOC=pink), timestamps, and old→new value transitions
-
 - **MQTT: expanded Home Assistant controls** — the MQTT integration now exposes nearly all vehicle commands available in the web UI, up from the previous 4 buttons (lock, unlock, trunk open, find). New entities include:
   - **20 button entities**: lock, unlock, trunk open/close, find, windows open/close, charging start/stop, battery preheat on/off, unlock charger, sunroof open/close, ON3 on/off, BLE key restart, hotspot, autopark, windshield defrost
   - **6 switch entities** (with state feedback): Air Conditioning, Sentry Mode, Steering Wheel Heat, Fuel Heating, Rearview Mirror Heat, Healthy Charging
   - **AC Temperature number entity**: slider control (16–32°C)
   - **Permission gating**: all MQTT entities are only registered if the vehicle has the corresponding right + hardware ability, matching the same permission logic used by the web UI. Vehicles with limited capabilities won't show unsupported controls in HA.
+- **New KPI: "Total charged"** — shows the combined energy from grid charging + regenerative braking
+- **New KPI: "Charged (grid)"** — shows only the energy drawn from the electrical grid (used for cost calculation)
+- **New KPI: "Regen energy"** — dedicated card showing energy recovered from regenerative braking (kWh), computed from valid positive energy deltas during non-charging segments (with zero-energy gap filtering)
 
 ### Fixed
 - **Charge limit error reporting**: setting the charge limit from the web UI or Home Assistant returned a plain-text "Internal Server Error" (not JSON), causing the frontend to show a confusing JSON parse error. The `/api/vehicles/{vin}/charge-limit` endpoint now catches `LeapmotorApiError` and returns a proper JSON 502 response with the actual error message. Also hardened the frontend `useApi` helper to gracefully handle non-JSON error responses.
 - **Charge limit fails on vehicles without charge plan in status**: on some models (e.g. T03), `status.battery.charge_plan` is empty even when a schedule exists on the cloud. The library's `set_charge_limit()` relied on that field, failing with "Current charging plan is incomplete". Fixed in `leapmotor-api` v0.3.1: the method now retrieves the plan via the dedicated `get_charge_schedule()` API call and falls back to sensible defaults if no schedule exists.
+- **Energy KPI calculation completely reworked**: the previous delta-by-delta algorithm was amplifying measurement noise from rapid transition polling (10s intervals), inflating "Energy used" by 5–10× (e.g. showing 47.6 kWh instead of the real 9.3 kWh). Replaced with a segment-based approach that splits snapshots into contiguous charging/non-charging periods and uses net energy change per segment, eliminating oscillation noise.
+- **Cost calculation no longer includes regen energy**: charging cost now uses only grid-charged energy, not the total energy entering the battery (which previously included regenerative braking).
 
 ### Changed
 - **Updated leapmotor-api to v0.3.1**: fixes `set_charge_limit()` for vehicles where the charge plan is not included in the vehicle status response
+- The former single `Energy charged` KPI card in history tab is now split into `Total charged` and `Charged (grid)` for better clarity and accurate cost calculation
+- `Regen efficiency` now uses the segment-based regen value for accuracy
 
 ## [0.7.3] - 2026-05-26
 
