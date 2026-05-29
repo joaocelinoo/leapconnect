@@ -488,15 +488,15 @@
 
       <SectionCard title="GitHub" :icon="Github">
         <div class="about-links">
-          <a href="https://github.com/markoceri/leapmotor-webapp" target="_blank" rel="noopener" class="about-link-card">
+          <a href="https://github.com/markoceri/leapconnect" target="_blank" rel="noopener" class="about-link-card">
             <Github :size="18" />
             <div>
               <div class="about-link-title">Source Code</div>
-              <div class="about-link-hint">markoceri/leapmotor-webapp</div>
+              <div class="about-link-hint">markoceri/leapconnect</div>
             </div>
             <ExternalLink :size="14" class="about-link-arrow" />
           </a>
-          <a href="https://github.com/markoceri/leapmotor-webapp/stargazers" target="_blank" rel="noopener" class="about-link-card star">
+          <a href="https://github.com/markoceri/leapconnect/stargazers" target="_blank" rel="noopener" class="about-link-card star">
             <Star :size="18" />
             <div>
               <div class="about-link-title">Star the project</div>
@@ -504,7 +504,7 @@
             </div>
             <ExternalLink :size="14" class="about-link-arrow" />
           </a>
-          <a href="https://github.com/markoceri/leapmotor-webapp/issues" target="_blank" rel="noopener" class="about-link-card">
+          <a href="https://github.com/markoceri/leapconnect/issues" target="_blank" rel="noopener" class="about-link-card">
             <AlertTriangle :size="18" />
             <div>
               <div class="about-link-title">Report an Issue</div>

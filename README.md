@@ -92,7 +92,7 @@ services:
           -newkey rsa:2048 \
           -keyout /certs/traefik.key \
           -out /certs/traefik.crt \
-          -subj "/CN=leapmotor-webapp" \
+          -subj "/CN=leapconnect" \
           -addext "subjectAltName=$$SAN"
     volumes:
       - ./traefik/certs:/certs

@@ -29,7 +29,7 @@ openssl req -x509 -nodes -days 3650 \
   -newkey rsa:2048 \
   -keyout "$CERT_DIR/traefik.key" \
   -out "$CERT_DIR/traefik.crt" \
-  -subj "/CN=leapmotor-webapp" \
+  -subj "/CN=leapconnect" \
   -addext "subjectAltName=$SAN"
 
 echo "Certificates generated in $CERT_DIR"
