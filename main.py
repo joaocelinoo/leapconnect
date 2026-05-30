@@ -420,6 +420,10 @@ async def lifespan(app: FastAPI):
         repo=_history_repo,
         image_composer=_compose_notification_image,
         vehicle_cache=_vehicle_cache,
+        command_executor=_execute_vehicle_command,
+        rights_checker=_check_command_right,
+        pin_checker=lambda: bool(_sync_client and _sync_client.operation_password),
+        pin_setter=_set_vehicle_pin,
     )
     await _notification_dispatcher.reload_config()
 
@@ -1498,6 +1502,145 @@ async def _compose_notification_image(vin: str) -> bytes | None:
         return None
 
 
+# Command-to-right mapping (same as MQTT HA service)
+_COMMAND_RIGHTS: dict[str, int | None] = {
+    "lock": 110,
+    "unlock": 110,
+    "trunk_open": 130,
+    "trunk_close": 130,
+    "find": 120,
+    "windows_open": 230,
+    "windows_close": 230,
+    "charging_start": 193,
+    "charging_stop": 193,
+    "battery_preheat": 190,
+    "battery_preheat_off": 190,
+    "unlock_charger": 192,
+    "sunroof_open": 160,
+    "sunroof_close": 160,
+    "defrost": 170,
+    "ac_on": None,
+    "ac_off": None,
+    "sentry_mode_on": None,
+    "sentry_mode_off": None,
+    "steering_wheel_heat_on": None,
+    "steering_wheel_heat_off": None,
+}
+
+# Ability → Rights mapping (mirrors mqtt_ha)
+_ABILITY_TO_RIGHTS: dict[int, list[int]] = {
+    1: [110],
+    2: [120],
+    3: [130],
+    4: [150],
+    6: [170],
+    9: [171],
+    10: [190],
+    11: [161],
+    12: [230],
+    14: [301],
+    15: [320],
+    17: [170, 171],
+    18: [460],
+    24: [130],
+    25: [160],
+    30: [180],
+    34: [510],
+    35: [340],
+    36: [230],
+    38: [360, 361],
+    40: [380],
+    42: [370],
+    43: [370],
+    48: [192],
+    50: [220],
+    52: [180],
+}
+_RIGHTS_WITH_ABILITY: set[int] = set()
+for _rl in _ABILITY_TO_RIGHTS.values():
+    _RIGHTS_WITH_ABILITY.update(_rl)
+
+
+def _vehicle_has_right(vehicle: Vehicle, right: int | None) -> bool:
+    """Check if a vehicle has the required right+ability permission."""
+    if right is None:
+        return True
+    user_rights = {r.value if hasattr(r, "value") else int(r) for r in vehicle.rights}
+    if right not in user_rights:
+        return False
+    if right in _RIGHTS_WITH_ABILITY:
+        hw_rights: set[int] = set()
+        for a in vehicle.abilities:
+            a_val = a.value if hasattr(a, "value") else int(a)
+            mapped = _ABILITY_TO_RIGHTS.get(a_val, [])
+            hw_rights.update(mapped)
+        if right not in hw_rights:
+            return False
+    return True
+
+
+def _check_command_right(vin: str, command: str) -> bool:
+    """Check if a command is permitted for the vehicle.
+
+    Sync helper for menu filtering.
+    """
+    try:
+        vehicle = _find_vehicle(vin)
+    except Exception:
+        return False
+    required_right = _COMMAND_RIGHTS.get(command)
+    return _vehicle_has_right(vehicle, required_right)
+
+
+async def _execute_vehicle_command(vin: str, command: str) -> dict | None:
+    """Execute a vehicle command by name. Used by Telegram bot handler.
+
+    Checks vehicle rights/abilities before executing.
+    Raises PermissionError if the command is not allowed.
+    Returns None if the command is unknown.
+    """
+    if not _client:
+        return None
+
+    # Check permissions
+    try:
+        vehicle = _find_vehicle(vin)
+    except Exception:
+        return None
+
+    required_right = _COMMAND_RIGHTS.get(command)
+    if command in _COMMAND_RIGHTS and not _vehicle_has_right(vehicle, required_right):
+        raise PermissionError(f"Command '{command}' not available for this vehicle")
+
+    command_map = {
+        "lock": _client.lock_vehicle,
+        "unlock": _client.unlock_vehicle,
+        "trunk_open": _client.open_trunk,
+        "trunk_close": _client.close_trunk,
+        "find": _client.find_vehicle,
+        "windows_open": _client.open_windows,
+        "windows_close": _client.close_windows,
+        "charging_start": _client.start_charging,
+        "charging_stop": _client.stop_charging,
+        "battery_preheat": _client.battery_preheat,
+        "battery_preheat_off": _client.battery_preheat_off,
+        "unlock_charger": _client.unlock_charger,
+        "sunroof_open": _client.open_sunroof,
+        "sunroof_close": _client.close_sunroof,
+        "defrost": _client.windshield_defrost,
+        "ac_on": _client.ac_on,
+        "ac_off": _client.ac_off,
+        "sentry_mode_on": _client.sentry_mode_on,
+        "sentry_mode_off": _client.sentry_mode_off,
+        "steering_wheel_heat_on": _client.steering_wheel_heat_on,
+        "steering_wheel_heat_off": _client.steering_wheel_heat_off,
+    }
+    fn = command_map.get(command)
+    if not fn:
+        return None
+    return await fn(vin)
+
+
 @app.get("/api/vehicles/{vin}/picture/dynamic")
 async def get_dynamic_picture(vin: str, charge_frame: int = 0) -> Response:
     """Compose a dynamic car image reflecting current vehicle status."""
@@ -1932,6 +2075,27 @@ async def _save_mqtt_vehicle_pin(pin: str) -> None:
     if not _history_repo:
         return
     await _history_repo.save_setting("mqtt_vehicle_pin", pin)
+
+
+def _set_vehicle_pin(pin: str) -> None:
+    """Temporarily set/restore the vehicle operation PIN on the sync client.
+
+    When called with a non-empty pin, saves the current PIN and sets the new one.
+    When called with empty string, restores the previously saved PIN.
+    This ensures Telegram commands don't interfere with the persisted PIN.
+    """
+    if not _sync_client:
+        return
+    if pin.strip():
+        # Save current PIN and set the temporary one
+        _set_vehicle_pin._saved = _sync_client.operation_password
+        _sync_client.operation_password = pin.strip()
+    else:
+        # Restore original PIN
+        _sync_client.operation_password = getattr(_set_vehicle_pin, "_saved", None)
+
+
+_set_vehicle_pin._saved = None
 
 
 async def _handle_mqtt_command(vin: str, command: str) -> None:

@@ -454,20 +454,81 @@
           </div>
         </div>
       </SectionCard>
+
+      <SectionCard title="Telegram Bot" :icon="Send">
+        <p class="rate-limit-hint" style="margin-bottom:12px">Connect a Telegram bot to receive notifications and interact with your vehicle remotely.</p>
+
+        <div class="form-divider">Connection</div>
+        <div class="form-group" style="margin-top:8px">
+          <label>Bot Token</label>
+          <div class="secret-input-wrap">
+            <input
+              v-model="telegramForm.bot_token"
+              :type="showTelegramSecrets ? 'text' : 'password'"
+              placeholder="123456:ABC-DEF..."
+            />
+            <button class="secret-toggle-btn" type="button" @click="showTelegramSecrets = !showTelegramSecrets" tabindex="-1">
+              <component :is="showTelegramSecrets ? EyeOff : Eye" :size="14" />
+            </button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Chat ID</label>
+          <div class="secret-input-wrap">
+            <input
+              v-model="telegramForm.chat_id"
+              :type="showTelegramSecrets ? 'text' : 'password'"
+              placeholder="-100123456789"
+            />
+          </div>
+        </div>
+        <div class="channel-actions">
+          <button class="save-btn" :disabled="notifSaving || !telegramForm.bot_token || !telegramForm.chat_id" @click="saveTelegramChannel">
+            {{ notifSaving ? 'Saving…' : telegramChannel ? 'Save' : 'Configure' }}
+          </button>
+          <button v-if="telegramChannel" class="service-btn btn-start" :disabled="notifTesting" @click="testTelegram">
+            <Bell :size="13" style="flex-shrink:0" /> {{ notifTesting ? 'Sending…' : 'Test' }}
+          </button>
+        </div>
+        <div v-if="notifTestResult" :class="notifTestResult.success ? 'field-success' : 'field-error'" style="margin-top:6px">
+          {{ notifTestResult.message }}
+        </div>
+
+        <div class="form-divider" style="margin-top:16px">Bot Commands</div>
+        <p class="rate-limit-hint" style="margin-bottom:8px">
+          Enable commands to control and query the vehicle directly from Telegram (/status, /lock, /track, etc.).
+        </p>
+        <div class="scheduler-service">
+          <div class="service-status">
+            <span class="status-dot" :class="telegramBotActive ? 'running' : 'stopped'" />
+            <span class="service-text">
+              {{ !telegramChannel ? 'Not configured' : telegramBotActive ? 'Active' : 'Disabled' }}
+            </span>
+          </div>
+          <button
+            v-if="telegramChannel"
+            class="service-btn"
+            :class="telegramBotActive ? 'btn-stop' : 'btn-start'"
+            :disabled="botToggling"
+            @click="toggleTelegramBot(!telegramBotActive)"
+          >
+            {{ telegramBotActive ? 'Disable' : 'Enable' }}
+          </button>
+        </div>
+      </SectionCard>
     </template>
 
     <!-- ═══════════════ NOTIFICATIONS ═══════════════ -->
     <template v-if="activeSection === 'notifications'">
       <SectionCard title="Channels" :icon="Send">
         <p class="rate-limit-hint" style="margin-bottom:12px">
-          Configure notification channels to receive vehicle alerts.
+          Notification channels deliver vehicle alerts. Configure credentials in <b>Services → Telegram Bot</b>.
         </p>
 
         <!-- Telegram channel -->
         <div class="channel-card">
-          <div class="channel-header" @click="telegramExpanded = !telegramExpanded" style="cursor:pointer">
+          <div class="channel-header">
             <div class="channel-info">
-              <component :is="telegramExpanded ? ChevronDown : ChevronRight" :size="14" class="channel-chevron" />
               <Send :size="14" class="channel-icon" />
               <span class="channel-name">Telegram</span>
               <span v-if="telegramChannel" class="channel-badge" :class="telegramChannel.enabled ? 'active' : 'inactive'">
@@ -475,52 +536,20 @@
               </span>
               <span v-else class="channel-badge inactive">Not configured</span>
             </div>
-            <ToggleSwitch
-              v-if="telegramChannel"
-              :modelValue="telegramChannel.enabled"
-              @update:modelValue="toggleTelegramEnabled"
-              @click.stop
-            />
-          </div>
-
-          <Transition name="collapse">
-            <div v-if="telegramExpanded" class="channel-body">
-              <div class="form-group">
-                <label>Bot Token</label>
-                <div class="secret-input-wrap">
-                  <input
-                    v-model="telegramForm.bot_token"
-                    :type="showTelegramSecrets ? 'text' : 'password'"
-                    placeholder="123456:ABC-DEF..."
-                  />
-                  <button class="secret-toggle-btn" type="button" @click="showTelegramSecrets = !showTelegramSecrets" tabindex="-1">
-                    <component :is="showTelegramSecrets ? EyeOff : Eye" :size="14" />
-                  </button>
-                </div>
-              </div>
-              <div class="form-group">
-                <label>Chat ID</label>
-                <div class="secret-input-wrap">
-                  <input
-                    v-model="telegramForm.chat_id"
-                    :type="showTelegramSecrets ? 'text' : 'password'"
-                    placeholder="-100123456789"
-                  />
-                </div>
-              </div>
-              <div class="channel-actions">
-                <button class="save-btn" :disabled="notifSaving || !telegramForm.bot_token || !telegramForm.chat_id" @click="saveTelegramChannel">
-                  {{ notifSaving ? 'Saving…' : telegramChannel ? 'Save' : 'Configure' }}
-                </button>
-                <button v-if="telegramChannel" class="service-btn btn-start" :disabled="notifTesting" @click="testTelegram">
-                  <Bell :size="13" style="flex-shrink:0" /> {{ notifTesting ? 'Sending…' : 'Test' }}
-                </button>
-              </div>
-              <div v-if="notifTestResult" :class="notifTestResult.success ? 'field-success' : 'field-error'" style="margin-top:6px">
-                {{ notifTestResult.message }}
-              </div>
+            <div class="channel-controls">
+              <button v-if="telegramChannel" class="service-btn btn-start" :disabled="notifTesting" @click="testTelegram" style="font-size:11px">
+                <Bell :size="12" style="flex-shrink:0" /> {{ notifTesting ? '…' : 'Test' }}
+              </button>
+              <ToggleSwitch
+                v-if="telegramChannel"
+                :modelValue="telegramChannel.enabled"
+                @update:modelValue="toggleTelegramEnabled"
+              />
             </div>
-          </Transition>
+          </div>
+          <div v-if="notifTestResult" :class="notifTestResult.success ? 'field-success' : 'field-error'" style="margin-top:6px;padding-left:28px">
+            {{ notifTestResult.message }}
+          </div>
         </div>
 
         <div v-if="notifError" class="field-error" style="margin-top:6px">{{ notifError }}</div>
@@ -1635,7 +1664,7 @@ async function saveLogLevels() {
 // Notifications
 // ---------------------------------------------------------------------------
 const telegramChannel = ref(null)
-const telegramForm = reactive({ bot_token: '', chat_id: '' })
+const telegramForm = reactive({ bot_token: '', chat_id: '', bot_enabled: true })
 const notifSaving = ref(false)
 const notifTesting = ref(false)
 const notifError = ref('')
@@ -1650,6 +1679,11 @@ const collapsedCategories = ref(new Set())
 const geofences = ref([])
 const newGeofence = reactive({ name: '', latitude: null, longitude: null, radius_m: 200 })
 const geolocating = ref(false)
+const botToggling = ref(false)
+
+const telegramBotActive = computed(() => {
+  return telegramChannel.value?.config?.bot_enabled !== false
+})
 
 const categoryIcons = { charging: Zap, driving: CarFront, security: Lock, maintenance: Wrench }
 
@@ -1709,6 +1743,7 @@ async function loadNotifications() {
       telegramChannel.value = tg
       telegramForm.bot_token = tg.config?.bot_token || ''
       telegramForm.chat_id = tg.config?.chat_id || ''
+      telegramForm.bot_enabled = tg.config?.bot_enabled !== false
     }
     // Load events
     const events = await api('GET', '/api/notifications/events' + (tg ? `?channel_id=${tg.id}` : ''))
@@ -1737,7 +1772,7 @@ async function saveTelegramChannel() {
   notifSaving.value = true
   notifError.value = ''
   try {
-    const config = { bot_token: telegramForm.bot_token, chat_id: telegramForm.chat_id }
+    const config = { bot_token: telegramForm.bot_token, chat_id: telegramForm.chat_id, bot_enabled: telegramForm.bot_enabled }
     if (telegramChannel.value) {
       const updated = await api('PUT', `/api/notifications/channels/${telegramChannel.value.id}`, { config })
       telegramChannel.value = updated
@@ -1765,6 +1800,21 @@ async function toggleTelegramEnabled() {
     notifError.value = e.message || 'Toggle failed'
   } finally {
     notifSaving.value = false
+  }
+}
+
+async function toggleTelegramBot(enable) {
+  if (!telegramChannel.value) return
+  botToggling.value = true
+  try {
+    const config = { ...telegramChannel.value.config, bot_enabled: enable }
+    const updated = await api('PUT', `/api/notifications/channels/${telegramChannel.value.id}`, { config })
+    telegramChannel.value = updated
+    telegramForm.bot_enabled = enable
+  } catch (e) {
+    notifError.value = e.message || 'Bot toggle failed'
+  } finally {
+    botToggling.value = false
   }
 }
 
@@ -2186,6 +2236,11 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--border);
 }
 .channel-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.channel-controls {
   display: flex;
   align-items: center;
   gap: 8px;

@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 from models import Geofence, NotificationChannel, NotificationPreference, VehicleEvent
 from services.notifiers import BaseNotifier, Notification
 from services.notifiers.telegram import TelegramNotifier
+from services.telegram_config import TelegramConfig
 
 if TYPE_CHECKING:
     from leapmotor_api.models import Vehicle, VehicleStatus
@@ -415,10 +416,18 @@ class NotificationDispatcher:
         repo: SQLAlchemyVehicleHistoryRepository,
         image_composer: Callable | None = None,
         vehicle_cache: object | None = None,
+        command_executor: Callable | None = None,
+        rights_checker: Callable | None = None,
+        pin_checker: Callable | None = None,
+        pin_setter: Callable | None = None,
     ) -> None:
         self._repo = repo
         self._image_composer = image_composer  # async fn(vin) -> bytes | None
         self._vehicle_cache = vehicle_cache  # VehicleStatusCache instance
+        self._command_executor = command_executor  # async fn(vin, command) -> dict|None
+        self._rights_checker = rights_checker  # fn(vin, command) -> bool
+        self._pin_checker = pin_checker  # fn() -> bool
+        self._pin_setter = pin_setter  # fn(pin) -> None
         self._notifiers: dict[int, BaseNotifier] = {}  # channel_id -> notifier
         self._preferences: dict[
             int, dict[str, NotificationPreference]
@@ -443,6 +452,11 @@ class NotificationDispatcher:
 
     async def reload_config(self) -> None:
         """Reload channels, preferences, and geofences from the database."""
+        # Stop existing Telegram polling before recreating notifiers
+        for notifier in self._notifiers.values():
+            if isinstance(notifier, TelegramNotifier):
+                notifier.stop_callback_polling()
+
         channels = await self._repo.get_notification_channels()
         self._notifiers.clear()
         self._preferences.clear()
@@ -484,7 +498,13 @@ class NotificationDispatcher:
             token = channel.config.get("bot_token", "")
             chat_id = channel.config.get("chat_id", "")
             if token and chat_id:
-                return TelegramNotifier(bot_token=token, chat_id=chat_id)
+                bot_enabled = channel.config.get("bot_enabled", True)
+                config = TelegramConfig(
+                    bot_token=token,
+                    chat_id=chat_id,
+                    bot_enabled=bot_enabled,
+                )
+                return TelegramNotifier(config=config)
             _LOGGER.warning(
                 "Telegram channel %d: missing bot_token or chat_id", channel.id
             )

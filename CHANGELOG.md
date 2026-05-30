@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Telegram Bot service** (`services/telegram_bot.py`): full interactive bot for controlling and querying the vehicle via Telegram commands. Features:
+  - **20+ bot commands**: `/status`, `/location`, `/lock`, `/unlock`, `/trunk_open`, `/trunk_close`, `/find`, `/ac_on`, `/ac_off`, `/defrost`, `/windows_open`, `/windows_close`, `/charging_start`, `/charging_stop`, `/unlock_charger`, `/sunroof_open`, `/sunroof_close`, `/track`, `/track_stop`, `/commands`
+  - **Permission enforcement**: commands respect the same rights + abilities model used by the frontend and MQTT HA — vehicles without specific hardware capabilities won't allow those commands
+  - **Per-command PIN authentication**: every vehicle action command prompts for the operation PIN via Telegram; the PIN message is immediately deleted for security and the PIN is used only for that single command (never persisted from Telegram)
+  - **Dynamic command menu**: `/commands` shows only the commands available for the current vehicle based on its permissions
+  - **Location tracking**: `/track [N]` sends periodic GPS locations with a stop button; `/track_stop` cancels
+  - **Rich status messages**: `/status` shows battery SOC, range, charging state, lock, climate, parking, odometer, tire pressures
+- **Shared Telegram configuration** (`services/telegram_config.py`): `TelegramConfig` dataclass shared between the notifier and the bot service, holding `bot_token`, `chat_id`, and `bot_enabled`
+- **Bot enable/disable toggle**: the Telegram bot commands can be independently enabled or disabled from the UI without affecting notifications; takes effect immediately (no restart required)
+- **Frontend: Telegram Bot card in Services section**: dedicated configuration card with connection settings (Bot Token, Chat ID, Save, Test) and a Bot Commands subsection with enable/disable toggle and status indicator
+- **Frontend: simplified Notifications channel view**: the Telegram channel in Notifications now shows only status, enable/disable toggle, and test button — configuration is managed from the Services section
+- **Vehicle command permission checks** (`main.py`): centralized `_COMMAND_RIGHTS` mapping and `_vehicle_has_right()` function enforce rights + abilities before executing any vehicle command (used by both Telegram bot and future command sources). Commands without the required permission raise `PermissionError`.
 - **Notification system with Telegram**: event-driven notifications dispatched via configurable channels. First implementation: Telegram Bot API with rich HTML messages and dynamic vehicle images.
   - **Abstract notifier architecture**: `BaseNotifier` interface (`services/notifiers/`) allows future extension to email, webhooks, push notifications, etc.
   - **Telegram notifier**: sends formatted messages via `sendMessage` (text) and `sendPhoto` (with composed vehicle image) using the existing `CarImagePackage` pipeline
