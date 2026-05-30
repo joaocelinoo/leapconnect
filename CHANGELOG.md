@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-05-30
+
 ### Added
 - **Telegram Bot service** (`services/telegram_bot.py`): full interactive bot for controlling and querying the vehicle via Telegram commands. Features:
   - **20+ bot commands**: `/status`, `/location`, `/lock`, `/unlock`, `/trunk_open`, `/trunk_close`, `/find`, `/ac_on`, `/ac_off`, `/defrost`, `/windows_open`, `/windows_close`, `/charging_start`, `/charging_stop`, `/unlock_charger`, `/sunroof_open`, `/sunroof_close`, `/track`, `/track_stop`, `/commands`
