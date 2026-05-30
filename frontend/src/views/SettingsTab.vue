@@ -692,8 +692,13 @@
 
       <SectionCard title="Geofences" :icon="Navigation">
         <p class="rate-limit-hint" style="margin-bottom:12px">
-          Configure geographic zones to receive notifications when the vehicle enters or exits.
+          Configure geographic zones to receive notifications when the vehicle enters or exits. Click on the map to set coordinates for a new zone.
         </p>
+
+        <!-- Map -->
+        <div class="geofence-map-wrapper">
+          <div ref="geofenceMapEl" class="geofence-map-container"></div>
+        </div>
 
         <div v-for="gf in geofences" :key="gf.id" class="geofence-item">
           <div class="geofence-header">
@@ -1027,7 +1032,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import SectionCard from '../components/SectionCard.vue'
 import InfoRow from '../components/InfoRow.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
@@ -1680,6 +1687,11 @@ const geofences = ref([])
 const newGeofence = reactive({ name: '', latitude: null, longitude: null, radius_m: 200 })
 const geolocating = ref(false)
 const botToggling = ref(false)
+const geofenceMapEl = ref(null)
+let geofenceMap = null
+let geofenceMapLayers = []
+let newGeofenceMarker = null
+let newGeofenceCircle = null
 
 const telegramBotActive = computed(() => {
   return telegramChannel.value?.config?.bot_enabled !== false
@@ -1726,6 +1738,99 @@ function useCurrentLocation() {
   )
 }
 
+// ── Geofence Map ──
+function getGeofenceTileUrl() {
+  const theme = document.documentElement.getAttribute('data-theme')
+  const style = theme === 'light' ? 'light_all' : 'dark_all'
+  return `https://{s}.basemaps.cartocdn.com/${style}/{z}/{x}/{y}{r}.png`
+}
+
+function initGeofenceMap() {
+  if (geofenceMap || !geofenceMapEl.value) return
+  const center = geofences.value.length
+    ? [geofences.value[0].latitude, geofences.value[0].longitude]
+    : [45.4642, 9.1900]
+  geofenceMap = L.map(geofenceMapEl.value, {
+    center,
+    zoom: 13,
+    zoomControl: true,
+    attributionControl: false,
+  })
+  L.tileLayer(getGeofenceTileUrl(), { maxZoom: 19, subdomains: 'abcd' }).addTo(geofenceMap)
+  geofenceMap.on('click', onGeofenceMapClick)
+  renderGeofencesOnMap()
+}
+
+function onGeofenceMapClick(e) {
+  newGeofence.latitude = parseFloat(e.latlng.lat.toFixed(5))
+  newGeofence.longitude = parseFloat(e.latlng.lng.toFixed(5))
+}
+
+function renderGeofencesOnMap() {
+  if (!geofenceMap) return
+  // Remove old layers
+  geofenceMapLayers.forEach(l => geofenceMap.removeLayer(l))
+  geofenceMapLayers = []
+  // Draw existing geofences
+  geofences.value.forEach(gf => {
+    const circle = L.circle([gf.latitude, gf.longitude], {
+      radius: gf.radius_m,
+      color: '#00d4ff',
+      fillColor: '#00d4ff',
+      fillOpacity: 0.12,
+      weight: 2,
+    }).addTo(geofenceMap)
+    const marker = L.circleMarker([gf.latitude, gf.longitude], {
+      radius: 5,
+      color: '#00d4ff',
+      fillColor: '#00d4ff',
+      fillOpacity: 1,
+      weight: 2,
+    }).addTo(geofenceMap)
+    marker.bindTooltip(gf.name, { permanent: false, direction: 'top', offset: [0, -8] })
+    geofenceMapLayers.push(circle, marker)
+  })
+  // Fit bounds if we have geofences
+  if (geofenceMapLayers.length) {
+    const group = L.featureGroup(geofenceMapLayers)
+    geofenceMap.fitBounds(group.getBounds().pad(0.3))
+  }
+}
+
+function updateNewGeofencePreview() {
+  if (!geofenceMap) return
+  // Remove previous preview
+  if (newGeofenceMarker) { geofenceMap.removeLayer(newGeofenceMarker); newGeofenceMarker = null }
+  if (newGeofenceCircle) { geofenceMap.removeLayer(newGeofenceCircle); newGeofenceCircle = null }
+  if (newGeofence.latitude && newGeofence.longitude) {
+    newGeofenceCircle = L.circle([newGeofence.latitude, newGeofence.longitude], {
+      radius: newGeofence.radius_m || 200,
+      color: '#ff9800',
+      fillColor: '#ff9800',
+      fillOpacity: 0.15,
+      weight: 2,
+      dashArray: '6 4',
+    }).addTo(geofenceMap)
+    newGeofenceMarker = L.circleMarker([newGeofence.latitude, newGeofence.longitude], {
+      radius: 6,
+      color: '#ff9800',
+      fillColor: '#ff9800',
+      fillOpacity: 1,
+      weight: 2,
+    }).addTo(geofenceMap)
+    newGeofenceMarker.bindTooltip('New zone', { permanent: false, direction: 'top', offset: [0, -8] })
+  }
+}
+
+watch(() => [newGeofence.latitude, newGeofence.longitude, newGeofence.radius_m], updateNewGeofencePreview)
+watch(geofences, renderGeofencesOnMap, { deep: true })
+watch(() => activeSection.value, (val) => {
+  if (val === 'notifications') {
+    geofenceMap = null
+    nextTick(() => initGeofenceMap())
+  }
+})
+
 function getEventConfigValue(evt, paramKey, defaultVal) {
   return evt.config?.[paramKey] ?? defaultVal
 }
@@ -1750,6 +1855,7 @@ async function loadNotifications() {
     notifEvents.value = events
     // Load geofences
     geofences.value = await api('GET', '/api/notifications/geofences')
+    nextTick(() => initGeofenceMap())
     // Load cooldown
     const cd = await api('GET', '/api/notifications/cooldown')
     cooldownSeconds.value = cd.cooldown_seconds ?? 300
@@ -2897,6 +3003,21 @@ onBeforeUnmount(() => {
   padding: 4px 0 8px 16px;
   border-left: 2px solid var(--btn-border, #2a2e3e);
   margin-bottom: 4px;
+}
+.geofence-map-wrapper {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  height: 240px;
+  margin-bottom: 14px;
+  border: 1px solid var(--btn-border, #2a2e3e);
+}
+.geofence-map-container {
+  width: 100%;
+  height: 100%;
+}
+@media (min-width: 640px) {
+  .geofence-map-wrapper { height: 300px; }
 }
 .geofence-item {
   padding: 10px;
