@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Notification system with Telegram**: event-driven notifications dispatched via configurable channels. First implementation: Telegram Bot API with rich HTML messages and dynamic vehicle images.
+  - **Abstract notifier architecture**: `BaseNotifier` interface (`services/notifiers/`) allows future extension to email, webhooks, push notifications, etc.
+  - **Telegram notifier**: sends formatted messages via `sendMessage` (text) and `sendPhoto` (with composed vehicle image) using the existing `CarImagePackage` pipeline
+  - **19 notification event types** across 4 categories:
+    - *Charging*: charge start/stop, charge interrupted (SOC < target), SOC above/below threshold, plug/unplug
+    - *Driving*: driving start, parked, ignition on/off
+    - *Security*: locked/unlocked, movement alert (anti-theft with haversine distance), geofence enter/exit, unlocked timeout
+    - *Maintenance*: tire pressure out of range, range below threshold
+  - **Notification dispatcher** (`services/notification_dispatcher.py`): orchestrates the full pipeline — receives events from transition detection, checks user preferences, applies custom stateful logic (geofencing, SOC thresholds, unlock timeout, movement detection), composes messages from templates, and dispatches to notifiers with per-event cooldowns (5 min)
+  - **Geofencing**: configurable geographic zones with haversine distance calculation; fires notifications on enter/exit based on user preference per zone
+  - **Movement alert (anti-theft)**: detects vehicle displacement (>50m default) while parked with ignition off
+  - **Configurable thresholds**: SOC high/low, tire pressure min/max, range threshold, unlock timeout — all per-event parameters adjustable from the UI
+  - **Rich message templates**: each event type has an emoji-prefixed title + contextual body (SOC%, range, zone name, distance, etc.)
+  - **Dynamic vehicle image in notifications**: photo-bearing events automatically compose and attach the current vehicle state image
+- **Database migration 0005**: added `notification_channels`, `notification_preferences`, and `geofences` tables
+- **Notification API endpoints**:
+  - `GET/POST/PUT/DELETE /api/notifications/channels` — CRUD for notification channels
+  - `POST /api/notifications/channels/{id}/test` — send test message
+  - `GET/PUT /api/notifications/events` — list available events with status, bulk update preferences
+  - `GET/POST/PUT/DELETE /api/notifications/geofences` — CRUD for geofences
+- **Frontend: Notifications settings section** in Settings tab — new navigation pill with:
+  - Telegram configuration card (bot token + chat ID, enable/disable, test button)
+  - Events card with per-category toggle list and inline threshold configuration for configurable events
+  - Geofences card with list of zones (enter/exit toggles) and form to add new zones (name, lat/lng, radius)
+- **Scheduler integration**: notification dispatcher is called after each transition detection cycle, processing events in real-time alongside the existing event persistence
 - **Transition detection & event tracking**: new fast-polling loop (default 10s, configurable 5–300s) that detects state transitions in real-time and persists them to a lightweight `vehicle_events` table. Captures:
   - Boolean transitions: regenerative braking start/stop, charging start/stop, plug/unplug, park/drive, lock/unlock, ignition on/off
   - Threshold transitions: speed crosses zero (moving start/stop), battery SOC changes ≥5%, charge state changes

@@ -144,13 +144,6 @@
         <InfoRow label="Pressure unit" value="bar" color="#e2e6f0" />
         <InfoRow label="Language" value="English" color="#e2e6f0" />
       </SectionCard>
-
-      <SectionCard title="Notifications" :icon="Bell">
-        <div v-for="n in notifications" :key="n.key" class="notif-row">
-          <span class="notif-label">{{ n.label }}</span>
-          <ToggleSwitch v-model="n.enabled" />
-        </div>
-      </SectionCard>
     </template>
 
     <!-- ═══════════════ SERVICES ═══════════════ -->
@@ -463,6 +456,274 @@
       </SectionCard>
     </template>
 
+    <!-- ═══════════════ NOTIFICATIONS ═══════════════ -->
+    <template v-if="activeSection === 'notifications'">
+      <SectionCard title="Channels" :icon="Send">
+        <p class="rate-limit-hint" style="margin-bottom:12px">
+          Configure notification channels to receive vehicle alerts.
+        </p>
+
+        <!-- Telegram channel -->
+        <div class="channel-card">
+          <div class="channel-header" @click="telegramExpanded = !telegramExpanded" style="cursor:pointer">
+            <div class="channel-info">
+              <component :is="telegramExpanded ? ChevronDown : ChevronRight" :size="14" class="channel-chevron" />
+              <Send :size="14" class="channel-icon" />
+              <span class="channel-name">Telegram</span>
+              <span v-if="telegramChannel" class="channel-badge" :class="telegramChannel.enabled ? 'active' : 'inactive'">
+                {{ telegramChannel.enabled ? 'Active' : 'Disabled' }}
+              </span>
+              <span v-else class="channel-badge inactive">Not configured</span>
+            </div>
+            <ToggleSwitch
+              v-if="telegramChannel"
+              :modelValue="telegramChannel.enabled"
+              @update:modelValue="toggleTelegramEnabled"
+              @click.stop
+            />
+          </div>
+
+          <Transition name="collapse">
+            <div v-if="telegramExpanded" class="channel-body">
+              <div class="form-group">
+                <label>Bot Token</label>
+                <div class="secret-input-wrap">
+                  <input
+                    v-model="telegramForm.bot_token"
+                    :type="showTelegramSecrets ? 'text' : 'password'"
+                    placeholder="123456:ABC-DEF..."
+                  />
+                  <button class="secret-toggle-btn" type="button" @click="showTelegramSecrets = !showTelegramSecrets" tabindex="-1">
+                    <component :is="showTelegramSecrets ? EyeOff : Eye" :size="14" />
+                  </button>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Chat ID</label>
+                <div class="secret-input-wrap">
+                  <input
+                    v-model="telegramForm.chat_id"
+                    :type="showTelegramSecrets ? 'text' : 'password'"
+                    placeholder="-100123456789"
+                  />
+                </div>
+              </div>
+              <div class="channel-actions">
+                <button class="save-btn" :disabled="notifSaving || !telegramForm.bot_token || !telegramForm.chat_id" @click="saveTelegramChannel">
+                  {{ notifSaving ? 'Saving…' : telegramChannel ? 'Save' : 'Configure' }}
+                </button>
+                <button v-if="telegramChannel" class="service-btn btn-start" :disabled="notifTesting" @click="testTelegram">
+                  <Bell :size="13" style="flex-shrink:0" /> {{ notifTesting ? 'Sending…' : 'Test' }}
+                </button>
+              </div>
+              <div v-if="notifTestResult" :class="notifTestResult.success ? 'field-success' : 'field-error'" style="margin-top:6px">
+                {{ notifTestResult.message }}
+              </div>
+            </div>
+          </Transition>
+        </div>
+
+        <div v-if="notifError" class="field-error" style="margin-top:6px">{{ notifError }}</div>
+
+        <!-- Cooldown setting -->
+        <div class="channel-cooldown">
+          <div class="interval-row">
+            <div>
+              <span class="interval-label">Notification cooldown</span>
+              <p class="cooldown-desc">Time to suppress repeated notifications for the same event. Set to 0 to disable.</p>
+            </div>
+            <div class="interval-control">
+              <input
+                type="number"
+                class="pref-input"
+                :min="0"
+                :max="86400"
+                v-model.number="cooldownSeconds"
+                style="width:70px"
+              />
+              <span class="pref-unit">sec</span>
+              <button class="save-btn save-btn-sm" @click="saveCooldown">Set</button>
+            </div>
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Events" :icon="Activity">
+        <p class="rate-limit-hint" style="margin-bottom:12px">
+          Select which events you want to receive as notifications.
+        </p>
+
+        <!-- Search filter -->
+        <div class="event-search-wrap">
+          <Search :size="14" class="event-search-icon" />
+          <input v-model="eventSearch" type="text" class="event-search-input" placeholder="Search events..." />
+          <button v-if="eventSearch" class="event-search-clear" @click="eventSearch = ''">
+            <X :size="12" />
+          </button>
+        </div>
+
+        <div v-for="category in eventCategories" :key="category.key" class="notif-category" v-show="filteredEventsByCategory[category.key].length">
+          <div class="notif-category-title" @click="toggleCategory(category.key)" style="cursor:pointer">
+            <div class="notif-category-left">
+              <component :is="collapsedCategories.has(category.key) ? ChevronRight : ChevronDown" :size="13" />
+              <component :is="categoryIcons[category.key]" :size="13" />
+              <span>{{ category.label }}</span>
+            </div>
+            <span class="notif-category-count">{{ filteredEventsByCategory[category.key].filter(e => e.enabled).length }}/{{ filteredEventsByCategory[category.key].length }}</span>
+          </div>
+          <template v-if="!collapsedCategories.has(category.key)">
+            <template v-for="evt in filteredEventsByCategory[category.key]" :key="evt.event_type">
+              <div class="notif-event-row">
+                <div class="notif-event-info">
+                  <span class="notif-event-label">{{ evt.label }}</span>
+                  <span class="notif-event-desc">{{ evt.description }}</span>
+                </div>
+                <div class="notif-event-actions">
+                  <button
+                    class="event-test-btn"
+                    :disabled="testingEvent === evt.event_type || !telegramChannel"
+                    @click="testEvent(evt)"
+                    title="Send test notification"
+                  >
+                    <Bell :size="12" :class="{ spinning: testingEvent === evt.event_type }" />
+                  </button>
+                  <ToggleSwitch :modelValue="evt.enabled" @update:modelValue="toggleEvent(evt, $event)" />
+                </div>
+              </div>
+              <!-- Configurable options shown directly under each event -->
+              <div v-if="evt.configurable && evt.enabled" class="notif-event-config">
+                <div v-for="(schema, paramKey) in evt.config_schema" :key="paramKey" class="interval-row" style="margin-top:4px">
+                  <span class="interval-label">{{ schema.label || paramKey }}</span>
+                  <div class="interval-control">
+                    <input
+                      type="number"
+                      class="pref-input"
+                      :min="schema.min"
+                      :max="schema.max"
+                      :value="getEventConfigValue(evt, paramKey, schema.default)"
+                      @change="setEventConfigValue(evt, paramKey, $event.target.value)"
+                      style="width:60px"
+                    />
+                    <span class="pref-unit">{{ schema.unit }}</span>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </template>
+        </div>
+
+        <div v-if="eventSearch && eventCategories.every(c => !filteredEventsByCategory[c.key].length)" class="rate-limit-hint" style="text-align:center;padding:16px 0">
+          No events matching "{{ eventSearch }}"
+        </div>
+
+        <button class="save-btn" style="margin-top:12px" :disabled="notifSaving" @click="saveEventPreferences">
+          {{ notifSaving ? 'Saving…' : 'Save preferences' }}
+        </button>
+        <div v-if="eventsSuccess" class="field-success" style="margin-top:6px">{{ eventsSuccess }}</div>
+      </SectionCard>
+
+      <SectionCard title="Location Tracking" :icon="Locate">
+        <p class="rate-limit-hint" style="margin-bottom:12px">
+          Send periodic location updates via Telegram. Useful for anti-theft monitoring.
+        </p>
+
+        <div class="tracking-status">
+          <div class="service-status">
+            <span class="status-dot" :class="tracking.active ? 'running' : 'stopped'" />
+            <span class="service-text">
+              {{ tracking.active ? `Active · every ${tracking.interval_seconds}s` : 'Stopped' }}
+            </span>
+          </div>
+        </div>
+
+        <div class="interval-row" style="margin-top:12px">
+          <span class="interval-label">Interval</span>
+          <div class="interval-control">
+            <input
+              type="number"
+              class="pref-input"
+              :min="10"
+              :max="3600"
+              v-model.number="trackingInterval"
+              style="width:70px"
+            />
+            <span class="pref-unit">sec</span>
+          </div>
+        </div>
+
+        <div class="channel-actions" style="margin-top:12px">
+          <button v-if="!tracking.active" class="save-btn" :disabled="!telegramChannel || trackingLoading" @click="startTracking">
+            {{ trackingLoading ? 'Starting…' : 'Start Tracking' }}
+          </button>
+          <button v-else class="service-btn btn-stop" :disabled="trackingLoading" @click="stopTracking">
+            {{ trackingLoading ? 'Stopping…' : 'Stop Tracking' }}
+          </button>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Geofences" :icon="Navigation">
+        <p class="rate-limit-hint" style="margin-bottom:12px">
+          Configure geographic zones to receive notifications when the vehicle enters or exits.
+        </p>
+
+        <div v-for="gf in geofences" :key="gf.id" class="geofence-item">
+          <div class="geofence-header">
+            <div class="geofence-name-row">
+              <MapPin :size="13" class="geofence-pin" />
+              <span class="geofence-name">{{ gf.name }}</span>
+            </div>
+            <button class="geofence-delete-btn" @click="deleteGeofence(gf.id)">
+              <Trash2 :size="13" />
+            </button>
+          </div>
+          <div class="geofence-details">
+            <span>{{ gf.latitude.toFixed(5) }}, {{ gf.longitude.toFixed(5) }} · {{ gf.radius_m }}m</span>
+          </div>
+          <div class="geofence-toggles">
+            <label class="geofence-toggle-label">
+              <input type="checkbox" :checked="gf.notify_on_enter" @change="updateGeofenceField(gf, 'notify_on_enter', $event.target.checked)" /> Enter
+            </label>
+            <label class="geofence-toggle-label">
+              <input type="checkbox" :checked="gf.notify_on_exit" @change="updateGeofenceField(gf, 'notify_on_exit', $event.target.checked)" /> Exit
+            </label>
+          </div>
+        </div>
+
+        <div class="divider" v-if="geofences.length" />
+
+        <div class="notif-category-title" style="cursor:default">
+          <div class="notif-category-left">
+            <MapPin :size="13" />
+            <span>Add zone</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Name</label>
+          <input v-model="newGeofence.name" type="text" placeholder="Home, Work, ..." />
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-end">
+          <div class="form-group" style="flex:1">
+            <label>Latitude</label>
+            <input v-model.number="newGeofence.latitude" type="number" step="0.00001" placeholder="45.12345" />
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>Longitude</label>
+            <input v-model.number="newGeofence.longitude" type="number" step="0.00001" placeholder="9.12345" />
+          </div>
+          <button class="locate-btn" :disabled="geolocating" @click="useCurrentLocation" title="Use current location">
+            <Locate :size="15" :class="{ spinning: geolocating }" />
+          </button>
+        </div>
+        <div class="form-group">
+          <label>Radius (m)</label>
+          <input v-model.number="newGeofence.radius_m" type="number" min="10" max="5000" step="10" />
+        </div>
+        <button class="save-btn" :disabled="notifSaving || !newGeofence.name || !newGeofence.latitude" @click="addGeofence">
+          {{ notifSaving ? 'Saving…' : 'Add geofence' }}
+        </button>
+      </SectionCard>
+    </template>
+
     <!-- ═══════════════ ADVANCED ═══════════════ -->
     <template v-if="activeSection === 'advanced'">
       <SectionCard title="Log Levels" :icon="SlidersHorizontal">
@@ -737,14 +998,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import SectionCard from '../components/SectionCard.vue'
 import InfoRow from '../components/InfoRow.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
 import LogViewer from '../components/LogViewer.vue'
 import { api } from '../composables/useApi'
 import { useAppStore } from '../stores/appStore'
-import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity } from 'lucide-vue-next'
+import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity, Eye, EyeOff, Send, ChevronDown, ChevronRight, Search, MapPin, Locate, Zap, CarFront, Lock, X, Trash2 } from 'lucide-vue-next'
 
 const store = useAppStore()
 
@@ -752,6 +1013,7 @@ const sections = [
   { key: 'account', label: 'Account', icon: User },
   { key: 'general', label: 'General', icon: SlidersHorizontal },
   { key: 'services', label: 'Services', icon: Wrench },
+  { key: 'notifications', label: 'Notifications', icon: Bell },
   { key: 'advanced', label: 'Advanced', icon: Code },
   { key: 'about', label: 'About', icon: Info },
 ]
@@ -807,13 +1069,6 @@ const initials = computed(() => {
   const n = displayName.value
   return n.substring(0, 2).toUpperCase()
 })
-
-const notifications = reactive([
-  { label: 'Charge complete', key: 'notifCharge', enabled: true },
-  { label: 'Low battery (<20%)', key: 'notifLow', enabled: true },
-  { label: 'Tire pressure', key: 'notifTire', enabled: true },
-  { label: 'Software updates', key: 'notifOTA', enabled: false },
-])
 
 // -- Scheduler state --------------------------------------------------------
 const scheduler = reactive({
@@ -1376,6 +1631,318 @@ async function saveLogLevels() {
   } catch { /* ignore */ }
 }
 
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+const telegramChannel = ref(null)
+const telegramForm = reactive({ bot_token: '', chat_id: '' })
+const notifSaving = ref(false)
+const notifTesting = ref(false)
+const notifError = ref('')
+const notifTestResult = ref(null)
+const showTelegramSecrets = ref(false)
+const telegramExpanded = ref(true)
+const cooldownSeconds = ref(300)
+const notifEvents = ref([])
+const eventsSuccess = ref('')
+const eventSearch = ref('')
+const collapsedCategories = ref(new Set())
+const geofences = ref([])
+const newGeofence = reactive({ name: '', latitude: null, longitude: null, radius_m: 200 })
+const geolocating = ref(false)
+
+const categoryIcons = { charging: Zap, driving: CarFront, security: Lock, maintenance: Wrench }
+
+const eventCategories = [
+  { key: 'charging', label: 'Charging' },
+  { key: 'driving', label: 'Driving' },
+  { key: 'security', label: 'Security' },
+  { key: 'maintenance', label: 'Maintenance' },
+]
+
+const filteredEventsByCategory = computed(() => {
+  const q = eventSearch.value.toLowerCase().trim()
+  const map = {}
+  for (const cat of eventCategories) {
+    const events = notifEvents.value.filter(e => e.category === cat.key)
+    map[cat.key] = q ? events.filter(e => e.label.toLowerCase().includes(q) || e.description?.toLowerCase().includes(q) || e.event_type.toLowerCase().includes(q)) : events
+  }
+  return map
+})
+
+function toggleCategory(key) {
+  if (collapsedCategories.value.has(key)) {
+    collapsedCategories.value.delete(key)
+  } else {
+    collapsedCategories.value.add(key)
+  }
+}
+
+function useCurrentLocation() {
+  if (!navigator.geolocation) return
+  geolocating.value = true
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      newGeofence.latitude = parseFloat(pos.coords.latitude.toFixed(5))
+      newGeofence.longitude = parseFloat(pos.coords.longitude.toFixed(5))
+      geolocating.value = false
+    },
+    () => { geolocating.value = false },
+    { enableHighAccuracy: true, timeout: 10000 }
+  )
+}
+
+function getEventConfigValue(evt, paramKey, defaultVal) {
+  return evt.config?.[paramKey] ?? defaultVal
+}
+
+function setEventConfigValue(evt, paramKey, value) {
+  if (!evt.config) evt.config = {}
+  evt.config[paramKey] = Number(value)
+}
+
+async function loadNotifications() {
+  try {
+    const channels = await api('GET', '/api/notifications/channels')
+    const tg = channels.find(c => c.channel_type === 'telegram')
+    if (tg) {
+      telegramChannel.value = tg
+      telegramForm.bot_token = tg.config?.bot_token || ''
+      telegramForm.chat_id = tg.config?.chat_id || ''
+    }
+    // Load events
+    const events = await api('GET', '/api/notifications/events' + (tg ? `?channel_id=${tg.id}` : ''))
+    notifEvents.value = events
+    // Load geofences
+    geofences.value = await api('GET', '/api/notifications/geofences')
+    // Load cooldown
+    const cd = await api('GET', '/api/notifications/cooldown')
+    cooldownSeconds.value = cd.cooldown_seconds ?? 300
+    // Load tracking status
+    await loadTrackingStatus()
+  } catch (e) {
+    notifError.value = e.message || 'Failed to load notifications'
+  }
+}
+
+async function saveCooldown() {
+  try {
+    await api('PUT', '/api/notifications/cooldown', { cooldown_seconds: cooldownSeconds.value })
+  } catch (e) {
+    notifError.value = e.message || 'Failed to save cooldown'
+  }
+}
+
+async function saveTelegramChannel() {
+  notifSaving.value = true
+  notifError.value = ''
+  try {
+    const config = { bot_token: telegramForm.bot_token, chat_id: telegramForm.chat_id }
+    if (telegramChannel.value) {
+      const updated = await api('PUT', `/api/notifications/channels/${telegramChannel.value.id}`, { config })
+      telegramChannel.value = updated
+    } else {
+      const created = await api('POST', '/api/notifications/channels', { channel_type: 'telegram', config, enabled: true })
+      telegramChannel.value = created
+      // Reload events now that we have a channel
+      const events = await api('GET', `/api/notifications/events?channel_id=${created.id}`)
+      notifEvents.value = events
+    }
+  } catch (e) {
+    notifError.value = e.message || 'Save failed'
+  } finally {
+    notifSaving.value = false
+  }
+}
+
+async function toggleTelegramEnabled() {
+  if (!telegramChannel.value) return
+  notifSaving.value = true
+  try {
+    const updated = await api('PUT', `/api/notifications/channels/${telegramChannel.value.id}`, { enabled: !telegramChannel.value.enabled })
+    telegramChannel.value = updated
+  } catch (e) {
+    notifError.value = e.message || 'Toggle failed'
+  } finally {
+    notifSaving.value = false
+  }
+}
+
+async function testTelegram() {
+  if (!telegramChannel.value) return
+  notifTesting.value = true
+  notifTestResult.value = null
+  try {
+    const result = await api('POST', `/api/notifications/channels/${telegramChannel.value.id}/test`)
+    notifTestResult.value = result
+  } catch (e) {
+    notifTestResult.value = { success: false, message: e.message || 'Test failed' }
+  } finally {
+    notifTesting.value = false
+  }
+}
+
+function toggleEvent(evt, enabled) {
+  evt.enabled = enabled
+}
+
+const testingEvent = ref(null)
+
+async function testEvent(evt) {
+  if (!telegramChannel.value) {
+    notifError.value = 'Configure a Telegram channel first'
+    return
+  }
+  testingEvent.value = evt.event_type
+  try {
+    const result = await api('POST', `/api/notifications/channels/${telegramChannel.value.id}/test-event`, { event_type: evt.event_type, vin: store.selectedVin })
+    if (!result.success) {
+      notifError.value = result.message || 'Test failed'
+    }
+  } catch (e) {
+    notifError.value = e.message || 'Test failed'
+  } finally {
+    testingEvent.value = null
+  }
+}
+
+async function saveEventPreferences() {
+  if (!telegramChannel.value) {
+    notifError.value = 'Configure a Telegram channel first'
+    return
+  }
+  notifSaving.value = true
+  eventsSuccess.value = ''
+  try {
+    const preferences = notifEvents.value.map(e => ({
+      event_type: e.event_type,
+      enabled: e.enabled,
+      config: e.config || null,
+    }))
+    await api('PUT', '/api/notifications/events', { channel_id: telegramChannel.value.id, preferences })
+    eventsSuccess.value = 'Preferences saved'
+    setTimeout(() => { eventsSuccess.value = '' }, 3000)
+  } catch (e) {
+    notifError.value = e.message || 'Save failed'
+  } finally {
+    notifSaving.value = false
+  }
+}
+
+// -- Location Tracking ------------------------------------------------------
+const tracking = reactive({ active: false, interval_seconds: 60 })
+const trackingInterval = ref(60)
+const trackingLoading = ref(false)
+let trackingPollTimer = null
+
+function startTrackingPoll() {
+  stopTrackingPoll()
+  trackingPollTimer = setInterval(async () => {
+    if (!store.selectedVin) return
+    try {
+      const data = await api('GET', `/api/tracking/${store.selectedVin}`)
+      if (!data.tracking && tracking.active) {
+        tracking.active = false
+        stopTrackingPoll()
+      }
+    } catch { /* ignore */ }
+  }, 5000)
+}
+
+function stopTrackingPoll() {
+  if (trackingPollTimer) {
+    clearInterval(trackingPollTimer)
+    trackingPollTimer = null
+  }
+}
+
+async function loadTrackingStatus() {
+  if (!store.selectedVin) return
+  try {
+    const data = await api('GET', `/api/tracking/${store.selectedVin}`)
+    tracking.active = data.tracking
+    if (data.interval_seconds) {
+      tracking.interval_seconds = data.interval_seconds
+      trackingInterval.value = data.interval_seconds
+    }
+    if (data.tracking) startTrackingPoll()
+    else stopTrackingPoll()
+  } catch {
+    // ignore
+  }
+}
+
+async function startTracking() {
+  if (!store.selectedVin) return
+  trackingLoading.value = true
+  try {
+    const data = await api('POST', `/api/tracking/${store.selectedVin}/start`, { interval_seconds: trackingInterval.value })
+    tracking.active = data.tracking
+    tracking.interval_seconds = data.interval_seconds
+    startTrackingPoll()
+  } catch (e) {
+    notifError.value = e.message || 'Failed to start tracking'
+  } finally {
+    trackingLoading.value = false
+  }
+}
+
+async function stopTracking() {
+  if (!store.selectedVin) return
+  trackingLoading.value = true
+  try {
+    await api('POST', `/api/tracking/${store.selectedVin}/stop`)
+    tracking.active = false
+    stopTrackingPoll()
+  } catch (e) {
+    notifError.value = e.message || 'Failed to stop tracking'
+  } finally {
+    trackingLoading.value = false
+  }
+}
+
+async function addGeofence() {
+  notifSaving.value = true
+  try {
+    const gf = await api('POST', '/api/notifications/geofences', {
+      name: newGeofence.name,
+      latitude: newGeofence.latitude,
+      longitude: newGeofence.longitude,
+      radius_m: newGeofence.radius_m,
+      notify_on_enter: true,
+      notify_on_exit: true,
+      enabled: true,
+    })
+    geofences.value.push(gf)
+    newGeofence.name = ''
+    newGeofence.latitude = null
+    newGeofence.longitude = null
+    newGeofence.radius_m = 200
+  } catch (e) {
+    notifError.value = e.message || 'Failed to add geofence'
+  } finally {
+    notifSaving.value = false
+  }
+}
+
+async function deleteGeofence(id) {
+  try {
+    await api('DELETE', `/api/notifications/geofences/${id}`)
+    geofences.value = geofences.value.filter(g => g.id !== id)
+  } catch (e) {
+    notifError.value = e.message || 'Failed to delete geofence'
+  }
+}
+
+async function updateGeofenceField(gf, field, value) {
+  try {
+    await api('PUT', `/api/notifications/geofences/${gf.id}`, { [field]: value })
+    gf[field] = value
+  } catch (e) {
+    notifError.value = e.message || 'Failed to update geofence'
+  }
+}
+
 onMounted(() => {
   loadScheduler()
   loadLiveRefresh()
@@ -1387,6 +1954,11 @@ onMounted(() => {
   loadAbrp()
   loadVehiclePin()
   loadLogLevels()
+  loadNotifications()
+})
+
+onBeforeUnmount(() => {
+  stopTrackingPoll()
 })
 </script>
 
@@ -1598,6 +2170,103 @@ onMounted(() => {
 }
 .notif-row:last-child { border-bottom: none; }
 .notif-label { font-size: 13px; color: var(--sub); }
+
+/* Channel card */
+.channel-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--elevated);
+  overflow: hidden;
+}
+.channel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.channel-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.channel-icon { color: var(--sub); flex-shrink: 0; }
+.channel-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.channel-badge {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.channel-badge.active {
+  background: #00e67618;
+  color: #00e676;
+  border: 1px solid #00e67633;
+}
+.channel-badge.inactive {
+  background: var(--bg);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.channel-body {
+  padding: 14px;
+}
+.channel-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.channel-cooldown {
+  margin-top: 14px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.cooldown-desc {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.save-btn-sm {
+  padding: 4px 12px;
+  font-size: 12px;
+  min-width: unset;
+  margin-left: 8px;
+}
+
+/* Secret input with reveal toggle */
+.secret-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.secret-input-wrap input {
+  width: 100%;
+  padding-right: 36px;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 9px 36px 9px 12px;
+  font-size: 13px;
+  color: var(--sub);
+  font-family: var(--mono);
+  transition: border 0.2s;
+}
+.secret-input-wrap input:focus { border-color: #00d4ff55; outline: none; }
+.secret-input-wrap input::placeholder { color: var(--muted2); }
+.secret-toggle-btn {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+.secret-toggle-btn:hover { color: var(--sub); }
 
 .raw-toggle {
   background: transparent;
@@ -2042,5 +2711,205 @@ onMounted(() => {
 .log-level-select option {
   background: var(--card, #1a1e2e);
   color: var(--text);
+}
+
+/* Notifications */
+/* Channel collapse transition */
+.collapse-enter-active, .collapse-leave-active {
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+.collapse-enter-from, .collapse-leave-to {
+  opacity: 0;
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.collapse-enter-to, .collapse-leave-from {
+  opacity: 1;
+  max-height: 400px;
+}
+.channel-chevron { color: var(--muted); flex-shrink: 0; }
+
+/* Event search */
+.event-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.event-search-icon {
+  position: absolute;
+  left: 10px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.event-search-input {
+  width: 100%;
+  padding: 8px 32px 8px 32px;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--sub);
+  transition: border 0.2s;
+}
+.event-search-input:focus { border-color: #00d4ff55; outline: none; }
+.event-search-input::placeholder { color: var(--muted2); }
+.event-search-clear {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+.event-search-clear:hover { color: var(--sub); }
+
+.notif-category { margin-bottom: 16px; }
+.notif-category-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary, #8a919e);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--btn-border, #2a2e3e);
+  user-select: none;
+}
+.notif-category-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.notif-category-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.notif-event-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  gap: 12px;
+}
+.notif-event-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.notif-event-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.event-test-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: none;
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.event-test-btn:hover { color: var(--sub); border-color: #00d4ff44; }
+.event-test-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.notif-event-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.notif-event-desc {
+  font-size: 11px;
+  color: var(--text-secondary, #6a7080);
+}
+.notif-event-config {
+  padding: 4px 0 8px 16px;
+  border-left: 2px solid var(--btn-border, #2a2e3e);
+  margin-bottom: 4px;
+}
+.geofence-item {
+  padding: 10px;
+  border: 1px solid var(--btn-border, #2a2e3e);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+.geofence-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.geofence-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.geofence-pin { color: var(--sub); flex-shrink: 0; }
+.geofence-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text);
+}
+.geofence-delete-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s, background 0.15s;
+}
+.geofence-delete-btn:hover { color: #f44336; background: #f4433610; }
+.locate-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 0.9rem;
+  background: var(--elevated);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  color: var(--sub);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.2s, color 0.2s;
+}
+.locate-btn:hover { border-color: #00d4ff55; color: #00d4ff; }
+.locate-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.geofence-details {
+  font-size: 11px;
+  color: var(--text-secondary, #6a7080);
+  margin-top: 4px;
+}
+.geofence-toggles {
+  display: flex;
+  gap: 16px;
+  margin-top: 6px;
+}
+.geofence-toggle-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
 }
 </style>

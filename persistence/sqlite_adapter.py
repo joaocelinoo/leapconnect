@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -21,7 +22,14 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
-from models import SchedulerSettings, VehicleEvent, VehicleSnapshot
+from models import (
+    Geofence,
+    NotificationChannel,
+    NotificationPreference,
+    SchedulerSettings,
+    VehicleEvent,
+    VehicleSnapshot,
+)
 
 from .repository import VehicleHistoryRepository
 
@@ -111,6 +119,46 @@ class LeapConnectUserRow(Base):
     password_hash = Column(String(512), nullable=False)
     salt = Column(String(64), nullable=False)
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+
+
+class NotificationChannelRow(Base):
+    """Configured notification channel (e.g. Telegram)."""
+
+    __tablename__ = "notification_channels"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    channel_type = Column(String(32), nullable=False)
+    config_json = Column(String(2048), nullable=False, default="{}")
+    enabled = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+
+
+class NotificationPreferenceRow(Base):
+    """Per-event notification preference for a channel."""
+
+    __tablename__ = "notification_preferences"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    channel_id = Column(Integer, nullable=False, index=True)
+    event_type = Column(String(50), nullable=False)
+    enabled = Column(Boolean, nullable=False, default=True)
+    config_json = Column(String(1024), nullable=True)
+
+
+class GeofenceRow(Base):
+    """Geographic zone for enter/exit notifications."""
+
+    __tablename__ = "geofences"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    vin = Column(String(20), nullable=True, index=True)
+    name = Column(String(128), nullable=False)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    radius_m = Column(Float, nullable=False, default=200.0)
+    notify_on_enter = Column(Boolean, nullable=False, default=True)
+    notify_on_exit = Column(Boolean, nullable=False, default=True)
+    enabled = Column(Boolean, nullable=False, default=True)
 
 
 # ---------------------------------------------------------------------------
@@ -682,3 +730,203 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
                 row.password_hash = self._hash_password(password, row.salt)
             await session.commit()
             return {"id": row.id, "display_name": row.display_name}
+
+    # -- notification channels -----------------------------------------------
+
+    async def get_notification_channels(self) -> list[NotificationChannel]:
+        """Return all notification channels."""
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(NotificationChannelRow).order_by(NotificationChannelRow.id.asc())
+            )
+            rows = result.scalars().all()
+        return [
+            NotificationChannel(
+                id=r.id,
+                channel_type=r.channel_type,
+                config=json.loads(r.config_json) if r.config_json else {},
+                enabled=r.enabled,
+                created_at=r.created_at,
+            )
+            for r in rows
+        ]
+
+    async def get_notification_channel(
+        self, channel_id: int
+    ) -> NotificationChannel | None:
+        """Return a single notification channel by ID."""
+        async with self._session_factory() as session:
+            row = await session.get(NotificationChannelRow, channel_id)
+            if not row:
+                return None
+            return NotificationChannel(
+                id=row.id,
+                channel_type=row.channel_type,
+                config=json.loads(row.config_json) if row.config_json else {},
+                enabled=row.enabled,
+                created_at=row.created_at,
+            )
+
+    async def save_notification_channel(
+        self, channel: NotificationChannel
+    ) -> NotificationChannel:
+        """Create or update a notification channel. Returns the saved channel."""
+        async with self._session_factory() as session:
+            if channel.id:
+                row = await session.get(NotificationChannelRow, channel.id)
+                if row:
+                    row.channel_type = channel.channel_type
+                    row.config_json = json.dumps(channel.config)
+                    row.enabled = channel.enabled
+                    await session.commit()
+                    channel.id = row.id
+                    return channel
+            # Create new
+            row = NotificationChannelRow(
+                channel_type=channel.channel_type,
+                config_json=json.dumps(channel.config),
+                enabled=channel.enabled,
+                created_at=datetime.now(UTC),
+            )
+            session.add(row)
+            await session.commit()
+            channel.id = row.id
+            channel.created_at = row.created_at
+            return channel
+
+    async def delete_notification_channel(self, channel_id: int) -> bool:
+        """Delete a notification channel and its preferences."""
+        async with self._session_factory() as session:
+            row = await session.get(NotificationChannelRow, channel_id)
+            if not row:
+                return False
+            # Delete associated preferences
+            prefs = await session.execute(
+                select(NotificationPreferenceRow).where(
+                    NotificationPreferenceRow.channel_id == channel_id
+                )
+            )
+            for pref in prefs.scalars().all():
+                await session.delete(pref)
+            await session.delete(row)
+            await session.commit()
+            return True
+
+    # -- notification preferences --------------------------------------------
+
+    async def get_notification_preferences(
+        self, channel_id: int
+    ) -> list[NotificationPreference]:
+        """Return all preferences for a channel."""
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(NotificationPreferenceRow).where(
+                    NotificationPreferenceRow.channel_id == channel_id
+                )
+            )
+            rows = result.scalars().all()
+        return [
+            NotificationPreference(
+                id=r.id,
+                channel_id=r.channel_id,
+                event_type=r.event_type,
+                enabled=r.enabled,
+                config=json.loads(r.config_json) if r.config_json else None,
+            )
+            for r in rows
+        ]
+
+    async def save_notification_preferences(
+        self, channel_id: int, preferences: list[NotificationPreference]
+    ) -> None:
+        """Upsert notification preferences for a channel (replaces all)."""
+        async with self._session_factory() as session:
+            # Delete existing
+            existing = await session.execute(
+                select(NotificationPreferenceRow).where(
+                    NotificationPreferenceRow.channel_id == channel_id
+                )
+            )
+            for row in existing.scalars().all():
+                await session.delete(row)
+            # Insert new
+            for pref in preferences:
+                session.add(
+                    NotificationPreferenceRow(
+                        channel_id=channel_id,
+                        event_type=pref.event_type,
+                        enabled=pref.enabled,
+                        config_json=json.dumps(pref.config) if pref.config else None,
+                    )
+                )
+            await session.commit()
+
+    # -- geofences -----------------------------------------------------------
+
+    async def get_geofences(self, vin: str | None = None) -> list[Geofence]:
+        """Return geofences, optionally filtered by VIN."""
+        conditions = []
+        if vin:
+            conditions.append((GeofenceRow.vin == vin) | (GeofenceRow.vin.is_(None)))
+        stmt = select(GeofenceRow).order_by(GeofenceRow.id.asc())
+        if conditions:
+            stmt = stmt.where(*conditions)
+        async with self._session_factory() as session:
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+        return [
+            Geofence(
+                id=r.id,
+                vin=r.vin,
+                name=r.name,
+                latitude=r.latitude,
+                longitude=r.longitude,
+                radius_m=r.radius_m,
+                notify_on_enter=r.notify_on_enter,
+                notify_on_exit=r.notify_on_exit,
+                enabled=r.enabled,
+            )
+            for r in rows
+        ]
+
+    async def save_geofence(self, geofence: Geofence) -> Geofence:
+        """Create or update a geofence."""
+        async with self._session_factory() as session:
+            if geofence.id:
+                row = await session.get(GeofenceRow, geofence.id)
+                if row:
+                    row.vin = geofence.vin
+                    row.name = geofence.name
+                    row.latitude = geofence.latitude
+                    row.longitude = geofence.longitude
+                    row.radius_m = geofence.radius_m
+                    row.notify_on_enter = geofence.notify_on_enter
+                    row.notify_on_exit = geofence.notify_on_exit
+                    row.enabled = geofence.enabled
+                    await session.commit()
+                    return geofence
+            # Create new
+            row = GeofenceRow(
+                vin=geofence.vin,
+                name=geofence.name,
+                latitude=geofence.latitude,
+                longitude=geofence.longitude,
+                radius_m=geofence.radius_m,
+                notify_on_enter=geofence.notify_on_enter,
+                notify_on_exit=geofence.notify_on_exit,
+                enabled=geofence.enabled,
+            )
+            session.add(row)
+            await session.commit()
+            geofence.id = row.id
+            return geofence
+
+    async def delete_geofence(self, geofence_id: int) -> bool:
+        """Delete a geofence by ID."""
+        async with self._session_factory() as session:
+            row = await session.get(GeofenceRow, geofence_id)
+            if not row:
+                return False
+            await session.delete(row)
+            await session.commit()
+            return True

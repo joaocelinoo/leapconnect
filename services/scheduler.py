@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from leapmotor_api.models import Vehicle
 
     from persistence.repository import VehicleHistoryRepository
+    from services.notification_dispatcher import NotificationDispatcher
     from services.vehicle_cache import VehicleStatusCache
 
 _LOGGER = logging.getLogger(__name__)
@@ -42,9 +43,11 @@ class VehicleDataScheduler:
         self,
         repo: VehicleHistoryRepository,
         cache: VehicleStatusCache | None = None,
+        notification_dispatcher: NotificationDispatcher | None = None,
     ) -> None:
         self._repo = repo
         self._cache = cache
+        self._notification_dispatcher = notification_dispatcher
         self._settings = SchedulerSettings()
         self._history_task: asyncio.Task | None = None
         self._mqtt_task: asyncio.Task | None = None
@@ -432,6 +435,19 @@ class VehicleDataScheduler:
                     except Exception as exc:
                         _LOGGER.warning(
                             "Scheduler: failed to save event for %s: %s",
+                            vehicle.vin,
+                            exc,
+                        )
+
+                # Dispatch notifications
+                if self._notification_dispatcher:
+                    try:
+                        await self._notification_dispatcher.dispatch(
+                            events, status, vehicle
+                        )
+                    except Exception as exc:
+                        _LOGGER.warning(
+                            "Scheduler: notification dispatch error for %s: %s",
                             vehicle.vin,
                             exc,
                         )

@@ -818,3 +818,104 @@ class ConsumptionLastWeekResponse(BaseModel):
             other_ec=r.other_ec,
             total_ec=r.total_ec,
         )
+
+
+# ---------------------------------------------------------------------------
+# Notifications
+# ---------------------------------------------------------------------------
+
+
+class NotificationChannelConfig(BaseModel):
+    """Channel-specific configuration (e.g. Telegram bot_token + chat_id)."""
+
+    bot_token: str = ""
+    chat_id: str = ""
+
+
+class NotificationChannelCreate(BaseModel):
+    channel_type: str = "telegram"
+    config: dict = {}
+    enabled: bool = True
+
+
+class NotificationChannelUpdate(BaseModel):
+    config: dict | None = None
+    enabled: bool | None = None
+
+
+class NotificationChannelResponse(BaseModel):
+    id: int
+    channel_type: str
+    config: dict
+    enabled: bool
+    created_at: str | None = None
+
+
+class NotificationPreferenceItem(BaseModel):
+    event_type: str
+    enabled: bool = True
+    config: dict | None = None
+
+
+class NotificationPreferencesUpdate(BaseModel):
+    channel_id: int
+    preferences: list[NotificationPreferenceItem]
+
+
+class NotificationEventInfo(BaseModel):
+    """Describes an available notification event type."""
+
+    event_type: str
+    label: str
+    description: str
+    category: str
+    has_image: bool = False
+    configurable: bool = False
+    config_schema: dict | None = None
+
+
+class NotificationEventStatus(BaseModel):
+    """Current status of a notification event (enabled + config)."""
+
+    event_type: str
+    label: str
+    description: str
+    category: str
+    has_image: bool = False
+    configurable: bool = False
+    config_schema: dict | None = None
+    enabled: bool = False
+    config: dict | None = None
+
+
+class GeofenceCreate(BaseModel):
+    vin: str | None = None
+    name: str
+    latitude: float
+    longitude: float
+    radius_m: float = 200.0
+    notify_on_enter: bool = True
+    notify_on_exit: bool = True
+    enabled: bool = True
+
+
+class GeofenceUpdate(BaseModel):
+    name: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    radius_m: float | None = None
+    notify_on_enter: bool | None = None
+    notify_on_exit: bool | None = None
+    enabled: bool | None = None
+
+
+class GeofenceResponse(BaseModel):
+    id: int
+    vin: str | None = None
+    name: str
+    latitude: float
+    longitude: float
+    radius_m: float
+    notify_on_enter: bool
+    notify_on_exit: bool
+    enabled: bool

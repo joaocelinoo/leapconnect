@@ -56,8 +56,8 @@ BOOLEAN_FIELDS: list[dict] = [
         "event_false": "unlocked",
     },
     {
-        "attr_path": "ignition.bcm_key_position_on1",
-        "field_name": "ignition_on1",
+        "attr_path": "ignition.bcm_key_position_on3",
+        "field_name": "ignition_on3",
         "event_true": "ignition_on",
         "event_false": "ignition_off",
     },

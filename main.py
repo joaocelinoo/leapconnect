@@ -32,7 +32,14 @@ from leapmotor_api.models import MessageList, Vehicle, VehicleStatus
 from pydantic import BaseModel
 from starlette.websockets import WebSocketDisconnect
 
-from models import MqttSettings, UserPreferences, VehicleSnapshot
+from models import (
+    Geofence,
+    MqttSettings,
+    NotificationChannel,
+    NotificationPreference,
+    UserPreferences,
+    VehicleSnapshot,
+)
 from persistence.sqlite_adapter import SQLAlchemyVehicleHistoryRepository
 from schemas import (
     AbrpStatusResponse,
@@ -46,12 +53,20 @@ from schemas import (
     ConsumptionWeeklyRankResponse,
     DailySummaryResponse,
     FullVehicleDataResponse,
+    GeofenceCreate,
+    GeofenceResponse,
+    GeofenceUpdate,
     LiveRefreshStatusResponse,
     LoginResponse,
     MessageListResponse,
     MessageSchema,
     MqttStatusResponse,
     MqttTestResponse,
+    NotificationChannelCreate,
+    NotificationChannelResponse,
+    NotificationChannelUpdate,
+    NotificationEventStatus,
+    NotificationPreferencesUpdate,
     PreferencesResponse,
     ReconnectResponse,
     SchedulerStatusResponse,
@@ -71,6 +86,10 @@ from schemas import (
 )
 from services.abrp import AbrpService
 from services.mqtt_ha import HomeAssistantMqttService
+from services.notification_dispatcher import (
+    EVENT_CATALOG,
+    NotificationDispatcher,
+)
 from services.scheduler import VehicleDataScheduler
 from services.vehicle_cache import VehicleStatusCache
 
@@ -161,6 +180,7 @@ _scheduler: VehicleDataScheduler | None = None
 _mqtt_service: HomeAssistantMqttService | None = None
 _abrp_service: AbrpService | None = None
 _vehicle_cache: VehicleStatusCache | None = None
+_notification_dispatcher: NotificationDispatcher | None = None
 
 # Live refresh — periodic cache refresh for VINs with active WebSocket clients
 _live_refresh_task: asyncio.Task | None = None
@@ -371,7 +391,12 @@ async def _auto_connect() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _history_repo, _scheduler, _mqtt_service, _vehicle_cache
+    global \
+        _history_repo, \
+        _scheduler, \
+        _mqtt_service, \
+        _vehicle_cache, \
+        _notification_dispatcher
     # Capture the running event loop for thread-safe log broadcasting
     _log_handler.set_loop(asyncio.get_running_loop())
 
@@ -390,7 +415,19 @@ async def lifespan(app: FastAPI):
     _vehicle_cache = VehicleStatusCache(rate_limit_seconds=saved.rate_limit_seconds)
     _vehicle_cache.set_on_update(_on_cache_update)
 
-    _scheduler = VehicleDataScheduler(_history_repo, cache=_vehicle_cache)
+    # Initialize notification dispatcher
+    _notification_dispatcher = NotificationDispatcher(
+        repo=_history_repo,
+        image_composer=_compose_notification_image,
+        vehicle_cache=_vehicle_cache,
+    )
+    await _notification_dispatcher.reload_config()
+
+    _scheduler = VehicleDataScheduler(
+        _history_repo,
+        cache=_vehicle_cache,
+        notification_dispatcher=_notification_dispatcher,
+    )
     _scheduler.update_settings(
         enabled=saved.enabled,
         interval_minutes=saved.interval_minutes,
@@ -1441,6 +1478,24 @@ async def _get_image_package(vin: str) -> CarImagePackage:
     pkg = await asyncio.to_thread(CarImagePackage.from_zip, zip_bytes)
     _image_packages[vin] = pkg
     return pkg
+
+
+async def _compose_notification_image(vin: str) -> bytes | None:
+    """Compose a dynamic vehicle image for notifications."""
+    try:
+        pkg = await _get_image_package(vin)
+        vehicle = _find_vehicle(vin)
+        if _vehicle_cache:
+            status = await _vehicle_cache.get(vehicle)
+        else:
+            client = _get_client()
+            status = await client.get_vehicle_status(vehicle)
+        return await asyncio.to_thread(
+            pkg.compose, status, charge_frame=0, format="PNG"
+        )
+    except Exception as exc:
+        _LOGGER.warning("Failed to compose notification image for %s: %s", vin, exc)
+        return None
 
 
 @app.get("/api/vehicles/{vin}/picture/dynamic")
@@ -2899,6 +2954,365 @@ async def get_log_entries(limit: int = 200):
     elif limit > 2000:
         limit = 2000
     return {"entries": _log_handler.get_entries(limit)}
+
+
+# ---------------------------------------------------------------------------
+# Notification Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/notifications/channels")
+async def get_notification_channels(
+    request: Request,
+) -> list[NotificationChannelResponse]:
+    """List all configured notification channels."""
+    channels = await _history_repo.get_notification_channels()
+    return [
+        NotificationChannelResponse(
+            id=ch.id,
+            channel_type=ch.channel_type,
+            config=ch.config,
+            enabled=ch.enabled,
+            created_at=ch.created_at.isoformat() if ch.created_at else None,
+        )
+        for ch in channels
+    ]
+
+
+@app.post("/api/notifications/channels")
+async def create_notification_channel(
+    request: Request, body: NotificationChannelCreate
+) -> NotificationChannelResponse:
+    """Create a new notification channel."""
+    channel = NotificationChannel(
+        channel_type=body.channel_type,
+        config=body.config,
+        enabled=body.enabled,
+    )
+    saved = await _history_repo.save_notification_channel(channel)
+    # Reload dispatcher config
+    if _notification_dispatcher:
+        await _notification_dispatcher.reload_config()
+    return NotificationChannelResponse(
+        id=saved.id,
+        channel_type=saved.channel_type,
+        config=saved.config,
+        enabled=saved.enabled,
+        created_at=saved.created_at.isoformat() if saved.created_at else None,
+    )
+
+
+@app.put("/api/notifications/channels/{channel_id}")
+async def update_notification_channel(
+    request: Request, channel_id: int, body: NotificationChannelUpdate
+) -> NotificationChannelResponse:
+    """Update a notification channel."""
+    existing = await _history_repo.get_notification_channel(channel_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    if body.config is not None:
+        existing.config = body.config
+    if body.enabled is not None:
+        existing.enabled = body.enabled
+    saved = await _history_repo.save_notification_channel(existing)
+    if _notification_dispatcher:
+        await _notification_dispatcher.reload_config()
+    return NotificationChannelResponse(
+        id=saved.id,
+        channel_type=saved.channel_type,
+        config=saved.config,
+        enabled=saved.enabled,
+        created_at=saved.created_at.isoformat() if saved.created_at else None,
+    )
+
+
+@app.delete("/api/notifications/channels/{channel_id}")
+async def delete_notification_channel(
+    request: Request, channel_id: int
+) -> StatusResponse:
+    """Delete a notification channel."""
+    deleted = await _history_repo.delete_notification_channel(channel_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    if _notification_dispatcher:
+        await _notification_dispatcher.reload_config()
+    return StatusResponse(status="ok")
+
+
+@app.post("/api/notifications/channels/{channel_id}/test")
+async def test_notification_channel(request: Request, channel_id: int) -> dict:
+    """Send a test notification via the specified channel."""
+    channel = await _history_repo.get_notification_channel(channel_id)
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    notifier = NotificationDispatcher._create_notifier(channel)
+    if not notifier:
+        raise HTTPException(status_code=400, detail="Invalid channel configuration")
+    success, message = await notifier.test_connection()
+    return {"success": success, "message": message}
+
+
+@app.post("/api/notifications/channels/{channel_id}/test-event")
+async def test_notification_event(request: Request, channel_id: int) -> dict:
+    """Send a test notification for a specific event type."""
+    if not _notification_dispatcher:
+        raise HTTPException(
+            status_code=503, detail="Notification dispatcher not available"
+        )
+    body = await request.json()
+    event_type = body.get("event_type")
+    if not event_type:
+        raise HTTPException(status_code=400, detail="event_type is required")
+    vin = body.get("vin", "")
+    success, message = await _notification_dispatcher.send_test_event(
+        channel_id, event_type, vin=vin
+    )
+    return {"success": success, "message": message}
+
+
+@app.get("/api/notifications/cooldown")
+async def get_notification_cooldown() -> dict:
+    """Get the notification cooldown duration in seconds."""
+    raw = await _history_repo.get_setting("notification_cooldown_seconds")
+    return {"cooldown_seconds": int(float(raw)) if raw else 300}
+
+
+@app.put("/api/notifications/cooldown")
+async def update_notification_cooldown(request: Request) -> dict:
+    """Set the notification cooldown duration in seconds."""
+    body = await request.json()
+    value = body.get("cooldown_seconds")
+    if value is None:
+        raise HTTPException(status_code=422, detail="'cooldown_seconds' is required")
+    try:
+        value = int(value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=422, detail="'cooldown_seconds' must be an integer"
+        ) from exc
+    if value < 0 or value > 86400:
+        raise HTTPException(
+            status_code=422, detail="'cooldown_seconds' must be between 0 and 86400"
+        )
+    await _history_repo.save_setting("notification_cooldown_seconds", str(value))
+    if _notification_dispatcher:
+        await _notification_dispatcher.reload_config()
+    return {"cooldown_seconds": value}
+
+
+# ---------------------------------------------------------------------------
+# Routes — Location Tracking
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/tracking/{vin}/start")
+async def start_tracking(request: Request, vin: str) -> dict:
+    """Start periodic location tracking for a vehicle."""
+    if not _notification_dispatcher:
+        raise HTTPException(
+            status_code=503, detail="Notification dispatcher not available"
+        )
+    body = await request.json()
+    interval = body.get("interval_seconds", 60)
+    try:
+        interval = int(interval)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=422, detail="'interval_seconds' must be an integer"
+        ) from exc
+    if interval < 10 or interval > 3600:
+        raise HTTPException(
+            status_code=422, detail="'interval_seconds' must be between 10 and 3600"
+        )
+    await _notification_dispatcher.start_tracking(vin, interval_seconds=interval)
+    return {"tracking": True, "vin": vin, "interval_seconds": interval}
+
+
+@app.post("/api/tracking/{vin}/stop")
+async def stop_tracking_post(request: Request, vin: str) -> dict:
+    """Stop location tracking for a vehicle (POST)."""
+    if not _notification_dispatcher:
+        raise HTTPException(
+            status_code=503, detail="Notification dispatcher not available"
+        )
+    stopped = await _notification_dispatcher.stop_tracking(vin)
+    return {"tracking": False, "vin": vin, "stopped": stopped}
+
+
+@app.get("/api/tracking/{vin}")
+async def get_tracking_status(vin: str) -> dict:
+    """Get tracking status for a vehicle."""
+    if not _notification_dispatcher:
+        return {"tracking": False, "vin": vin}
+    info = _notification_dispatcher.get_tracking_info(vin)
+    if info:
+        return {"tracking": True, "vin": vin, **info}
+    return {"tracking": False, "vin": vin}
+
+
+@app.get("/api/notifications/events")
+async def get_notification_events(
+    request: Request, channel_id: int | None = None
+) -> list[NotificationEventStatus]:
+    """List all available notification events with their current status."""
+
+    # Get preferences for the specified channel (or first channel)
+    prefs_map: dict[str, NotificationPreference] = {}
+    if channel_id:
+        prefs = await _history_repo.get_notification_preferences(channel_id)
+        prefs_map = {p.event_type: p for p in prefs}
+    else:
+        channels = await _history_repo.get_notification_channels()
+        if channels:
+            prefs = await _history_repo.get_notification_preferences(channels[0].id)
+            prefs_map = {p.event_type: p for p in prefs}
+
+    result = []
+    for event in EVENT_CATALOG:
+        pref = prefs_map.get(event["event_type"])
+        result.append(
+            NotificationEventStatus(
+                event_type=event["event_type"],
+                label=event["label"],
+                description=event["description"],
+                category=event["category"],
+                has_image=event.get("has_image", False),
+                configurable=event.get("configurable", False),
+                config_schema=event.get("config_schema"),
+                enabled=pref.enabled if pref else False,
+                config=pref.config if pref else None,
+            )
+        )
+    return result
+
+
+@app.put("/api/notifications/events")
+async def update_notification_events(
+    request: Request, body: NotificationPreferencesUpdate
+) -> StatusResponse:
+    """Bulk update notification preferences for a channel."""
+    channel = await _history_repo.get_notification_channel(body.channel_id)
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    prefs = [
+        NotificationPreference(
+            channel_id=body.channel_id,
+            event_type=item.event_type,
+            enabled=item.enabled,
+            config=item.config,
+        )
+        for item in body.preferences
+    ]
+    await _history_repo.save_notification_preferences(body.channel_id, prefs)
+    if _notification_dispatcher:
+        await _notification_dispatcher.reload_config()
+    return StatusResponse(status="ok")
+
+
+# -- Geofences --
+
+
+@app.get("/api/notifications/geofences")
+async def get_geofences(
+    request: Request, vin: str | None = None
+) -> list[GeofenceResponse]:
+    """List geofences, optionally filtered by VIN."""
+    geofences = await _history_repo.get_geofences(vin=vin)
+    return [
+        GeofenceResponse(
+            id=gf.id,
+            vin=gf.vin,
+            name=gf.name,
+            latitude=gf.latitude,
+            longitude=gf.longitude,
+            radius_m=gf.radius_m,
+            notify_on_enter=gf.notify_on_enter,
+            notify_on_exit=gf.notify_on_exit,
+            enabled=gf.enabled,
+        )
+        for gf in geofences
+    ]
+
+
+@app.post("/api/notifications/geofences")
+async def create_geofence(request: Request, body: GeofenceCreate) -> GeofenceResponse:
+    """Create a new geofence."""
+    gf = Geofence(
+        vin=body.vin,
+        name=body.name,
+        latitude=body.latitude,
+        longitude=body.longitude,
+        radius_m=body.radius_m,
+        notify_on_enter=body.notify_on_enter,
+        notify_on_exit=body.notify_on_exit,
+        enabled=body.enabled,
+    )
+    saved = await _history_repo.save_geofence(gf)
+    if _notification_dispatcher:
+        await _notification_dispatcher.reload_config()
+    return GeofenceResponse(
+        id=saved.id,
+        vin=saved.vin,
+        name=saved.name,
+        latitude=saved.latitude,
+        longitude=saved.longitude,
+        radius_m=saved.radius_m,
+        notify_on_enter=saved.notify_on_enter,
+        notify_on_exit=saved.notify_on_exit,
+        enabled=saved.enabled,
+    )
+
+
+@app.put("/api/notifications/geofences/{geofence_id}")
+async def update_geofence(
+    request: Request, geofence_id: int, body: GeofenceUpdate
+) -> GeofenceResponse:
+    """Update a geofence."""
+    geofences = await _history_repo.get_geofences()
+    existing = next((gf for gf in geofences if gf.id == geofence_id), None)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Geofence not found")
+    if body.name is not None:
+        existing.name = body.name
+    if body.latitude is not None:
+        existing.latitude = body.latitude
+    if body.longitude is not None:
+        existing.longitude = body.longitude
+    if body.radius_m is not None:
+        existing.radius_m = body.radius_m
+    if body.notify_on_enter is not None:
+        existing.notify_on_enter = body.notify_on_enter
+    if body.notify_on_exit is not None:
+        existing.notify_on_exit = body.notify_on_exit
+    if body.enabled is not None:
+        existing.enabled = body.enabled
+    saved = await _history_repo.save_geofence(existing)
+    if _notification_dispatcher:
+        await _notification_dispatcher.reload_config()
+    return GeofenceResponse(
+        id=saved.id,
+        vin=saved.vin,
+        name=saved.name,
+        latitude=saved.latitude,
+        longitude=saved.longitude,
+        radius_m=saved.radius_m,
+        notify_on_enter=saved.notify_on_enter,
+        notify_on_exit=saved.notify_on_exit,
+        enabled=saved.enabled,
+    )
+
+
+@app.delete("/api/notifications/geofences/{geofence_id}")
+async def delete_geofence_endpoint(
+    request: Request, geofence_id: int
+) -> StatusResponse:
+    """Delete a geofence."""
+    deleted = await _history_repo.delete_geofence(geofence_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Geofence not found")
+    if _notification_dispatcher:
+        await _notification_dispatcher.reload_config()
+    return StatusResponse(status="ok")
 
 
 @app.websocket("/ws/logs")
