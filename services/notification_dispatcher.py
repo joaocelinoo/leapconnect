@@ -564,6 +564,25 @@ class NotificationDispatcher:
         custom_events = self._detect_custom_events(vin, status)
         notifications_to_send.extend(custom_events)
 
+        # Persist custom-detected events to history
+        for event_type, extra in custom_events:
+            try:
+                await self._repo.save_event(
+                    VehicleEvent(
+                        vin=vin,
+                        timestamp=datetime.now(UTC),
+                        event_type=event_type,
+                        field_name=event_type,
+                        old_value=None,
+                        new_value=extra.get("zone_name")
+                        or extra.get("details")
+                        or extra.get("threshold_km")
+                        or None,
+                    )
+                )
+            except Exception as exc:
+                _LOGGER.debug("Failed to persist custom event %s: %s", event_type, exc)
+
         if not notifications_to_send:
             return
 
@@ -712,6 +731,18 @@ class NotificationDispatcher:
             if isinstance(notifier, TelegramNotifier):
                 notifier.start_callback_polling(self)
         _LOGGER.info("Tracking started for %s (every %ds)", vin, interval_seconds)
+        # Persist tracking_start event
+        with contextlib.suppress(Exception):
+            await self._repo.save_event(
+                VehicleEvent(
+                    vin=vin,
+                    timestamp=datetime.now(UTC),
+                    event_type="tracking_start",
+                    field_name="tracking",
+                    old_value=None,
+                    new_value=f"{interval_seconds}s",
+                )
+            )
         return True
 
     async def stop_tracking(self, vin: str) -> bool:
@@ -720,6 +751,18 @@ class NotificationDispatcher:
         if info and info.get("task"):
             info["task"].cancel()
             _LOGGER.info("Tracking stopped for %s", vin)
+            # Persist tracking_stop event
+            with contextlib.suppress(Exception):
+                await self._repo.save_event(
+                    VehicleEvent(
+                        vin=vin,
+                        timestamp=datetime.now(UTC),
+                        event_type="tracking_stop",
+                        field_name="tracking",
+                        old_value=None,
+                        new_value=None,
+                    )
+                )
             return True
         return False
 

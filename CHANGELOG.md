@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **History Events: notification event types** — the Events view in Data History now shows geofence enter/exit, security alerts (movement alert, unlocked timeout), maintenance alerts (tire pressure, low range), and tracking start/stop events
+- **Backend: persist notification events** — custom-detected events from the notification dispatcher (geofence, movement, tire pressure, range low, unlocked timeout) and tracking start/stop are now saved to the `vehicle_events` table for historical analysis
+- **New event dot colors** in History timeline: orange for geofence, cyan for tracking, red for maintenance
+
 ## [0.8.0] - 2026-05-30
 
 ### Added

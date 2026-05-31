@@ -111,6 +111,14 @@
           <option value="moving_stop">Moving stop</option>
           <option value="soc_change">SOC change</option>
           <option value="charge_state_change">Charge state change</option>
+          <option value="geofence_enter">Geofence enter</option>
+          <option value="geofence_exit">Geofence exit</option>
+          <option value="movement_alert">Movement alert</option>
+          <option value="unlocked_timeout">Unlocked timeout</option>
+          <option value="tire_pressure_alert">Tire pressure alert</option>
+          <option value="range_low">Low range</option>
+          <option value="tracking_start">Tracking start</option>
+          <option value="tracking_stop">Tracking stop</option>
         </select>
         <select v-model="eventsDays" class="events-filter" @change="loadEvents()">
           <option :value="1">Today</option>
@@ -360,7 +368,10 @@ function eventDotClass(type) {
   if (type.includes('regen')) return 'dot-regen'
   if (type.includes('charge') || type.includes('plugged')) return 'dot-charge'
   if (type.includes('driving') || type.includes('moving')) return 'dot-drive'
-  if (type.includes('lock') || type.includes('ignition')) return 'dot-security'
+  if (type.includes('lock') || type.includes('ignition') || type.includes('movement_alert') || type.includes('unlocked_timeout')) return 'dot-security'
+  if (type.includes('geofence')) return 'dot-geofence'
+  if (type.includes('tracking')) return 'dot-tracking'
+  if (type.includes('tire') || type.includes('range_low')) return 'dot-maintenance'
   if (type.includes('soc')) return 'dot-soc'
   return 'dot-default'
 }
@@ -2213,6 +2224,9 @@ onBeforeUnmount(destroyCharts)
 .dot-charge { background: #60a5fa; }
 .dot-drive { background: #f59e0b; }
 .dot-security { background: #a78bfa; }
+.dot-geofence { background: #f97316; }
+.dot-tracking { background: #06b6d4; }
+.dot-maintenance { background: #ef4444; }
 .dot-soc { background: #f472b6; }
 .dot-default { background: var(--muted); }
 
