@@ -486,7 +486,7 @@
           <button class="save-btn" :disabled="notifSaving || !telegramForm.bot_token || !telegramForm.chat_id" @click="saveTelegramChannel">
             {{ notifSaving ? 'Saving…' : telegramChannel ? 'Save' : 'Configure' }}
           </button>
-          <button v-if="telegramChannel" class="service-btn btn-start" :disabled="notifTesting" @click="testTelegram">
+          <button v-if="telegramChannel" class="service-btn btn-start" :disabled="notifTesting" @click="testTelegram" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap">
             <Bell :size="13" style="flex-shrink:0" /> {{ notifTesting ? 'Sending…' : 'Test' }}
           </button>
         </div>
@@ -537,7 +537,7 @@
               <span v-else class="channel-badge inactive">Not configured</span>
             </div>
             <div class="channel-controls">
-              <button v-if="telegramChannel" class="service-btn btn-start" :disabled="notifTesting" @click="testTelegram" style="font-size:11px">
+              <button v-if="telegramChannel" class="service-btn btn-start" :disabled="notifTesting" @click="testTelegram" style="font-size:11px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">
                 <Bell :size="12" style="flex-shrink:0" /> {{ notifTesting ? '…' : 'Test' }}
               </button>
               <ToggleSwitch
