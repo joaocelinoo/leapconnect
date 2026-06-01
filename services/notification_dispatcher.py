@@ -450,6 +450,9 @@ class NotificationDispatcher:
         # Tracking mode: vin -> {interval_seconds, task, last_sent, base_url}
         self._tracking: dict[str, dict] = {}
 
+        # Mute state: None = not muted, 0 = permanently muted, timestamp = muted until
+        self._muted_until: float | None = None
+
     async def reload_config(self) -> None:
         """Reload channels, preferences, and geofences from the database."""
         # Stop existing Telegram polling before recreating notifiers
@@ -539,6 +542,47 @@ class NotificationDispatcher:
     def _mark_cooldown(self, vin: str, event_type: str) -> None:
         self._cooldowns[(vin, event_type)] = time.monotonic()
 
+    # -----------------------------------------------------------------------
+    # Mute / unmute
+    # -----------------------------------------------------------------------
+
+    def mute(self, minutes: int = 0) -> None:
+        """Mute all notifications. minutes=0 means permanent."""
+        if minutes <= 0:
+            self._muted_until = 0.0  # permanent
+        else:
+            self._muted_until = time.monotonic() + minutes * 60
+
+    def unmute(self) -> None:
+        """Unmute notifications."""
+        self._muted_until = None
+
+    @property
+    def is_muted(self) -> bool:
+        """True if notifications are currently muted."""
+        if self._muted_until is None:
+            return False
+        if self._muted_until == 0.0:
+            return True  # permanent
+        if time.monotonic() < self._muted_until:
+            return True
+        # Expired
+        self._muted_until = None
+        return False
+
+    @property
+    def mute_remaining_minutes(self) -> int | None:
+        """Minutes remaining on timed mute. None if not muted, 0 if permanent."""
+        if self._muted_until is None:
+            return None
+        if self._muted_until == 0.0:
+            return 0
+        remaining = (self._muted_until - time.monotonic()) / 60
+        if remaining <= 0:
+            self._muted_until = None
+            return None
+        return int(remaining) + 1
+
     async def dispatch(
         self,
         events: list[VehicleEvent],
@@ -549,6 +593,10 @@ class NotificationDispatcher:
         if not self._notifiers:
             return
 
+        # Skip all notifications if muted
+        if self.is_muted:
+            return
+
         vin = vehicle.vin
         vehicle_name = vehicle.vehicle_nickname or vehicle.car_type or vin
 
@@ -556,8 +604,20 @@ class NotificationDispatcher:
         notifications_to_send: list[tuple[str, dict]] = []
 
         # 1. Direct transition events
+        is_plugged = getattr(status, "is_plugged", None)
         for event in events:
             if event.event_type in TRANSITION_EVENTS:
+                # Only notify charge_start/charge_stop when plugged in (wall charger),
+                # not during regenerative braking
+                if (
+                    event.event_type in ("charge_start", "charge_stop")
+                    and not is_plugged
+                ):
+                    _LOGGER.debug(
+                        "Suppressing %s notification — vehicle not plugged in (regen)",
+                        event.event_type,
+                    )
+                    continue
                 notifications_to_send.append((event.event_type, {}))
 
         # 2. Custom detection logic based on current status
@@ -909,6 +969,10 @@ class NotificationDispatcher:
             if hasattr(status, "vehicle") and status.vehicle
             else None
         )
+        # Fallback: check location sub-object
+        if not lat and hasattr(status, "location") and status.location:
+            lat = status.location.latitude
+            lon = status.location.longitude
         soc = status.battery.soc if status.battery else None
         is_parked = status.is_parked if hasattr(status, "is_parked") else None
         is_locked = status.is_locked if hasattr(status, "is_locked") else None

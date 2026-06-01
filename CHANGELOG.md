@@ -8,9 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Telegram Bot: mute/unmute commands** — `/mute` (permanent), `/mute N` (for N minutes), `/unmute` to control notification delivery directly from the chat
+- **Telegram Bot: notification settings menu** — `/notifications` command opens an interactive inline keyboard with:
+  - Mute/unmute quick actions (permanent, 30 min, 1h, 8h)
+  - Category submenus (Charging, Driving, Security, Maintenance)
+  - Per-event toggle buttons (✅/❌) that persist to the database in real-time
 - **History Events: notification event types** — the Events view in Data History now shows geofence enter/exit, security alerts (movement alert, unlocked timeout), maintenance alerts (tire pressure, low range), and tracking start/stop events
 - **Backend: persist notification events** — custom-detected events from the notification dispatcher (geofence, movement, tire pressure, range low, unlocked timeout) and tracking start/stop are now saved to the `vehicle_events` table for historical analysis
 - **New event dot colors** in History timeline: orange for geofence, cyan for tracking, red for maintenance
+
+### Fixed
+- **Charging notifications during regenerative braking** — `charge_start`/`charge_stop` notifications are now suppressed when the vehicle is not plugged in, preventing false alerts during regen braking
+- **Geofence enter/exit notifications not firing** — added missing `status.location` fallback for GPS coordinate extraction in `_detect_custom_events`; vehicles that expose GPS via the `location` sub-object now correctly trigger geofence events
 
 ## [0.8.0] - 2026-05-30
 

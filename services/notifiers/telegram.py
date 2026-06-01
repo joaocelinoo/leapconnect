@@ -285,6 +285,38 @@ class TelegramNotifier(BaseNotifier):
                             "reply_markup": {"inline_keyboard": []},
                         },
                     )
+        elif cb_data.startswith("notif:"):
+            # Notification settings callbacks
+            if self._bot_handler:
+                text, keyboard = await self._bot_handler.handle_notification_callback(
+                    cb_data
+                )
+                await self.answer_callback_query(cq["id"])
+                msg = cq.get("message")
+                if msg and keyboard:
+                    # Edit existing message with new text and keyboard
+                    with contextlib.suppress(Exception):
+                        await client.post(
+                            f"{self._base_url}/editMessageText",
+                            json={
+                                "chat_id": msg["chat"]["id"],
+                                "message_id": msg["message_id"],
+                                "text": text,
+                                "parse_mode": "HTML",
+                                "reply_markup": keyboard,
+                            },
+                        )
+                elif text:
+                    await client.post(
+                        f"{self._base_url}/sendMessage",
+                        json={
+                            "chat_id": self._chat_id,
+                            "text": text,
+                            "parse_mode": "HTML",
+                        },
+                    )
+            else:
+                await self.answer_callback_query(cq["id"], "⚠️ Bot not active")
         elif cb_data.startswith("cmd:"):
             command = cb_data.split(":", 1)[1]
             if self._bot_handler:
@@ -327,15 +359,19 @@ class TelegramNotifier(BaseNotifier):
                     },
                 )
                 return
-        await client.post(
-            f"{self._base_url}/sendMessage",
-            json={
-                "chat_id": self._chat_id,
-                "text": response,
-                "parse_mode": "HTML",
-                "disable_web_page_preview": True,
-            },
-        )
+
+        # For /notifications, include inline keyboard
+        payload = {
+            "chat_id": self._chat_id,
+            "text": response,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        }
+        if cmd == "notifications":
+            keyboard = self._bot_handler.get_notifications_keyboard()
+            payload["reply_markup"] = json.dumps(keyboard)
+
+        await client.post(f"{self._base_url}/sendMessage", json=payload)
 
     async def _handle_pin_message(self, client, msg) -> None:
         """Process a PIN input message: delete it, set PIN, execute pending command."""
