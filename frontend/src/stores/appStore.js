@@ -124,6 +124,22 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  const notificationStatus = ref({ enabled: false, channel: null })
+
+  async function loadNotificationStatus() {
+    try {
+      const channels = await api('GET', '/api/notifications/channels')
+      const tg = channels.find(c => c.channel_type === 'telegram')
+      if (tg) {
+        notificationStatus.value = { enabled: tg.enabled, channel: 'Telegram' }
+      } else {
+        notificationStatus.value = { enabled: false, channel: null }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   async function submitPin(pin, remember = false) {
     await api('POST', '/api/set-pin', { pin })
     hasPin.value = true
@@ -411,6 +427,8 @@ export const useAppStore = defineStore('app', () => {
     loadLiveRefreshStatus,
     abrpStatus,
     loadAbrpStatus,
+    notificationStatus,
+    loadNotificationStatus,
     commandHistory,
     connectWebSocket,
     disconnectWebSocket,

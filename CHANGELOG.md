@@ -7,6 +7,131 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-06-02
+
+### Added
+- **Login: show/hide password toggle** — the login page now includes an eye icon to reveal the password, helping users verify input of complex passwords with special characters
+- **CLI: password reset command** — locked-out users can reset their LeapConnect password from CLI command (see [README.md](README.md#password-reset) for details)
+- **Telegram Bot: multi-user access management** — the bot now supports multiple users with an approval workflow:
+  - **Dashboard Web Approval**: users send `/start` to the bot and appear as "pending" in the Settings > Services > Telegram section; the admin approves or rejects from the web UI
+  - **Deep Linking via Token**: the web UI generates a one-time `t.me/Bot?start=TOKEN` link (valid 10 minutes); the user clicks it and is auto-approved without manual intervention
+  - **Admin inline notifications**: when a new user sends `/start`, all approved users receive an inline keyboard notification with ✅ Approve / ❌ Reject buttons directly in Telegram
+  - **Status change notifications**: approved/rejected users receive a Telegram message; all admins are also notified of the outcome (with user name and username)
+- **Telegram Users management UI** — new "Linked Users" section in the Telegram Bot card:
+  - User list with status badges (pending/approved/rejected), username, and action buttons
+  - Generate deep-link token with copy-to-clipboard functionality
+  - Approve / Reject / Remove buttons per user
+  - Auto-polling every 5 seconds for real-time updates
+- **Database migration 0006**: added `telegram_users` and `telegram_link_tokens` tables for multi-user state persistence
+- **New API endpoints**:
+  - `GET /api/notifications/channels/telegram/users` — list Telegram users (optional `?status=` filter)
+  - `PUT /api/notifications/channels/telegram/users/{chat_id}/approve` — approve a pending user
+  - `PUT /api/notifications/channels/telegram/users/{chat_id}/reject` — reject a pending user
+  - `DELETE /api/notifications/channels/telegram/users/{chat_id}` — remove a user
+  - `POST /api/notifications/channels/telegram/link-token` — generate a deep-link token
+
+### Changed
+- **Telegram notifier: multi-user dispatch** — notifications are now sent to all approved users instead of a single configured `chat_id`
+- **Bot silence for unapproved users** — the bot no longer responds to messages from users who haven't been approved, preventing information leakage
+- **User profile auto-update** — approved users' username, first name, and last name are kept in sync from their Telegram messages
+
+### Removed
+- **Auto-seed of configured chat_id** — the first user is no longer auto-approved; all users must go through the approval flow (deep link or web approval)
+
+## [0.8.1] - 2026-06-01
+
+### Added
+- **Telegram Bot: mute/unmute commands** — `/mute` (permanent), `/mute N` (for N minutes), `/unmute` to control notification delivery directly from the chat
+- **Telegram Bot: notification settings menu** — `/notifications` command opens an interactive inline keyboard with:
+  - Mute/unmute quick actions (permanent, 30 min, 1h, 8h)
+  - Category submenus (Charging, Driving, Security, Maintenance)
+  - Per-event toggle buttons (✅/❌) that persist to the database in real-time
+- **History Events: notification event types** — the Events view in Data History now shows geofence enter/exit, security alerts (movement alert, unlocked timeout), maintenance alerts (tire pressure, low range), and tracking start/stop events
+- **Backend: persist notification events** — custom-detected events from the notification dispatcher (geofence, movement, tire pressure, range low, unlocked timeout) and tracking start/stop are now saved to the `vehicle_events` table for historical analysis
+- **New event dot colors** in History timeline: orange for geofence, cyan for tracking, red for maintenance
+
+### Fixed
+- **Charging notifications during regenerative braking** — `charge_start`/`charge_stop` notifications are now suppressed when the vehicle is not plugged in, preventing false alerts during regen braking
+- **Geofence enter/exit notifications not firing** — added missing `status.location` fallback for GPS coordinate extraction in `_detect_custom_events`; vehicles that expose GPS via the `location` sub-object now correctly trigger geofence events
+
+## [0.8.0] - 2026-05-30
+
+### Added
+- **Telegram Bot service** (`services/telegram_bot.py`): full interactive bot for controlling and querying the vehicle via Telegram commands. Features:
+  - **20+ bot commands**: `/status`, `/location`, `/lock`, `/unlock`, `/trunk_open`, `/trunk_close`, `/find`, `/ac_on`, `/ac_off`, `/defrost`, `/windows_open`, `/windows_close`, `/charging_start`, `/charging_stop`, `/unlock_charger`, `/sunroof_open`, `/sunroof_close`, `/track`, `/track_stop`, `/commands`
+  - **Permission enforcement**: commands respect the same rights + abilities model used by the frontend and MQTT HA — vehicles without specific hardware capabilities won't allow those commands
+  - **Per-command PIN authentication**: every vehicle action command prompts for the operation PIN via Telegram; the PIN message is immediately deleted for security and the PIN is used only for that single command (never persisted from Telegram)
+  - **Dynamic command menu**: `/commands` shows only the commands available for the current vehicle based on its permissions
+  - **Location tracking**: `/track [N]` sends periodic GPS locations with a stop button; `/track_stop` cancels
+  - **Rich status messages**: `/status` shows battery SOC, range, charging state, lock, climate, parking, odometer, tire pressures
+- **Shared Telegram configuration** (`services/telegram_config.py`): `TelegramConfig` dataclass shared between the notifier and the bot service, holding `bot_token`, `chat_id`, and `bot_enabled`
+- **Bot enable/disable toggle**: the Telegram bot commands can be independently enabled or disabled from the UI without affecting notifications; takes effect immediately (no restart required)
+- **Frontend: Telegram Bot card in Services section**: dedicated configuration card with connection settings (Bot Token, Chat ID, Save, Test) and a Bot Commands subsection with enable/disable toggle and status indicator
+- **Frontend: simplified Notifications channel view**: the Telegram channel in Notifications now shows only status, enable/disable toggle, and test button — configuration is managed from the Services section
+- **Vehicle command permission checks** (`main.py`): centralized `_COMMAND_RIGHTS` mapping and `_vehicle_has_right()` function enforce rights + abilities before executing any vehicle command (used by both Telegram bot and future command sources). Commands without the required permission raise `PermissionError`.
+- **Notification system with Telegram**: event-driven notifications dispatched via configurable channels. First implementation: Telegram Bot API with rich HTML messages and dynamic vehicle images.
+  - **Abstract notifier architecture**: `BaseNotifier` interface (`services/notifiers/`) allows future extension to email, webhooks, push notifications, etc.
+  - **Telegram notifier**: sends formatted messages via `sendMessage` (text) and `sendPhoto` (with composed vehicle image) using the existing `CarImagePackage` pipeline
+  - **19 notification event types** across 4 categories:
+    - *Charging*: charge start/stop, charge interrupted (SOC < target), SOC above/below threshold, plug/unplug
+    - *Driving*: driving start, parked, ignition on/off
+    - *Security*: locked/unlocked, movement alert (anti-theft with haversine distance), geofence enter/exit, unlocked timeout
+    - *Maintenance*: tire pressure out of range, range below threshold
+  - **Notification dispatcher** (`services/notification_dispatcher.py`): orchestrates the full pipeline — receives events from transition detection, checks user preferences, applies custom stateful logic (geofencing, SOC thresholds, unlock timeout, movement detection), composes messages from templates, and dispatches to notifiers with per-event cooldowns (5 min)
+  - **Geofencing**: configurable geographic zones with haversine distance calculation; fires notifications on enter/exit based on user preference per zone
+  - **Movement alert (anti-theft)**: detects vehicle displacement (>50m default) while parked with ignition off
+  - **Configurable thresholds**: SOC high/low, tire pressure min/max, range threshold, unlock timeout — all per-event parameters adjustable from the UI
+  - **Rich message templates**: each event type has an emoji-prefixed title + contextual body (SOC%, range, zone name, distance, etc.)
+  - **Dynamic vehicle image in notifications**: photo-bearing events automatically compose and attach the current vehicle state image
+- **Database migration 0005**: added `notification_channels`, `notification_preferences`, and `geofences` tables
+- **Notification API endpoints**:
+  - `GET/POST/PUT/DELETE /api/notifications/channels` — CRUD for notification channels
+  - `POST /api/notifications/channels/{id}/test` — send test message
+  - `GET/PUT /api/notifications/events` — list available events with status, bulk update preferences
+  - `GET/POST/PUT/DELETE /api/notifications/geofences` — CRUD for geofences
+- **Frontend: Notifications settings section** in Settings tab — new navigation pill with:
+  - Telegram configuration card (bot token + chat ID, enable/disable, test button)
+  - Events card with per-category toggle list and inline threshold configuration for configurable events
+  - Geofences card with list of zones (enter/exit toggles) and form to add new zones (name, lat/lng, radius)
+- **Scheduler integration**: notification dispatcher is called after each transition detection cycle, processing events in real-time alongside the existing event persistence
+- **Transition detection & event tracking**: new fast-polling loop (default 10s, configurable 5–300s) that detects state transitions in real-time and persists them to a lightweight `vehicle_events` table. Captures:
+  - Boolean transitions: regenerative braking start/stop, charging start/stop, plug/unplug, park/drive, lock/unlock, ignition on/off
+  - Threshold transitions: speed crosses zero (moving start/stop), battery SOC changes ≥5%, charge state changes
+  - On each transition: saves both a compact event row (for analytics/duration tracking) and a full vehicle snapshot (for complete telemetry at the moment of change)
+  - Deduplication window (default 10s, configurable) prevents DB flooding during rapid oscillations
+  - Runs independently of the WebSocket live refresh — captures events even when no UI is open
+- **Database migration 0004**: added `vehicle_events` table (`id`, `vin`, `timestamp`, `event_type`, `field_name`, `old_value`, `new_value`) with indexes on vin, timestamp, and event_type
+- **Events API endpoint**: `GET /api/vehicles/{vin}/events?days=30&event_type=regen_start` for querying recorded events
+- **Scheduler settings extended**: new configuration fields `transition_detection_enabled`, `transition_poll_interval_seconds`, `transition_min_event_interval_seconds` — exposed via `PUT /api/scheduler` and persisted to DB
+- **Frontend: Transition Detection settings card** in Services section — toggle, poll interval, and dedup interval controls
+- **Frontend: Events timeline view** in History tab — new "Events" source toggle with filterable timeline showing color-coded events (regen=green, charge=blue, drive=orange, security=purple, SOC=pink), timestamps, and old→new value transitions
+- **MQTT: expanded Home Assistant controls** — the MQTT integration now exposes nearly all vehicle commands available in the web UI, up from the previous 4 buttons (lock, unlock, trunk open, find). New entities include:
+  - **20 button entities**: lock, unlock, trunk open/close, find, windows open/close, charging start/stop, battery preheat on/off, unlock charger, sunroof open/close, ON3 on/off, BLE key restart, hotspot, autopark, windshield defrost
+  - **6 switch entities** (with state feedback): Air Conditioning, Sentry Mode, Steering Wheel Heat, Fuel Heating, Rearview Mirror Heat, Healthy Charging
+  - **AC Temperature number entity**: slider control (16–32°C)
+  - **Permission gating**: all MQTT entities are only registered if the vehicle has the corresponding right + hardware ability, matching the same permission logic used by the web UI. Vehicles with limited capabilities won't show unsupported controls in HA.
+- **MQTT: cloud statistics sensors** — Leapmotor cloud consumption data is now published to Home Assistant via MQTT Discovery. New sensor entities: Consumption Rank (%), Consumption kWh/100km, Weekly Energy Total, Weekly Energy Driving, Weekly Energy A/C, Weekly Energy Other
+- **New KPI: "Total charged"** — shows the combined energy from grid charging + regenerative braking
+- **New KPI: "Charged (grid)"** — shows only the energy drawn from the electrical grid (used for cost calculation)
+- **New KPI: "Regen energy"** — dedicated card showing energy recovered from regenerative braking (kWh), computed from valid positive energy deltas during non-charging segments (with zero-energy gap filtering)
+- **History API: `from_date`/`to_date` parameters** — the `/api/vehicles/{vin}/history` endpoint now accepts optional `from_date` and `to_date` (YYYY-MM-DD) query params for fetching only a specific date range of snapshots, enabling much faster on-demand loading
+- **History API: server-side downsampling (`max_points`)** — when a date range contains more snapshots than `max_points`, the server returns a downsampled subset that preserves state-transition boundaries (charge start/stop) for accurate KPIs while reducing payload size by 10–20×
+- **Downsampling settings** — new configurable setting in Data Collection (Services tab): enable/disable downsampling and choose the max points limit (500–10,000). Saved in local DB and used automatically by the History tab
+
+### Fixed
+- **History page extremely slow to load**: the frontend was downloading **all** 35k+ snapshots on every page open (with `days=3650`). Now only today's snapshots + lightweight daily summaries are fetched on initial load; detailed snapshots for other date ranges are fetched on-demand when the user selects a period. This reduces the initial payload from ~15 MB to ~200 KB.
+- **No feedback when selecting a date range**: pressing "Select" in the date picker modal gave no visual indication while data was loading. Added a loading spinner and "Loading..." text on the Select button, with the modal staying open until data is ready.
+- **Charge limit error reporting**: setting the charge limit from the web UI or Home Assistant returned a plain-text "Internal Server Error" (not JSON), causing the frontend to show a confusing JSON parse error. The `/api/vehicles/{vin}/charge-limit` endpoint now catches `LeapmotorApiError` and returns a proper JSON 502 response with the actual error message. Also hardened the frontend `useApi` helper to gracefully handle non-JSON error responses.
+- **Charge limit fails on vehicles without charge plan in status**: on some models (e.g. T03), `status.battery.charge_plan` is empty even when a schedule exists on the cloud. The library's `set_charge_limit()` relied on that field, failing with "Current charging plan is incomplete". Fixed in `leapmotor-api` v0.3.1: the method now retrieves the plan via the dedicated `get_charge_schedule()` API call and falls back to sensible defaults if no schedule exists.
+- **Energy KPI calculation completely reworked**: the previous delta-by-delta algorithm was amplifying measurement noise from rapid transition polling (10s intervals), inflating "Energy used" by 5–10× (e.g. showing 47.6 kWh instead of the real 9.3 kWh). Replaced with a segment-based approach that splits snapshots into contiguous charging/non-charging periods and uses net energy change per segment, eliminating oscillation noise.
+- **Cost calculation no longer includes regen energy**: charging cost now uses only grid-charged energy, not the total energy entering the battery (which previously included regenerative braking).
+
+### Changed
+- **Updated leapmotor-api to v0.3.1**: fixes `set_charge_limit()` for vehicles where the charge plan is not included in the vehicle status response
+- The former single `Energy charged` KPI card in history tab is now split into `Total charged` and `Charged (grid)` for better clarity and accurate cost calculation
+- `Regen efficiency` now uses the segment-based regen value for accuracy
+- **Vehicle usage pie chart now shows percentages**: the "Parked vs In use" doughnut chart previously displayed raw snapshot counts; it now shows percentage values with labels like "Parked (85%)" and "In use (15%)"
+
 ## [0.7.3] - 2026-05-26
 
 ### Fixed

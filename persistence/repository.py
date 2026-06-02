@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import abc
 
-from models import VehicleSnapshot
+from models import VehicleEvent, VehicleSnapshot
 
 
 class VehicleHistoryRepository(abc.ABC):
@@ -24,8 +24,17 @@ class VehicleHistoryRepository(abc.ABC):
         vin: str,
         *,
         days: int = 30,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        max_points: int | None = None,
     ) -> list[VehicleSnapshot]:
         """Return snapshots for *vin* over the last *days* days.
+
+        If from_date/to_date are provided (YYYY-MM-DD), they take precedence
+        over the days parameter.
+
+        If max_points is specified, the result is downsampled to at most that
+        many snapshots while preserving state-transition boundaries.
 
         Ordered by timestamp.
         """
@@ -56,3 +65,17 @@ class VehicleHistoryRepository(abc.ABC):
     @abc.abstractmethod
     async def close(self) -> None:
         """Release resources."""
+
+    @abc.abstractmethod
+    async def save_event(self, event: VehicleEvent) -> None:
+        """Persist a single state-transition event."""
+
+    @abc.abstractmethod
+    async def get_events(
+        self,
+        vin: str,
+        *,
+        days: int = 30,
+        event_type: str | None = None,
+    ) -> list[VehicleEvent]:
+        """Return events for *vin* over the last *days* days."""

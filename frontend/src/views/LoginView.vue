@@ -3,11 +3,7 @@
     <div class="login-container">
       <div class="login-brand">
         <div class="login-brand-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.5 2.8C1.4 11.3 1 12.1 1 13v3c0 .6.4 1 1 1h2" />
-            <circle cx="7" cy="17" r="2" />
-            <circle cx="17" cy="17" r="2" />
-          </svg>
+          <Car :size="22" />
         </div>
         <h1>LeapConnect</h1>
         <p>Vehicle Dashboard</p>
@@ -17,7 +13,13 @@
         <form @submit.prevent="handleLogin" autocomplete="off">
           <div class="form-group">
             <label>Password</label>
-            <input v-model="form.password" type="password" placeholder="Enter your password" required autofocus />
+            <div class="password-wrapper">
+              <input v-model="form.password" :type="showPassword ? 'text' : 'password'" placeholder="Enter your password" required autofocus />
+              <button type="button" class="password-toggle" @click="showPassword = !showPassword" tabindex="-1">
+                <Eye v-if="!showPassword" :size="18" />
+                <EyeOff v-else :size="18" />
+              </button>
+            </div>
           </div>
 
           <button type="submit" class="btn-login" :disabled="submitting">
@@ -32,6 +34,7 @@
 
 <script setup>
 import { ref, reactive } from 'vue'
+import { Car, Eye, EyeOff } from 'lucide-vue-next'
 import { useAppStore } from '../stores/appStore'
 import { api } from '../composables/useApi'
 
@@ -40,6 +43,7 @@ const store = useAppStore()
 const submitting = ref(false)
 const error = ref('')
 
+const showPassword = ref(false)
 const form = reactive({
   password: '',
 })
@@ -95,8 +99,8 @@ async function handleLogin() {
   display: flex;
   align-items: center;
   justify-content: center;
+  color: var(--cyan);
 }
-.login-brand-icon svg { width: 22px; height: 22px; color: var(--cyan); }
 
 .login-brand h1 {
   font-size: 18px;
@@ -149,6 +153,29 @@ async function handleLogin() {
 .form-group input::placeholder {
   color: var(--muted2);
 }
+
+.password-wrapper { position: relative; }
+.password-wrapper input { padding-right: 44px; }
+
+.password-toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.password-toggle svg {
+  color: var(--muted);
+  transition: color 0.2s;
+}
+.password-toggle:hover svg { color: var(--text); }
+
 .form-group small {
   display: block;
   margin-top: 0.3rem;

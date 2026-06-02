@@ -13,6 +13,9 @@
         <button class="source-btn" :class="{ active: dataSource === 'cloud' }" @click="dataSource = 'cloud'">
           <Cloud :size="14" /> Cloud
         </button>
+        <button class="source-btn" :class="{ active: dataSource === 'events' }" @click="dataSource = 'events'; loadEvents()">
+          <Activity :size="14" /> Events
+        </button>
       </div>
       <div v-if="dataSource === 'local'" class="time-toolbar">
           <button class="toolbar-btn" @click="showDatePicker = !showDatePicker" title="Select date range">
@@ -75,14 +78,79 @@
           </div>
         </div>
         <div class="date-picker-actions">
-          <button class="dp-cancel" @click="showDatePicker = false">Cancel</button>
-          <button class="dp-select" :disabled="!customFrom || !customTo" @click="applyCustomRange()">Select</button>
+          <button class="dp-cancel" @click="showDatePicker = false" :disabled="loadingRange">Cancel</button>
+          <button class="dp-select" :disabled="!customFrom || !customTo || loadingRange" @click="applyCustomRange()">
+            <span v-if="loadingRange" class="dp-spinner"></span>
+            {{ loadingRange ? 'Loading...' : 'Select' }}
+          </button>
         </div>
       </div>
     </div>
 
     <!-- Cloud stats view -->
     <CloudStatsView v-if="dataSource === 'cloud'" :vin="props.vin" />
+
+    <!-- Events view -->
+    <div v-if="dataSource === 'events'" class="events-section">
+      <div class="events-toolbar">
+        <select v-model="eventsFilter" class="events-filter" @change="loadEvents()">
+          <option value="">All events</option>
+          <option value="regen_start">Regen start</option>
+          <option value="regen_stop">Regen stop</option>
+          <option value="charge_start">Charge start</option>
+          <option value="charge_stop">Charge stop</option>
+          <option value="plugged_in">Plugged in</option>
+          <option value="unplugged">Unplugged</option>
+          <option value="driving_start">Driving start</option>
+          <option value="parked">Parked</option>
+          <option value="locked">Locked</option>
+          <option value="unlocked">Unlocked</option>
+          <option value="ignition_on">Ignition on</option>
+          <option value="ignition_off">Ignition off</option>
+          <option value="moving_start">Moving start</option>
+          <option value="moving_stop">Moving stop</option>
+          <option value="soc_change">SOC change</option>
+          <option value="charge_state_change">Charge state change</option>
+          <option value="geofence_enter">Geofence enter</option>
+          <option value="geofence_exit">Geofence exit</option>
+          <option value="movement_alert">Movement alert</option>
+          <option value="unlocked_timeout">Unlocked timeout</option>
+          <option value="tire_pressure_alert">Tire pressure alert</option>
+          <option value="range_low">Low range</option>
+          <option value="tracking_start">Tracking start</option>
+          <option value="tracking_stop">Tracking stop</option>
+        </select>
+        <select v-model="eventsDays" class="events-filter" @change="loadEvents()">
+          <option :value="1">Today</option>
+          <option :value="7">Last 7 days</option>
+          <option :value="30">Last 30 days</option>
+          <option :value="90">Last 90 days</option>
+        </select>
+        <span class="events-count">{{ events.length }} events</span>
+      </div>
+
+      <div v-if="eventsLoading" class="events-loading">Loading events...</div>
+
+      <div v-else-if="events.length === 0" class="events-empty">
+        <Activity :size="32" />
+        <p>No events detected yet</p>
+        <p class="events-empty-hint">Events are recorded when the vehicle changes state (regen, charging, parking, etc.)</p>
+      </div>
+
+      <div v-else class="events-timeline">
+        <div v-for="(event, idx) in events" :key="idx" class="event-row">
+          <div class="event-dot" :class="eventDotClass(event.event_type)" />
+          <div class="event-content">
+            <span class="event-type">{{ formatEventType(event.event_type) }}</span>
+            <span class="event-field">{{ event.field_name }}</span>
+            <span v-if="event.old_value && event.new_value" class="event-values">
+              {{ event.old_value }} → {{ event.new_value }}
+            </span>
+          </div>
+          <div class="event-time">{{ formatEventTime(event.timestamp) }}</div>
+        </div>
+      </div>
+    </div>
 
     <!-- KPI skeleton -->
     <HistorySkeleton v-if="dataSource === 'local' && loadingKpi && !kpiCards.length" :show-kpi="true" :show-charts="false" />
@@ -230,8 +298,8 @@
     </template>
 
     <div v-if="dataSource === 'local'" class="history-note">
-      <template v-if="allSnapshots.length">
-        Real data collected from vehicle · {{ allSnapshots.length }} snapshots available
+      <template v-if="allSnapshots.length || allData.length">
+        Real data collected from vehicle · {{ allSnapshots.length }} snapshots in current view
       </template>
       <template v-else>
         No data yet. Enable automatic collection in Settings to populate history.
@@ -244,7 +312,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { Chart, registerables } from 'chart.js'
 import { api } from '../composables/useApi'
-import { Battery, Map, Zap, Route, Thermometer, BarChart3, Table2, Gauge, Clock, CircleDot, MapPin, Circle, BatteryWarning, CalendarDays, ChevronLeft, ChevronRight, MoreVertical, Download, Maximize2, Minimize2, HardDrive, Cloud } from 'lucide-vue-next'
+import { Battery, Map, Zap, Route, Thermometer, BarChart3, Table2, Gauge, Clock, CircleDot, MapPin, Circle, BatteryWarning, CalendarDays, ChevronLeft, ChevronRight, MoreVertical, Download, Maximize2, Minimize2, HardDrive, Cloud, Activity } from 'lucide-vue-next'
 import HistorySkeleton from '../components/HistorySkeleton.vue'
 import CloudStatsView from '../components/CloudStatsView.vue'
 import L from 'leaflet'
@@ -260,6 +328,53 @@ const props = defineProps({
 const viewMode = ref('chart')
 const dataSource = ref('local')
 const showToolbarMenu = ref(false)
+
+// ---------------------------------------------------------------------------
+// Events state
+// ---------------------------------------------------------------------------
+const events = ref([])
+const eventsLoading = ref(false)
+const eventsFilter = ref('')
+const eventsDays = ref(7)
+
+async function loadEvents() {
+  if (!props.vin) return
+  eventsLoading.value = true
+  try {
+    let url = `/api/vehicles/${props.vin}/events?days=${eventsDays.value}`
+    if (eventsFilter.value) url += `&event_type=${eventsFilter.value}`
+    const data = await api('GET', url)
+    events.value = (data.events || []).reverse() // newest first
+  } catch {
+    events.value = []
+  } finally {
+    eventsLoading.value = false
+  }
+}
+
+function formatEventType(type) {
+  return type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+function formatEventTime(ts) {
+  const d = new Date(ts)
+  const now = new Date()
+  const isToday = d.toDateString() === now.toDateString()
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return isToday ? time : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`
+}
+
+function eventDotClass(type) {
+  if (type.includes('regen')) return 'dot-regen'
+  if (type.includes('charge') || type.includes('plugged')) return 'dot-charge'
+  if (type.includes('driving') || type.includes('moving')) return 'dot-drive'
+  if (type.includes('lock') || type.includes('ignition') || type.includes('movement_alert') || type.includes('unlocked_timeout')) return 'dot-security'
+  if (type.includes('geofence')) return 'dot-geofence'
+  if (type.includes('tracking')) return 'dot-tracking'
+  if (type.includes('tire') || type.includes('range_low')) return 'dot-maintenance'
+  if (type.includes('soc')) return 'dot-soc'
+  return 'dot-default'
+}
 
 // ---------------------------------------------------------------------------
 // Custom date range picker
@@ -352,9 +467,15 @@ function applyPreset(preset) {
   customTo.value = to
 }
 
-function applyCustomRange() {
+async function applyCustomRange() {
+  loadingRange.value = true
   customRangeActive.value = true
-  showDatePicker.value = false
+  try {
+    await fetchRangeSnapshots(customFrom.value, customTo.value)
+  } finally {
+    loadingRange.value = false
+    showDatePicker.value = false
+  }
 }
 
 function formatCalDate(d) {
@@ -395,6 +516,7 @@ function goToToday() {
   customFrom.value = today
   customTo.value = today
   customRangeActive.value = true
+  fetchRangeSnapshots(today, today)
 }
 
 function goBack() {
@@ -404,6 +526,7 @@ function goBack() {
     customFrom.value = yesterday
     customTo.value = yesterday
     customRangeActive.value = true
+    fetchRangeSnapshots(yesterday, yesterday)
     return
   }
   const rangeMs = customTo.value.getTime() - customFrom.value.getTime()
@@ -414,6 +537,7 @@ function goBack() {
   customFrom.value = newFrom
   customTo.value = newTo
   customRangeActive.value = true
+  fetchRangeSnapshots(newFrom, newTo)
 }
 
 function goForward() {
@@ -429,6 +553,7 @@ function goForward() {
   customFrom.value = newFrom
   customTo.value = newTo
   customRangeActive.value = true
+  fetchRangeSnapshots(newFrom, newTo)
 }
 
 function exportCsv() {
@@ -455,6 +580,7 @@ const loadingKpi = ref(true)
 const loadingCharts = ref(true)
 const chartsReady = ref(false)
 const isStale = ref(false)
+const loadingRange = ref(false)
 
 const CACHE_KEY_PREFIX = 'history_cache_'
 const CACHE_MAX_AGE_MS = 5 * 60 * 1000 // 5 minutes
@@ -491,6 +617,8 @@ const allSnapshots = ref([])
 const allData = ref([])
 const todaySnapshots = ref([])
 const electricityPriceKwh = ref(0.25)
+const downsamplingEnabled = ref(true)
+const downsamplingMaxPoints = ref(2000)
 
 function applyData(daily, snaps, allSnaps) {
   allSnapshots.value = allSnaps
@@ -541,22 +669,21 @@ async function fetchHistory() {
   }
 
   try {
-    const [dailyRes, snapshotRes, allSnapshotRes] = await Promise.all([
+    // Only fetch daily summaries + today's snapshots on initial load (lightweight)
+    const [dailyRes, snapshotRes] = await Promise.all([
       api('GET', `/api/vehicles/${props.vin}/history/daily?days=3650`),
       api('GET', `/api/vehicles/${props.vin}/history?days=1`),
-      api('GET', `/api/vehicles/${props.vin}/history?days=3650`),
     ])
     const daily = dailyRes.daily || []
     const snaps = snapshotRes.snapshots || []
-    const allSnaps = allSnapshotRes.snapshots || []
 
     // Progressive loading: KPI first
-    applyData(daily, snaps, allSnaps)
+    applyData(daily, snaps, snaps)
     loadingKpi.value = false
     isStale.value = false
 
     // Save to cache
-    saveToCache(daily, snaps, allSnaps)
+    saveToCache(daily, snaps, snaps)
 
     // Charts slightly deferred for progressive feel
     await nextTick()
@@ -564,6 +691,45 @@ async function fetchHistory() {
     loadingCharts.value = false
   } catch (err) {
     console.error('[HistoryTab] fetchHistory failed:', err)
+    loadingKpi.value = false
+    loadingCharts.value = false
+    chartsReady.value = true
+  }
+}
+
+async function fetchRangeSnapshots(from, to) {
+  if (!props.vin || !from || !to) return
+  loadingKpi.value = true
+  loadingCharts.value = true
+  chartsReady.value = false
+  try {
+    const fromStr = from.toISOString().slice(0, 10)
+    const toStr = to.toISOString().slice(0, 10)
+    let url = `/api/vehicles/${props.vin}/history?from_date=${fromStr}&to_date=${toStr}`
+    if (downsamplingEnabled.value) {
+      url += `&max_points=${downsamplingMaxPoints.value}`
+    }
+    const res = await api('GET', url)
+    const snaps = res.snapshots || []
+    allSnapshots.value = snaps
+    todaySnapshots.value = snaps.map(s => ({
+      date: formatTimestamp(s.timestamp),
+      battery: s.battery_soc ?? 0,
+      range: s.battery_expected_mileage ?? 0,
+      kmDriven: 0,
+      batteryEnergy: (s.battery_dump_energy ?? 0) / 1000.0,
+      chargingPower: s.battery_charging_power_kw ?? 0,
+      dischargingPower: s.battery_discharge_power_kw ?? 0,
+      temp: s.climate_outdoor_temp ?? 0,
+      chargeSessions: s.battery_is_charging ? 1 : 0,
+      sampleCount: 1,
+    }))
+    loadingKpi.value = false
+    await nextTick()
+    chartsReady.value = true
+    loadingCharts.value = false
+  } catch (err) {
+    console.error('[HistoryTab] fetchRangeSnapshots failed:', err)
     loadingKpi.value = false
     loadingCharts.value = false
     chartsReady.value = true
@@ -586,6 +752,8 @@ onMounted(async () => {
   try {
     const prefs = await api('GET', '/api/preferences')
     electricityPriceKwh.value = prefs.electricity_price_kwh
+    downsamplingEnabled.value = prefs.downsampling_enabled ?? true
+    downsamplingMaxPoints.value = prefs.downsampling_max_points ?? 2000
   } catch { /* use default */ }
 })
 
@@ -593,18 +761,8 @@ onMounted(async () => {
 // Filtered snapshots for selected period
 // ---------------------------------------------------------------------------
 const filteredSnapshots = computed(() => {
-  if (customRangeActive.value && customFrom.value && customTo.value) {
-    const from = customFrom.value.getTime()
-    const to = customTo.value.getTime() + 86400000 - 1 // end of day
-    return allSnapshots.value.filter(s => {
-      const t = new Date(s.timestamp).getTime()
-      return t >= from && t <= to
-    })
-  }
-  // Default: today
-  const now = new Date()
-  const since = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  return allSnapshots.value.filter(s => new Date(s.timestamp) >= since)
+  // allSnapshots already contains only the current range's data (fetched on-demand)
+  return allSnapshots.value
 })
 
 // ---------------------------------------------------------------------------
@@ -619,13 +777,8 @@ const isToday = computed(() => {
 const data = computed(() => {
   if (customRangeActive.value && customFrom.value && customTo.value) {
     if (isSameDay(customFrom.value, customTo.value)) {
-      // Single day view: use snapshot data
-      const from = customFrom.value.getTime()
-      const to = customTo.value.getTime() + 86400000 - 1
-      return allSnapshots.value.filter(s => {
-        const t = new Date(s.timestamp).getTime()
-        return t >= from && t <= to
-      }).map(s => ({
+      // Single day view: use snapshot data directly
+      return allSnapshots.value.map(s => ({
         date: formatTimestamp(s.timestamp),
         battery: s.battery_soc ?? 0,
         range: s.battery_expected_mileage ?? 0,
@@ -655,14 +808,40 @@ const kpiCards = computed(() => {
   const snaps = filteredSnapshots.value
   if (!snaps.length) return []
 
-  let energyUsed = 0
-  let energyCharged = 0
-  for (let i = 1; i < snaps.length; i++) {
-    const curr = (snaps[i].battery_dump_energy ?? 0) / 1000
-    const prev = (snaps[i - 1].battery_dump_energy ?? 0) / 1000
-    const delta = curr - prev
-    if (delta < 0) energyUsed += Math.abs(delta)
-    else energyCharged += delta
+  // Segment-based energy calculation to avoid noise amplification from rapid polling.
+  // We split snapshots into contiguous charging/non-charging segments and use NET
+  // energy change per segment, so measurement oscillations cancel out.
+  let energyUsed = 0    // net decrease during non-charging segments
+  let energyCharged = 0 // net increase during charging/plugged segments
+  let regenEnergy = 0   // regen recovered during non-charging segments
+
+  let i = 0
+  while (i < snaps.length) {
+    const isChargingSegment = !!(snaps[i].battery_is_charging || snaps[i].vehicle_is_plugged)
+    let j = i + 1
+    while (j < snaps.length && !!(snaps[j].battery_is_charging || snaps[j].vehicle_is_plugged) === isChargingSegment) {
+      j++
+    }
+    // Segment from index i to j-1
+    const startE = (snaps[i].battery_dump_energy ?? 0) / 1000
+    const endE = (snaps[j - 1].battery_dump_energy ?? 0) / 1000
+    const segDelta = endE - startE
+
+    if (isChargingSegment) {
+      if (segDelta > 0) energyCharged += segDelta
+    } else {
+      if (segDelta < 0) energyUsed += Math.abs(segDelta)
+      // Within non-charging segments, sum valid positive deltas as regen.
+      // Skip zero-energy readings (data gaps from sleep) to avoid false positives.
+      for (let k = i + 1; k < j; k++) {
+        const prevE = (snaps[k - 1].battery_dump_energy ?? 0) / 1000
+        const currE = (snaps[k].battery_dump_energy ?? 0) / 1000
+        if (prevE > 0 && currE > 0 && currE > prevE) {
+          regenEnergy += currE - prevE
+        }
+      }
+    }
+    i = j
   }
 
   const mileages = snaps.map(s => s.drive_total_mileage).filter(m => m != null && m > 0)
@@ -681,13 +860,6 @@ const kpiCards = computed(() => {
 
   const co2Saved = totalKm * 0.12
 
-  let regenEnergy = 0
-  for (let i = 1; i < snaps.length; i++) {
-    const curr = (snaps[i].battery_dump_energy ?? 0) / 1000
-    const prev = (snaps[i - 1].battery_dump_energy ?? 0) / 1000
-    const delta = curr - prev
-    if (delta > 0 && !snaps[i].vehicle_is_plugged) regenEnergy += delta
-  }
   const regenEfficiency = energyUsed > 0 ? (regenEnergy / energyUsed) * 100 : 0
 
   const highSocSnaps = snaps.filter(s => (s.battery_soc ?? 0) >= 95 && s.battery_expected_mileage)
@@ -701,7 +873,9 @@ const kpiCards = computed(() => {
   return [
     { label: 'km driven', value: Math.round(totalKm).toLocaleString(), color: '#00d4ff' },
     { label: 'Energy used', value: `${energyUsed.toFixed(1)} kWh`, color: '#ffab40' },
-    { label: 'Energy charged', value: `${energyCharged.toFixed(1)} kWh`, color: '#00e676' },
+    { label: 'Total charged', value: `${(energyCharged + regenEnergy).toFixed(1)} kWh`, color: '#00e676' },
+    { label: 'Charged (grid)', value: `${energyCharged.toFixed(1)} kWh`, color: '#66bb6a' },
+    { label: 'Regen energy', value: `${regenEnergy.toFixed(1)} kWh`, color: '#26c6da' },
     { label: 'Charge sessions', value: chargeSessions, color: '#7c6aff' },
     { label: 'kWh/100km', value: consumption > 0 ? consumption.toFixed(1) : '\u2014', color: '#ff7043' },
     { label: 'Cost (\u20ac)', value: cost > 0 ? `\u20ac${cost.toFixed(2)}` : '\u2014', color: '#ffd54f' },
@@ -1180,15 +1354,23 @@ function buildCharts() {
   if (usagePieCanvas.value && snaps.length > 0) {
     const parked = snaps.filter(s => s.drive_is_parked === true).length
     const driving = snaps.length - parked
+    const parkedPct = Math.round((parked / snaps.length) * 100)
+    const drivingPct = 100 - parkedPct
     charts.push(new Chart(usagePieCanvas.value, {
       type: 'doughnut',
       data: {
-        labels: ['Parked', 'In use'],
-        datasets: [{ data: [parked, driving], backgroundColor: [getChartColors().grid, '#00d4ff'], borderColor: [getChartColors().tick, '#00d4ff'], borderWidth: 1 }],
+        labels: [`Parked`, `In use`],
+        datasets: [{ data: [parkedPct, drivingPct], backgroundColor: [getChartColors().grid, '#00d4ff'], borderColor: [getChartColors().tick, '#00d4ff'], borderWidth: 1 }],
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: true, position: 'bottom', labels: { color: getChartColors().label, font: { size: 11 } } }, tooltip: { ...chartDefaults.value.plugins.tooltip } },
+        plugins: {
+          legend: { display: true, position: 'bottom', labels: { color: getChartColors().label, font: { size: 11 } } },
+          tooltip: {
+            ...chartDefaults.value.plugins.tooltip,
+            callbacks: { label: (ctx) => ` ${ctx.label}: ${ctx.raw}%` }
+          },
+        },
       },
     }))
   }
@@ -1654,6 +1836,9 @@ onBeforeUnmount(destroyCharts)
   font-weight: 600;
   cursor: pointer;
   transition: opacity 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .dp-select:disabled {
   opacity: 0.4;
@@ -1661,6 +1846,17 @@ onBeforeUnmount(destroyCharts)
 }
 .dp-select:hover:not(:disabled) {
   background: #00a0b8;
+}
+.dp-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: dp-spin 0.6s linear infinite;
+}
+@keyframes dp-spin {
+  to { transform: rotate(360deg); }
 }
 
 @media (max-width: 520px) {
@@ -1936,5 +2132,138 @@ onBeforeUnmount(destroyCharts)
 @keyframes shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+
+/* Events section */
+.events-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.events-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.events-filter {
+  background: var(--btn-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.events-count {
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: auto;
+}
+
+.events-loading {
+  text-align: center;
+  color: var(--muted);
+  padding: 40px;
+  font-size: 13px;
+}
+
+.events-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 60px 20px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.events-empty p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.events-empty-hint {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.events-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.event-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--btn-bg);
+  transition: background 0.15s;
+}
+
+.event-row:hover {
+  background: var(--card-bg);
+}
+
+.event-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-regen { background: #4ade80; }
+.dot-charge { background: #60a5fa; }
+.dot-drive { background: #f59e0b; }
+.dot-security { background: #a78bfa; }
+.dot-geofence { background: #f97316; }
+.dot-tracking { background: #06b6d4; }
+.dot-maintenance { background: #ef4444; }
+.dot-soc { background: #f472b6; }
+.dot-default { background: var(--muted); }
+
+.event-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.event-type {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.event-field {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.event-values {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.event-time {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 </style>

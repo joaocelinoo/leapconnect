@@ -159,6 +159,61 @@ class HomeAssistantMqttService:
 
     # -- Private methods -----------------------------------------------------
 
+    # Ability code → Right codes (mirrors frontend ABILITY_TO_RIGHTS)
+    _ABILITY_TO_RIGHTS: dict[int, list[int]] = {
+        1: [110],
+        2: [120],
+        3: [130],
+        4: [150],
+        6: [170],
+        9: [171],
+        10: [190],
+        11: [161],
+        12: [230],
+        14: [301],
+        15: [320],
+        17: [170, 171],
+        18: [460],
+        24: [130],
+        25: [160],
+        30: [180],
+        34: [510],
+        35: [340],
+        36: [230],
+        38: [360, 361],
+        40: [380],
+        42: [370],
+        43: [370],
+        48: [192],
+        50: [220],
+        52: [180],
+    }
+    _RIGHTS_WITH_ABILITY: set[int] = set()
+    for _rights_list in _ABILITY_TO_RIGHTS.values():
+        _RIGHTS_WITH_ABILITY.update(_rights_list)
+
+    @staticmethod
+    def _has_right(vehicle: Vehicle, right: int | None) -> bool:
+        """Check if a vehicle has the given right+ability permission."""
+        if right is None:
+            return True
+        # Check user rights
+        user_rights = {
+            r.value if hasattr(r, "value") else int(r) for r in vehicle.rights
+        }
+        if right not in user_rights:
+            return False
+        # If this right requires a hardware ability, check abilities too
+        if right in HomeAssistantMqttService._RIGHTS_WITH_ABILITY:
+            hw_rights: set[int] = set()
+            for a in vehicle.abilities:
+                a_val = a.value if hasattr(a, "value") else int(a)
+                mapped = HomeAssistantMqttService._ABILITY_TO_RIGHTS.get(a_val, [])
+                hw_rights.update(mapped)
+            if right not in hw_rights:
+                return False
+        return True
+
     def _build_state_payload(self, status: VehicleStatus) -> dict:
         """Build a comprehensive JSON payload from all VehicleStatus fields."""
         data: dict[str, Any] = {}
@@ -509,6 +564,36 @@ class HomeAssistantMqttService:
                 retain=True,
             )
 
+        # -- Switch state topics --
+        if status.security:
+            await self._publish(
+                f"{prefix}/sentry_mode",
+                _bool(status.security.sentry_mode),
+                retain=True,
+            )
+            await self._publish(
+                f"{prefix}/rearview_mirror_heat",
+                _bool(
+                    status.security.left_mirror_heating
+                    or status.security.right_mirror_heating
+                ),
+                retain=True,
+            )
+
+        if status.seat_comfort:
+            await self._publish(
+                f"{prefix}/steering_wheel_heat",
+                _bool(status.seat_comfort.steering_wheel_heating),
+                retain=True,
+            )
+
+        if status.battery:
+            await self._publish(
+                f"{prefix}/healthy_charging",
+                _bool(status.battery.healthy_charge_enabled),
+                retain=True,
+            )
+
     async def _publish_discovery(
         self, vehicle: Vehicle, device_id: str, device_name: str
     ) -> None:
@@ -684,6 +769,48 @@ class HomeAssistantMqttService:
                 "unit": "%",
                 "icon": "mdi:blinds",
             },
+            # Cloud statistics
+            {
+                "key": "cloud_consumption_rank",
+                "name": "Consumption Rank",
+                "unit": "%",
+                "icon": "mdi:podium",
+            },
+            {
+                "key": "cloud_consumption_kwh_100km",
+                "name": "Consumption (cloud)",
+                "dc": "energy",
+                "unit": "kWh/100km",
+                "icon": "mdi:leaf",
+            },
+            {
+                "key": "cloud_weekly_total_ec",
+                "name": "Weekly Energy Total",
+                "dc": "energy",
+                "unit": "kWh",
+                "icon": "mdi:chart-bar",
+            },
+            {
+                "key": "cloud_weekly_driver_ec",
+                "name": "Weekly Energy Driving",
+                "dc": "energy",
+                "unit": "kWh",
+                "icon": "mdi:car-electric",
+            },
+            {
+                "key": "cloud_weekly_ac_ec",
+                "name": "Weekly Energy A/C",
+                "dc": "energy",
+                "unit": "kWh",
+                "icon": "mdi:air-conditioner",
+            },
+            {
+                "key": "cloud_weekly_other_ec",
+                "name": "Weekly Energy Other",
+                "dc": "energy",
+                "unit": "kWh",
+                "icon": "mdi:flash",
+            },
         ]
 
         for s in sensors:
@@ -833,15 +960,122 @@ class HomeAssistantMqttService:
         topic = f"{disc_prefix}/image/{device_id}/image/config"
         await self._publish(topic, json.dumps(image_config), retain=True)
 
-        # Buttons (commands)
+        # Buttons (commands) — gated by vehicle rights/abilities
         commands = [
-            {"key": "lock", "name": "Lock", "icon": "mdi:lock"},
-            {"key": "unlock", "name": "Unlock", "icon": "mdi:lock-open"},
-            {"key": "trunk_open", "name": "Open Trunk", "icon": "mdi:car-back"},
-            {"key": "find", "name": "Find Vehicle", "icon": "mdi:car-search"},
+            # Remote controls
+            {"key": "lock", "name": "Lock", "icon": "mdi:lock", "right": 110},
+            {"key": "unlock", "name": "Unlock", "icon": "mdi:lock-open", "right": 110},
+            {
+                "key": "trunk_open",
+                "name": "Open Trunk",
+                "icon": "mdi:car-back",
+                "right": 130,
+            },
+            {
+                "key": "trunk_close",
+                "name": "Close Trunk",
+                "icon": "mdi:car-back",
+                "right": 130,
+            },
+            {
+                "key": "find",
+                "name": "Find Vehicle",
+                "icon": "mdi:car-search",
+                "right": 120,
+            },
+            {
+                "key": "windows_open",
+                "name": "Open Windows",
+                "icon": "mdi:car-door",
+                "right": 230,
+            },
+            {
+                "key": "windows_close",
+                "name": "Close Windows",
+                "icon": "mdi:car-door",
+                "right": 230,
+            },
+            # Charging
+            {
+                "key": "charging_start",
+                "name": "Start Charging",
+                "icon": "mdi:ev-station",
+                "right": 193,
+            },
+            {
+                "key": "charging_stop",
+                "name": "Stop Charging",
+                "icon": "mdi:ev-station",
+                "right": 193,
+            },
+            {
+                "key": "battery_preheat",
+                "name": "Battery Preheat",
+                "icon": "mdi:heat-wave",
+                "right": 190,
+            },
+            {
+                "key": "battery_preheat_off",
+                "name": "Battery Preheat Off",
+                "icon": "mdi:heat-wave",
+                "right": 190,
+            },
+            {
+                "key": "unlock_charger",
+                "name": "Unlock Charger",
+                "icon": "mdi:ev-plug-type2",
+                "right": 192,
+            },
+            # Comfort
+            {
+                "key": "sunroof_open",
+                "name": "Open Sunroof",
+                "icon": "mdi:car-select",
+                "right": 160,
+            },
+            {
+                "key": "sunroof_close",
+                "name": "Close Sunroof",
+                "icon": "mdi:car-select",
+                "right": 160,
+            },
+            # Vehicle
+            {"key": "on3_on", "name": "ON3 On", "icon": "mdi:power", "right": 410},
+            {
+                "key": "on3_off",
+                "name": "ON3 Off",
+                "icon": "mdi:power-off",
+                "right": 410,
+            },
+            {
+                "key": "ble_key_restart",
+                "name": "BLE Key Restart",
+                "icon": "mdi:key-variant",
+                "right": 430,
+            },
+            {
+                "key": "hotspot",
+                "name": "Toggle Hotspot",
+                "icon": "mdi:wifi",
+                "right": 140,
+            },
+            {
+                "key": "autopark",
+                "name": "Autopark",
+                "icon": "mdi:parking",
+                "right": 150,
+            },
+            {
+                "key": "defrost",
+                "name": "Windshield Defrost",
+                "icon": "mdi:car-defrost-front",
+                "right": 170,
+            },
         ]
 
         for cmd in commands:
+            if not self._has_right(vehicle, cmd.get("right")):
+                continue
             cmd_config = {
                 "name": cmd["name"],
                 "unique_id": f"{device_id}_cmd_{cmd['key']}",
@@ -853,22 +1087,104 @@ class HomeAssistantMqttService:
             topic = f"{disc_prefix}/button/{device_id}/{cmd['key']}/config"
             await self._publish(topic, json.dumps(cmd_config), retain=True)
 
+        # ── Switch entities (on/off pairs) ─────────────────────────────
+        switches = [
+            {
+                "key": "ac",
+                "name": "Air Conditioning",
+                "icon": "mdi:air-conditioner",
+                "right": 170,
+                "state_topic_key": "ac_switch",
+            },
+            {
+                "key": "sentry_mode",
+                "name": "Sentry Mode",
+                "icon": "mdi:cctv",
+                "right": 220,
+                "state_topic_key": None,
+            },
+            {
+                "key": "steering_wheel_heat",
+                "name": "Steering Wheel Heat",
+                "icon": "mdi:steering",
+                "right": 320,
+                "state_topic_key": None,
+            },
+            {
+                "key": "fuel_heating",
+                "name": "Fuel Heating",
+                "icon": "mdi:fire",
+                "right": 380,
+                "state_topic_key": None,
+            },
+            {
+                "key": "rearview_mirror_heat",
+                "name": "Rearview Mirror Heat",
+                "icon": "mdi:mirror",
+                "right": 440,
+                "state_topic_key": None,
+            },
+            {
+                "key": "healthy_charging",
+                "name": "Healthy Charging",
+                "icon": "mdi:battery-heart-variant",
+                "right": 480,
+                "state_topic_key": None,
+            },
+        ]
+
+        for sw in switches:
+            if not self._has_right(vehicle, sw.get("right")):
+                continue
+            state_key = sw.get("state_topic_key") or sw["key"]
+            sw_config = {
+                "name": sw["name"],
+                "unique_id": f"{device_id}_sw_{sw['key']}",
+                "command_topic": f"{prefix}/{vin}/{sw['key']}/set",
+                "state_topic": f"{prefix}/{vin}/{state_key}",
+                "payload_on": "ON",
+                "payload_off": "OFF",
+                "device": device_info,
+                "icon": sw["icon"],
+            }
+            topic = f"{disc_prefix}/switch/{device_id}/{sw['key']}/config"
+            await self._publish(topic, json.dumps(sw_config), retain=True)
+
+        # ── Climate number entities ────────────────────────────────────
+        if self._has_right(vehicle, 170):
+            ac_temp_config = {
+                "name": "AC Temperature",
+                "unique_id": f"{device_id}_ac_temperature",
+                "state_topic": f"{prefix}/{vin}/ac_setting",
+                "command_topic": f"{prefix}/{vin}/ac_temperature/set",
+                "unit_of_measurement": "°C",
+                "min": 16,
+                "max": 32,
+                "step": 0.5,
+                "mode": "slider",
+                "device": device_info,
+                "icon": "mdi:thermometer",
+            }
+            topic = f"{disc_prefix}/number/{device_id}/ac_temperature/config"
+            await self._publish(topic, json.dumps(ac_temp_config), retain=True)
+
         # ── Number entities ────────────────────────────────────────────
-        charge_limit_config = {
-            "name": "Charge Limit",
-            "unique_id": f"{device_id}_charge_limit",
-            "state_topic": f"{prefix}/{vin}/charge_soc_setting",
-            "command_topic": f"{prefix}/{vin}/charge_limit/set",
-            "unit_of_measurement": "%",
-            "min": 50,
-            "max": 100,
-            "step": 5,
-            "mode": "slider",
-            "device": device_info,
-            "icon": "mdi:battery-lock",
-        }
-        topic = f"{disc_prefix}/number/{device_id}/charge_limit/config"
-        await self._publish(topic, json.dumps(charge_limit_config), retain=True)
+        if self._has_right(vehicle, 340):
+            charge_limit_config = {
+                "name": "Charge Limit",
+                "unique_id": f"{device_id}_charge_limit",
+                "state_topic": f"{prefix}/{vin}/charge_soc_setting",
+                "command_topic": f"{prefix}/{vin}/charge_limit/set",
+                "unit_of_measurement": "%",
+                "min": 50,
+                "max": 100,
+                "step": 5,
+                "mode": "slider",
+                "device": device_info,
+                "icon": "mdi:battery-lock",
+            }
+            topic = f"{disc_prefix}/number/{device_id}/charge_limit/config"
+            await self._publish(topic, json.dumps(charge_limit_config), retain=True)
         ha_poll_config = {
             "name": "Polling Interval",
             "unique_id": f"{device_id}_polling_interval",
@@ -906,6 +1222,27 @@ class HomeAssistantMqttService:
         await self._publish(
             f"{prefix}/polling_interval", str(mqtt_interval_seconds), retain=True
         )
+
+    async def publish_cloud_stats(self, vin: str, cloud_stats: dict[str, Any]) -> None:
+        """Publish Leapmotor cloud statistics to MQTT sensor topics.
+
+        Expected cloud_stats keys:
+        - consumption_rank: str (e.g. "15%")
+        - consumption_kwh_100km: float
+        - weekly_total_ec: float (kWh total last week)
+        - weekly_driver_ec: float (kWh driving)
+        - weekly_ac_ec: float (kWh A/C)
+        - weekly_other_ec: float (kWh other)
+        """
+        if not self._connected or not self._settings.enabled:
+            return
+
+        prefix = f"{self._settings.topic_prefix}/{vin}"
+        _str = lambda v: str(v) if v is not None else ""  # noqa: E731
+
+        for key, value in cloud_stats.items():
+            if value is not None:
+                await self._publish(f"{prefix}/cloud_{key}", _str(value), retain=True)
 
     async def _publish(
         self, topic: str, payload: str | bytes, *, retain: bool = False
@@ -990,13 +1327,38 @@ class HomeAssistantMqttService:
                                     )
 
                         # Handle number set messages (e.g. .../vin/polling_interval/set)
+                        # and switch set messages (e.g. .../vin/ac/set)
                         elif topic_str.endswith("/set"):
                             parts = topic_str.split("/")
                             if len(parts) >= 4:
+                                vin = parts[-3]
                                 key = parts[-2]
-                                if key in ("polling_interval", "charge_limit"):
+                                payload_str = (
+                                    message.payload.decode() if message.payload else ""
+                                )
+
+                                # Switch entities send ON/OFF
+                                if payload_str in ("ON", "OFF"):
+                                    cmd = (
+                                        f"{key}_on"
+                                        if payload_str == "ON"
+                                        else f"{key}_off"
+                                    )
+                                    _LOGGER.info(
+                                        "MQTT switch command: %s for %s", cmd, vin
+                                    )
+                                    if self._command_callback:
+                                        asyncio.create_task(
+                                            self._handle_command_safe(vin, cmd)
+                                        )
+                                # Number entities send numeric values
+                                elif key in (
+                                    "polling_interval",
+                                    "charge_limit",
+                                    "ac_temperature",
+                                ):
                                     try:
-                                        value = int(float(message.payload.decode()))
+                                        value = int(float(payload_str))
                                         _LOGGER.info(
                                             "MQTT setting change: %s = %d", key, value
                                         )

@@ -144,13 +144,6 @@
         <InfoRow label="Pressure unit" value="bar" color="#e2e6f0" />
         <InfoRow label="Language" value="English" color="#e2e6f0" />
       </SectionCard>
-
-      <SectionCard title="Notifications" :icon="Bell">
-        <div v-for="n in notifications" :key="n.key" class="notif-row">
-          <span class="notif-label">{{ n.label }}</span>
-          <ToggleSwitch v-model="n.enabled" />
-        </div>
-      </SectionCard>
     </template>
 
     <!-- ═══════════════ SERVICES ═══════════════ -->
@@ -199,6 +192,95 @@
             {{ scheduler.last_error }}
           </div>
         </div>
+
+        <div class="divider" />
+
+        <p class="rate-limit-hint" style="margin-bottom:8px">
+          <strong>History downsampling</strong> — limits the number of data points returned when loading large date ranges in History. Keeps transition boundaries (charge start/stop) for KPI accuracy.
+        </p>
+        <div class="scheduler-service">
+          <div class="service-status">
+            <span class="status-dot" :class="downsamplingEnabled ? 'running' : 'stopped'" />
+            <span class="service-text">
+              {{ downsamplingEnabled ? 'Enabled' : 'Disabled' }}
+              <span v-if="downsamplingEnabled" class="service-interval">· max {{ downsamplingMaxPoints }} points</span>
+            </span>
+          </div>
+          <button
+            class="service-btn"
+            :class="downsamplingEnabled ? 'btn-stop' : 'btn-start'"
+            :disabled="downsamplingSaving"
+            @click="toggleDownsampling"
+          >
+            {{ downsamplingEnabled ? 'Disable' : 'Enable' }}
+          </button>
+        </div>
+        <div v-if="downsamplingEnabled" class="interval-row">
+          <span class="interval-label">Max points</span>
+          <div class="interval-control">
+            <button class="interval-btn" @click="pendingMaxPoints = Math.max(500, pendingMaxPoints - 500)">−</button>
+            <span class="interval-value">{{ pendingMaxPoints }}</span>
+            <button class="interval-btn" @click="pendingMaxPoints = Math.min(10000, pendingMaxPoints + 500)">+</button>
+            <button
+              class="interval-set-btn"
+              :disabled="pendingMaxPoints === downsamplingMaxPoints || downsamplingSaving"
+              @click="saveDownsampling"
+            >Set</button>
+          </div>
+        </div>
+        <div v-if="downsamplingSuccess" class="field-success">{{ downsamplingSuccess }}</div>
+        <div v-if="downsamplingError" class="field-error">{{ downsamplingError }}</div>
+      </SectionCard>
+
+      <SectionCard title="Transition Detection" :icon="Activity">
+        <p class="rate-limit-hint" style="margin-bottom:10px">Fast polling (every {{ scheduler.transition_poll_interval_seconds }}s) to detect state changes like regenerative braking, charging start/stop, and driving events. Saves an event + snapshot only when a transition occurs.</p>
+        <div class="scheduler-service">
+          <div class="service-status">
+            <span class="status-dot" :class="scheduler.transition_detection_enabled ? 'running' : 'stopped'" />
+            <span class="service-text">
+              {{ scheduler.transition_detection_enabled ? 'Active' : 'Disabled' }}
+              <span v-if="scheduler.transition_detection_enabled" class="service-interval">· poll every {{ scheduler.transition_poll_interval_seconds }}s</span>
+            </span>
+          </div>
+          <button
+            class="service-btn"
+            :class="scheduler.transition_detection_enabled ? 'btn-stop' : 'btn-start'"
+            :disabled="schedulerUpdating"
+            @click="updateScheduler({ transition_detection_enabled: !scheduler.transition_detection_enabled })"
+          >
+            {{ scheduler.transition_detection_enabled ? 'Disable' : 'Enable' }}
+          </button>
+        </div>
+
+        <div class="interval-row">
+          <span class="interval-label">Poll interval</span>
+          <div class="interval-control">
+            <button class="interval-btn" @click="pendingTransitionPoll = Math.max(5, pendingTransitionPoll - 5)">−</button>
+            <span class="interval-value">{{ pendingTransitionPoll }}s</span>
+            <button class="interval-btn" @click="pendingTransitionPoll = Math.min(300, pendingTransitionPoll + 5)">+</button>
+            <button
+              class="interval-set-btn"
+              :disabled="pendingTransitionPoll === scheduler.transition_poll_interval_seconds || schedulerUpdating"
+              @click="updateScheduler({ transition_poll_interval_seconds: pendingTransitionPoll })"
+            >Set</button>
+          </div>
+        </div>
+
+        <div class="interval-row">
+          <span class="interval-label">Dedup interval</span>
+          <div class="interval-control">
+            <button class="interval-btn" @click="pendingTransitionDedup = Math.max(1, pendingTransitionDedup - 5)">−</button>
+            <span class="interval-value">{{ pendingTransitionDedup }}s</span>
+            <button class="interval-btn" @click="pendingTransitionDedup = Math.min(300, pendingTransitionDedup + 5)">+</button>
+            <button
+              class="interval-set-btn"
+              :disabled="pendingTransitionDedup === scheduler.transition_min_event_interval_seconds || schedulerUpdating"
+              @click="updateScheduler({ transition_min_event_interval_seconds: pendingTransitionDedup })"
+            >Set</button>
+          </div>
+        </div>
+
+        <p class="rate-limit-hint" style="margin-top:8px">Monitored: regen, charging, plug, parking, lock, ignition, speed, SOC (±5%), charge state</p>
       </SectionCard>
 
       <SectionCard title="Live Refresh" :icon="RefreshCw">
@@ -372,6 +454,390 @@
           </div>
         </div>
       </SectionCard>
+
+      <SectionCard title="Telegram Bot" :icon="Send">
+        <p class="rate-limit-hint" style="margin-bottom:12px">Connect a Telegram bot to receive notifications and interact with your vehicle remotely.</p>
+
+        <div class="form-divider">Connection</div>
+        <div class="form-group" style="margin-top:8px">
+          <label>Bot Token</label>
+          <div class="secret-input-wrap">
+            <input
+              v-model="telegramForm.bot_token"
+              :type="showTelegramSecrets ? 'text' : 'password'"
+              placeholder="123456:ABC-DEF..."
+            />
+            <button class="secret-toggle-btn" type="button" @click="showTelegramSecrets = !showTelegramSecrets" tabindex="-1">
+              <component :is="showTelegramSecrets ? EyeOff : Eye" :size="14" />
+            </button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Chat ID</label>
+          <div class="secret-input-wrap">
+            <input
+              v-model="telegramForm.chat_id"
+              :type="showTelegramSecrets ? 'text' : 'password'"
+              placeholder="-100123456789"
+            />
+          </div>
+        </div>
+        <div class="channel-actions">
+          <button class="save-btn" :disabled="notifSaving || !telegramForm.bot_token || !telegramForm.chat_id" @click="saveTelegramChannel">
+            {{ notifSaving ? 'Saving…' : telegramChannel ? 'Save' : 'Configure' }}
+          </button>
+          <button v-if="telegramChannel" class="service-btn btn-start" :disabled="notifTesting" @click="testTelegram" style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap">
+            <Bell :size="13" style="flex-shrink:0" /> {{ notifTesting ? 'Sending…' : 'Test' }}
+          </button>
+        </div>
+        <div v-if="notifTestResult" :class="notifTestResult.success ? 'field-success' : 'field-error'" style="margin-top:6px">
+          {{ notifTestResult.message }}
+        </div>
+
+        <div class="form-divider" style="margin-top:16px">Bot Commands</div>
+        <p class="rate-limit-hint" style="margin-bottom:8px">
+          Enable commands to control and query the vehicle directly from Telegram (/status, /lock, /track, etc.).
+        </p>
+        <div class="scheduler-service">
+          <div class="service-status">
+            <span class="status-dot" :class="telegramBotActive ? 'running' : 'stopped'" />
+            <span class="service-text">
+              {{ !telegramChannel ? 'Not configured' : telegramBotActive ? 'Active' : 'Disabled' }}
+            </span>
+          </div>
+          <button
+            v-if="telegramChannel"
+            class="service-btn"
+            :class="telegramBotActive ? 'btn-stop' : 'btn-start'"
+            :disabled="botToggling"
+            @click="toggleTelegramBot(!telegramBotActive)"
+          >
+            {{ telegramBotActive ? 'Disable' : 'Enable' }}
+          </button>
+        </div>
+
+        <div class="form-divider" style="margin-top:16px">Linked Users</div>
+        <p class="rate-limit-hint" style="margin-bottom:8px">
+          Manage who can interact with the bot. Generate a link for instant access, or approve pending requests.
+        </p>
+
+        <!-- Generate link button -->
+        <div class="channel-actions" style="margin-bottom:12px">
+          <button
+            class="service-btn btn-start"
+            :disabled="!telegramChannel || linkTokenLoading"
+            @click="generateLinkToken"
+            style="display:inline-flex;align-items:center;gap:4px"
+          >
+            <Link2 :size="13" style="flex-shrink:0" />
+            {{ linkTokenLoading ? 'Generating…' : 'Generate Link' }}
+          </button>
+        </div>
+
+        <!-- Generated link display -->
+        <div v-if="linkTokenData" class="link-token-card">
+          <div class="link-token-url">
+            <input type="text" :value="linkTokenData.link" readonly class="link-input" />
+            <button class="secret-toggle-btn" @click="copyLink" title="Copy link">
+              <component :is="linkCopied ? Check : Copy" :size="14" />
+            </button>
+          </div>
+          <p class="rate-limit-hint" style="margin-top:4px">
+            Expires at {{ new Date(linkTokenData.expires_at).toLocaleTimeString() }}. Single use only.
+          </p>
+        </div>
+
+        <!-- Users list -->
+        <div v-if="telegramUsers.length" class="telegram-users-list">
+          <div
+            v-for="user in telegramUsers"
+            :key="user.chat_id"
+            class="telegram-user-row"
+          >
+            <div class="telegram-user-info">
+              <span class="telegram-user-name">
+                {{ user.first_name || '' }} {{ user.last_name || '' }}
+                <span v-if="user.username" class="telegram-user-handle">@{{ user.username }}</span>
+              </span>
+              <span class="telegram-user-status" :class="'status-' + user.status">
+                {{ user.status }}
+              </span>
+            </div>
+            <div class="telegram-user-actions">
+              <button
+                v-if="user.status === 'pending'"
+                class="service-btn btn-start btn-sm"
+                @click="approveTelegramUser(user.chat_id)"
+              >Approve</button>
+              <button
+                v-if="user.status === 'pending'"
+                class="service-btn btn-stop btn-sm"
+                @click="rejectTelegramUser(user.chat_id)"
+              >Reject</button>
+              <button
+                v-if="user.status !== 'pending'"
+                class="service-btn btn-stop btn-sm"
+                @click="removeTelegramUser(user.chat_id)"
+              >Remove</button>
+            </div>
+          </div>
+        </div>
+        <p v-else-if="telegramChannel" class="rate-limit-hint" style="margin-top:8px;opacity:0.6">
+          No linked users yet. Generate a link or wait for /start requests.
+        </p>
+
+        <ConfirmDialog
+          :visible="showRemoveConfirm"
+          title="Remove user"
+          message="This user will lose access to the bot and will need to be re-approved."
+          confirm-label="Remove"
+          cancel-label="Cancel"
+          variant="danger"
+          icon="trash"
+          @confirm="confirmRemoveUser"
+          @cancel="cancelRemoveUser"
+        />
+      </SectionCard>
+    </template>
+
+    <!-- ═══════════════ NOTIFICATIONS ═══════════════ -->
+    <template v-if="activeSection === 'notifications'">
+      <SectionCard title="Channels" :icon="Send">
+        <p class="rate-limit-hint" style="margin-bottom:12px">
+          Notification channels deliver vehicle alerts. Configure credentials in <b>Services → Telegram Bot</b>.
+        </p>
+
+        <!-- Telegram channel -->
+        <div class="channel-card">
+          <div class="channel-header">
+            <div class="channel-info">
+              <Send :size="14" class="channel-icon" />
+              <span class="channel-name">Telegram</span>
+              <span v-if="telegramChannel" class="channel-badge" :class="telegramChannel.enabled ? 'active' : 'inactive'">
+                {{ telegramChannel.enabled ? 'Active' : 'Disabled' }}
+              </span>
+              <span v-else class="channel-badge inactive">Not configured</span>
+            </div>
+            <div class="channel-controls">
+              <button v-if="telegramChannel" class="service-btn btn-start" :disabled="notifTesting" @click="testTelegram" style="font-size:11px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">
+                <Bell :size="12" style="flex-shrink:0" /> {{ notifTesting ? '…' : 'Test' }}
+              </button>
+              <ToggleSwitch
+                v-if="telegramChannel"
+                :modelValue="telegramChannel.enabled"
+                @update:modelValue="toggleTelegramEnabled"
+              />
+            </div>
+          </div>
+          <div v-if="notifTestResult" :class="notifTestResult.success ? 'field-success' : 'field-error'" style="margin-top:6px;padding-left:28px">
+            {{ notifTestResult.message }}
+          </div>
+        </div>
+
+        <div v-if="notifError" class="field-error" style="margin-top:6px">{{ notifError }}</div>
+
+        <!-- Cooldown setting -->
+        <div class="channel-cooldown">
+          <div class="interval-row">
+            <div>
+              <span class="interval-label">Notification cooldown</span>
+              <p class="cooldown-desc">Time to suppress repeated notifications for the same event. Set to 0 to disable.</p>
+            </div>
+            <div class="interval-control">
+              <input
+                type="number"
+                class="pref-input"
+                :min="0"
+                :max="86400"
+                v-model.number="cooldownSeconds"
+                style="width:70px"
+              />
+              <span class="pref-unit">sec</span>
+              <button class="save-btn save-btn-sm" @click="saveCooldown">Set</button>
+            </div>
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Events" :icon="Activity">
+        <p class="rate-limit-hint" style="margin-bottom:12px">
+          Select which events you want to receive as notifications.
+        </p>
+
+        <!-- Search filter -->
+        <div class="event-search-wrap">
+          <Search :size="14" class="event-search-icon" />
+          <input v-model="eventSearch" type="text" class="event-search-input" placeholder="Search events..." />
+          <button v-if="eventSearch" class="event-search-clear" @click="eventSearch = ''">
+            <X :size="12" />
+          </button>
+        </div>
+
+        <div v-for="category in eventCategories" :key="category.key" class="notif-category" v-show="filteredEventsByCategory[category.key].length">
+          <div class="notif-category-title" @click="toggleCategory(category.key)" style="cursor:pointer">
+            <div class="notif-category-left">
+              <component :is="collapsedCategories.has(category.key) ? ChevronRight : ChevronDown" :size="13" />
+              <component :is="categoryIcons[category.key]" :size="13" />
+              <span>{{ category.label }}</span>
+            </div>
+            <span class="notif-category-count">{{ filteredEventsByCategory[category.key].filter(e => e.enabled).length }}/{{ filteredEventsByCategory[category.key].length }}</span>
+          </div>
+          <template v-if="!collapsedCategories.has(category.key)">
+            <template v-for="evt in filteredEventsByCategory[category.key]" :key="evt.event_type">
+              <div class="notif-event-row">
+                <div class="notif-event-info">
+                  <span class="notif-event-label">{{ evt.label }}</span>
+                  <span class="notif-event-desc">{{ evt.description }}</span>
+                </div>
+                <div class="notif-event-actions">
+                  <button
+                    class="event-test-btn"
+                    :disabled="testingEvent === evt.event_type || !telegramChannel"
+                    @click="testEvent(evt)"
+                    title="Send test notification"
+                  >
+                    <Bell :size="12" :class="{ spinning: testingEvent === evt.event_type }" />
+                  </button>
+                  <ToggleSwitch :modelValue="evt.enabled" @update:modelValue="toggleEvent(evt, $event)" />
+                </div>
+              </div>
+              <!-- Configurable options shown directly under each event -->
+              <div v-if="evt.configurable && evt.enabled" class="notif-event-config">
+                <div v-for="(schema, paramKey) in evt.config_schema" :key="paramKey" class="interval-row" style="margin-top:4px">
+                  <span class="interval-label">{{ schema.label || paramKey }}</span>
+                  <div class="interval-control">
+                    <input
+                      type="number"
+                      class="pref-input"
+                      :min="schema.min"
+                      :max="schema.max"
+                      :value="getEventConfigValue(evt, paramKey, schema.default)"
+                      @change="setEventConfigValue(evt, paramKey, $event.target.value)"
+                      style="width:60px"
+                    />
+                    <span class="pref-unit">{{ schema.unit }}</span>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </template>
+        </div>
+
+        <div v-if="eventSearch && eventCategories.every(c => !filteredEventsByCategory[c.key].length)" class="rate-limit-hint" style="text-align:center;padding:16px 0">
+          No events matching "{{ eventSearch }}"
+        </div>
+
+        <button class="save-btn" style="margin-top:12px" :disabled="notifSaving" @click="saveEventPreferences">
+          {{ notifSaving ? 'Saving…' : 'Save preferences' }}
+        </button>
+        <div v-if="eventsSuccess" class="field-success" style="margin-top:6px">{{ eventsSuccess }}</div>
+      </SectionCard>
+
+      <SectionCard title="Location Tracking" :icon="Locate">
+        <p class="rate-limit-hint" style="margin-bottom:12px">
+          Send periodic location updates via Telegram. Useful for anti-theft monitoring.
+        </p>
+
+        <div class="tracking-status">
+          <div class="service-status">
+            <span class="status-dot" :class="tracking.active ? 'running' : 'stopped'" />
+            <span class="service-text">
+              {{ tracking.active ? `Active · every ${tracking.interval_seconds}s` : 'Stopped' }}
+            </span>
+          </div>
+        </div>
+
+        <div class="interval-row" style="margin-top:12px">
+          <span class="interval-label">Interval</span>
+          <div class="interval-control">
+            <input
+              type="number"
+              class="pref-input"
+              :min="10"
+              :max="3600"
+              v-model.number="trackingInterval"
+              style="width:70px"
+            />
+            <span class="pref-unit">sec</span>
+          </div>
+        </div>
+
+        <div class="channel-actions" style="margin-top:12px">
+          <button v-if="!tracking.active" class="save-btn" :disabled="!telegramChannel || trackingLoading" @click="startTracking">
+            {{ trackingLoading ? 'Starting…' : 'Start Tracking' }}
+          </button>
+          <button v-else class="service-btn btn-stop" :disabled="trackingLoading" @click="stopTracking">
+            {{ trackingLoading ? 'Stopping…' : 'Stop Tracking' }}
+          </button>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Geofences" :icon="Navigation">
+        <p class="rate-limit-hint" style="margin-bottom:12px">
+          Configure geographic zones to receive notifications when the vehicle enters or exits. Click on the map to set coordinates for a new zone.
+        </p>
+
+        <!-- Map -->
+        <div class="geofence-map-wrapper">
+          <div ref="geofenceMapEl" class="geofence-map-container"></div>
+        </div>
+
+        <div v-for="gf in geofences" :key="gf.id" class="geofence-item">
+          <div class="geofence-header">
+            <div class="geofence-name-row">
+              <MapPin :size="13" class="geofence-pin" />
+              <span class="geofence-name">{{ gf.name }}</span>
+            </div>
+            <button class="geofence-delete-btn" @click="deleteGeofence(gf.id)">
+              <Trash2 :size="13" />
+            </button>
+          </div>
+          <div class="geofence-details">
+            <span>{{ gf.latitude.toFixed(5) }}, {{ gf.longitude.toFixed(5) }} · {{ gf.radius_m }}m</span>
+          </div>
+          <div class="geofence-toggles">
+            <label class="geofence-toggle-label">
+              <input type="checkbox" :checked="gf.notify_on_enter" @change="updateGeofenceField(gf, 'notify_on_enter', $event.target.checked)" /> Enter
+            </label>
+            <label class="geofence-toggle-label">
+              <input type="checkbox" :checked="gf.notify_on_exit" @change="updateGeofenceField(gf, 'notify_on_exit', $event.target.checked)" /> Exit
+            </label>
+          </div>
+        </div>
+
+        <div class="divider" v-if="geofences.length" />
+
+        <div class="notif-category-title" style="cursor:default">
+          <div class="notif-category-left">
+            <MapPin :size="13" />
+            <span>Add zone</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Name</label>
+          <input v-model="newGeofence.name" type="text" placeholder="Home, Work, ..." />
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-end">
+          <div class="form-group" style="flex:1">
+            <label>Latitude</label>
+            <input v-model.number="newGeofence.latitude" type="number" step="0.00001" placeholder="45.12345" />
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>Longitude</label>
+            <input v-model.number="newGeofence.longitude" type="number" step="0.00001" placeholder="9.12345" />
+          </div>
+          <button class="locate-btn" :disabled="geolocating" @click="useCurrentLocation" title="Use current location">
+            <Locate :size="15" :class="{ spinning: geolocating }" />
+          </button>
+        </div>
+        <div class="form-group">
+          <label>Radius (m)</label>
+          <input v-model.number="newGeofence.radius_m" type="number" min="10" max="5000" step="10" />
+        </div>
+        <button class="save-btn" :disabled="notifSaving || !newGeofence.name || !newGeofence.latitude" @click="addGeofence">
+          {{ notifSaving ? 'Saving…' : 'Add geofence' }}
+        </button>
+      </SectionCard>
     </template>
 
     <!-- ═══════════════ ADVANCED ═══════════════ -->
@@ -437,15 +903,15 @@
 
       <SectionCard title="GitHub" :icon="Github">
         <div class="about-links">
-          <a href="https://github.com/markoceri/leapmotor-webapp" target="_blank" rel="noopener" class="about-link-card">
+          <a href="https://github.com/markoceri/leapconnect" target="_blank" rel="noopener" class="about-link-card">
             <Github :size="18" />
             <div>
               <div class="about-link-title">Source Code</div>
-              <div class="about-link-hint">markoceri/leapmotor-webapp</div>
+              <div class="about-link-hint">markoceri/leapconnect</div>
             </div>
             <ExternalLink :size="14" class="about-link-arrow" />
           </a>
-          <a href="https://github.com/markoceri/leapmotor-webapp/stargazers" target="_blank" rel="noopener" class="about-link-card star">
+          <a href="https://github.com/markoceri/leapconnect/stargazers" target="_blank" rel="noopener" class="about-link-card star">
             <Star :size="18" />
             <div>
               <div class="about-link-title">Star the project</div>
@@ -453,7 +919,7 @@
             </div>
             <ExternalLink :size="14" class="about-link-arrow" />
           </a>
-          <a href="https://github.com/markoceri/leapmotor-webapp/issues" target="_blank" rel="noopener" class="about-link-card">
+          <a href="https://github.com/markoceri/leapconnect/issues" target="_blank" rel="noopener" class="about-link-card">
             <AlertTriangle :size="18" />
             <div>
               <div class="about-link-title">Report an Issue</div>
@@ -648,14 +1114,17 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import SectionCard from '../components/SectionCard.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 import InfoRow from '../components/InfoRow.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
 import LogViewer from '../components/LogViewer.vue'
 import { api } from '../composables/useApi'
 import { useAppStore } from '../stores/appStore'
-import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation } from 'lucide-vue-next'
+import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity, Eye, EyeOff, Send, ChevronDown, ChevronRight, Search, MapPin, Locate, Zap, CarFront, Lock, X, Trash2, Link2, Copy, Check } from 'lucide-vue-next'
 
 const store = useAppStore()
 
@@ -663,6 +1132,7 @@ const sections = [
   { key: 'account', label: 'Account', icon: User },
   { key: 'general', label: 'General', icon: SlidersHorizontal },
   { key: 'services', label: 'Services', icon: Wrench },
+  { key: 'notifications', label: 'Notifications', icon: Bell },
   { key: 'advanced', label: 'Advanced', icon: Code },
   { key: 'about', label: 'About', icon: Info },
 ]
@@ -719,19 +1189,15 @@ const initials = computed(() => {
   return n.substring(0, 2).toUpperCase()
 })
 
-const notifications = reactive([
-  { label: 'Charge complete', key: 'notifCharge', enabled: true },
-  { label: 'Low battery (<20%)', key: 'notifLow', enabled: true },
-  { label: 'Tire pressure', key: 'notifTire', enabled: true },
-  { label: 'Software updates', key: 'notifOTA', enabled: false },
-])
-
 // -- Scheduler state --------------------------------------------------------
 const scheduler = reactive({
   enabled: false,
   interval_minutes: 15,
   mqtt_interval_seconds: 60,
   rate_limit_seconds: 10,
+  transition_detection_enabled: true,
+  transition_poll_interval_seconds: 10,
+  transition_min_event_interval_seconds: 10,
   is_running: false,
   last_run: null,
   last_error: null,
@@ -742,6 +1208,8 @@ const scheduler = reactive({
 const pendingInterval = ref(15)
 const pendingMqttInterval = ref(60)
 const pendingRateLimit = ref(10)
+const pendingTransitionPoll = ref(10)
+const pendingTransitionDedup = ref(10)
 const schedulerUpdating = ref(false)
 
 async function loadScheduler() {
@@ -751,6 +1219,8 @@ async function loadScheduler() {
     pendingInterval.value = data.interval_minutes
     pendingMqttInterval.value = data.mqtt_interval_seconds
     pendingRateLimit.value = data.rate_limit_seconds ?? 10
+    pendingTransitionPoll.value = data.transition_poll_interval_seconds ?? 10
+    pendingTransitionDedup.value = data.transition_min_event_interval_seconds ?? 10
   } catch {
     // scheduler not available yet
   }
@@ -765,6 +1235,8 @@ async function updateScheduler(patch) {
     pendingInterval.value = data.interval_minutes
     pendingMqttInterval.value = data.mqtt_interval_seconds
     pendingRateLimit.value = data.rate_limit_seconds ?? 10
+    pendingTransitionPoll.value = data.transition_poll_interval_seconds ?? 10
+    pendingTransitionDedup.value = data.transition_min_event_interval_seconds ?? 10
   } catch {
     await loadScheduler()
   } finally {
@@ -1169,6 +1641,60 @@ const pinSaving = ref(false)
 const pinSuccess = ref('')
 const pinError = ref('')
 
+// -- Downsampling settings --------------------------------------------------
+const downsamplingEnabled = ref(true)
+const downsamplingMaxPoints = ref(2000)
+const pendingMaxPoints = ref(2000)
+const downsamplingSaving = ref(false)
+const downsamplingSuccess = ref('')
+const downsamplingError = ref('')
+
+async function loadDownsamplingSettings() {
+  try {
+    const data = await api('GET', '/api/preferences')
+    downsamplingEnabled.value = data.downsampling_enabled ?? true
+    downsamplingMaxPoints.value = data.downsampling_max_points ?? 2000
+    pendingMaxPoints.value = data.downsampling_max_points ?? 2000
+  } catch { /* ignore */ }
+}
+
+async function toggleDownsampling() {
+  downsamplingSaving.value = true
+  downsamplingError.value = ''
+  try {
+    const data = await api('PUT', '/api/preferences', {
+      downsampling_enabled: !downsamplingEnabled.value,
+    })
+    downsamplingEnabled.value = data.downsampling_enabled
+    downsamplingSuccess.value = downsamplingEnabled.value ? 'Enabled' : 'Disabled'
+    setTimeout(() => { downsamplingSuccess.value = '' }, 3000)
+  } catch (err) {
+    downsamplingError.value = err.message
+  } finally {
+    downsamplingSaving.value = false
+  }
+}
+
+async function saveDownsampling() {
+  if (pendingMaxPoints.value === downsamplingMaxPoints.value) return
+  downsamplingSaving.value = true
+  downsamplingError.value = ''
+  downsamplingSuccess.value = ''
+  try {
+    const data = await api('PUT', '/api/preferences', {
+      downsampling_max_points: pendingMaxPoints.value,
+    })
+    downsamplingMaxPoints.value = data.downsampling_max_points
+    pendingMaxPoints.value = data.downsampling_max_points
+    downsamplingSuccess.value = 'Saved'
+    setTimeout(() => { downsamplingSuccess.value = '' }, 3000)
+  } catch (err) {
+    downsamplingError.value = err.message
+  } finally {
+    downsamplingSaving.value = false
+  }
+}
+
 async function loadVehiclePin() {
   try {
     const data = await api('GET', '/api/vehicle-pin')
@@ -1224,17 +1750,560 @@ async function saveLogLevels() {
   } catch { /* ignore */ }
 }
 
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+const telegramChannel = ref(null)
+const telegramForm = reactive({ bot_token: '', chat_id: '', bot_enabled: true })
+const notifSaving = ref(false)
+const notifTesting = ref(false)
+const notifError = ref('')
+const notifTestResult = ref(null)
+const showTelegramSecrets = ref(false)
+const telegramExpanded = ref(true)
+const cooldownSeconds = ref(300)
+const notifEvents = ref([])
+const eventsSuccess = ref('')
+const eventSearch = ref('')
+const collapsedCategories = ref(new Set())
+const geofences = ref([])
+const newGeofence = reactive({ name: '', latitude: null, longitude: null, radius_m: 200 })
+const geolocating = ref(false)
+const botToggling = ref(false)
+const geofenceMapEl = ref(null)
+
+// Telegram linked users
+const telegramUsers = ref([])
+const linkTokenData = ref(null)
+const linkTokenLoading = ref(false)
+const linkCopied = ref(false)
+let telegramUsersPollingInterval = null
+// Confirm dialog for remove
+const showRemoveConfirm = ref(false)
+const removeTargetChatId = ref(null)
+let geofenceMap = null
+let geofenceMapLayers = []
+let newGeofenceMarker = null
+let newGeofenceCircle = null
+
+const telegramBotActive = computed(() => {
+  return telegramChannel.value?.config?.bot_enabled !== false
+})
+
+const categoryIcons = { charging: Zap, driving: CarFront, security: Lock, maintenance: Wrench }
+
+const eventCategories = [
+  { key: 'charging', label: 'Charging' },
+  { key: 'driving', label: 'Driving' },
+  { key: 'security', label: 'Security' },
+  { key: 'maintenance', label: 'Maintenance' },
+]
+
+const filteredEventsByCategory = computed(() => {
+  const q = eventSearch.value.toLowerCase().trim()
+  const map = {}
+  for (const cat of eventCategories) {
+    const events = notifEvents.value.filter(e => e.category === cat.key)
+    map[cat.key] = q ? events.filter(e => e.label.toLowerCase().includes(q) || e.description?.toLowerCase().includes(q) || e.event_type.toLowerCase().includes(q)) : events
+  }
+  return map
+})
+
+function toggleCategory(key) {
+  if (collapsedCategories.value.has(key)) {
+    collapsedCategories.value.delete(key)
+  } else {
+    collapsedCategories.value.add(key)
+  }
+}
+
+function useCurrentLocation() {
+  if (!navigator.geolocation) return
+  geolocating.value = true
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      newGeofence.latitude = parseFloat(pos.coords.latitude.toFixed(5))
+      newGeofence.longitude = parseFloat(pos.coords.longitude.toFixed(5))
+      geolocating.value = false
+    },
+    () => { geolocating.value = false },
+    { enableHighAccuracy: true, timeout: 10000 }
+  )
+}
+
+// ── Geofence Map ──
+function getGeofenceTileUrl() {
+  const theme = document.documentElement.getAttribute('data-theme')
+  const style = theme === 'light' ? 'light_all' : 'dark_all'
+  return `https://{s}.basemaps.cartocdn.com/${style}/{z}/{x}/{y}{r}.png`
+}
+
+function initGeofenceMap() {
+  if (geofenceMap || !geofenceMapEl.value) return
+  const center = geofences.value.length
+    ? [geofences.value[0].latitude, geofences.value[0].longitude]
+    : [45.4642, 9.1900]
+  geofenceMap = L.map(geofenceMapEl.value, {
+    center,
+    zoom: 13,
+    zoomControl: true,
+    attributionControl: false,
+  })
+  L.tileLayer(getGeofenceTileUrl(), { maxZoom: 19, subdomains: 'abcd' }).addTo(geofenceMap)
+  geofenceMap.on('click', onGeofenceMapClick)
+  renderGeofencesOnMap()
+}
+
+function onGeofenceMapClick(e) {
+  newGeofence.latitude = parseFloat(e.latlng.lat.toFixed(5))
+  newGeofence.longitude = parseFloat(e.latlng.lng.toFixed(5))
+}
+
+function renderGeofencesOnMap() {
+  if (!geofenceMap) return
+  // Remove old layers
+  geofenceMapLayers.forEach(l => geofenceMap.removeLayer(l))
+  geofenceMapLayers = []
+  // Draw existing geofences
+  geofences.value.forEach(gf => {
+    const circle = L.circle([gf.latitude, gf.longitude], {
+      radius: gf.radius_m,
+      color: '#00d4ff',
+      fillColor: '#00d4ff',
+      fillOpacity: 0.12,
+      weight: 2,
+    }).addTo(geofenceMap)
+    const marker = L.circleMarker([gf.latitude, gf.longitude], {
+      radius: 5,
+      color: '#00d4ff',
+      fillColor: '#00d4ff',
+      fillOpacity: 1,
+      weight: 2,
+    }).addTo(geofenceMap)
+    marker.bindTooltip(gf.name, { permanent: false, direction: 'top', offset: [0, -8] })
+    geofenceMapLayers.push(circle, marker)
+  })
+  // Fit bounds if we have geofences
+  if (geofenceMapLayers.length) {
+    const group = L.featureGroup(geofenceMapLayers)
+    geofenceMap.fitBounds(group.getBounds().pad(0.3))
+  }
+}
+
+function updateNewGeofencePreview() {
+  if (!geofenceMap) return
+  // Remove previous preview
+  if (newGeofenceMarker) { geofenceMap.removeLayer(newGeofenceMarker); newGeofenceMarker = null }
+  if (newGeofenceCircle) { geofenceMap.removeLayer(newGeofenceCircle); newGeofenceCircle = null }
+  if (newGeofence.latitude && newGeofence.longitude) {
+    newGeofenceCircle = L.circle([newGeofence.latitude, newGeofence.longitude], {
+      radius: newGeofence.radius_m || 200,
+      color: '#ff9800',
+      fillColor: '#ff9800',
+      fillOpacity: 0.15,
+      weight: 2,
+      dashArray: '6 4',
+    }).addTo(geofenceMap)
+    newGeofenceMarker = L.circleMarker([newGeofence.latitude, newGeofence.longitude], {
+      radius: 6,
+      color: '#ff9800',
+      fillColor: '#ff9800',
+      fillOpacity: 1,
+      weight: 2,
+    }).addTo(geofenceMap)
+    newGeofenceMarker.bindTooltip('New zone', { permanent: false, direction: 'top', offset: [0, -8] })
+  }
+}
+
+watch(() => [newGeofence.latitude, newGeofence.longitude, newGeofence.radius_m], updateNewGeofencePreview)
+watch(geofences, renderGeofencesOnMap, { deep: true })
+watch(() => activeSection.value, (val) => {
+  if (val === 'notifications') {
+    geofenceMap = null
+    nextTick(() => initGeofenceMap())
+  }
+  // Start/stop telegram users polling when on services tab
+  if (val === 'services') {
+    startTelegramUsersPolling()
+  } else {
+    stopTelegramUsersPolling()
+  }
+})
+
+function getEventConfigValue(evt, paramKey, defaultVal) {
+  return evt.config?.[paramKey] ?? defaultVal
+}
+
+function setEventConfigValue(evt, paramKey, value) {
+  if (!evt.config) evt.config = {}
+  evt.config[paramKey] = Number(value)
+}
+
+async function loadNotifications() {
+  try {
+    const channels = await api('GET', '/api/notifications/channels')
+    const tg = channels.find(c => c.channel_type === 'telegram')
+    if (tg) {
+      telegramChannel.value = tg
+      telegramForm.bot_token = tg.config?.bot_token || ''
+      telegramForm.chat_id = tg.config?.chat_id || ''
+      telegramForm.bot_enabled = tg.config?.bot_enabled !== false
+    }
+    // Load events
+    const events = await api('GET', '/api/notifications/events' + (tg ? `?channel_id=${tg.id}` : ''))
+    notifEvents.value = events
+    // Load geofences
+    geofences.value = await api('GET', '/api/notifications/geofences')
+    nextTick(() => initGeofenceMap())
+    // Load cooldown
+    const cd = await api('GET', '/api/notifications/cooldown')
+    cooldownSeconds.value = cd.cooldown_seconds ?? 300
+    // Load tracking status
+    await loadTrackingStatus()
+    // Load telegram linked users
+    await loadTelegramUsers()
+  } catch (e) {
+    notifError.value = e.message || 'Failed to load notifications'
+  }
+}
+
+async function saveCooldown() {
+  try {
+    await api('PUT', '/api/notifications/cooldown', { cooldown_seconds: cooldownSeconds.value })
+  } catch (e) {
+    notifError.value = e.message || 'Failed to save cooldown'
+  }
+}
+
+async function saveTelegramChannel() {
+  notifSaving.value = true
+  notifError.value = ''
+  try {
+    const config = { bot_token: telegramForm.bot_token, chat_id: telegramForm.chat_id, bot_enabled: telegramForm.bot_enabled }
+    if (telegramChannel.value) {
+      const updated = await api('PUT', `/api/notifications/channels/${telegramChannel.value.id}`, { config })
+      telegramChannel.value = updated
+    } else {
+      const created = await api('POST', '/api/notifications/channels', { channel_type: 'telegram', config, enabled: true })
+      telegramChannel.value = created
+      // Reload events now that we have a channel
+      const events = await api('GET', `/api/notifications/events?channel_id=${created.id}`)
+      notifEvents.value = events
+    }
+  } catch (e) {
+    notifError.value = e.message || 'Save failed'
+  } finally {
+    notifSaving.value = false
+  }
+}
+
+async function toggleTelegramEnabled() {
+  if (!telegramChannel.value) return
+  notifSaving.value = true
+  try {
+    const updated = await api('PUT', `/api/notifications/channels/${telegramChannel.value.id}`, { enabled: !telegramChannel.value.enabled })
+    telegramChannel.value = updated
+  } catch (e) {
+    notifError.value = e.message || 'Toggle failed'
+  } finally {
+    notifSaving.value = false
+  }
+}
+
+async function toggleTelegramBot(enable) {
+  if (!telegramChannel.value) return
+  botToggling.value = true
+  try {
+    const config = { ...telegramChannel.value.config, bot_enabled: enable }
+    const updated = await api('PUT', `/api/notifications/channels/${telegramChannel.value.id}`, { config })
+    telegramChannel.value = updated
+    telegramForm.bot_enabled = enable
+  } catch (e) {
+    notifError.value = e.message || 'Bot toggle failed'
+  } finally {
+    botToggling.value = false
+  }
+}
+
+async function testTelegram() {
+  if (!telegramChannel.value) return
+  notifTesting.value = true
+  notifTestResult.value = null
+  try {
+    const result = await api('POST', `/api/notifications/channels/${telegramChannel.value.id}/test`)
+    notifTestResult.value = result
+  } catch (e) {
+    notifTestResult.value = { success: false, message: e.message || 'Test failed' }
+  } finally {
+    notifTesting.value = false
+  }
+}
+
+// -- Telegram Linked Users --
+
+async function loadTelegramUsers() {
+  try {
+    telegramUsers.value = await api('GET', '/api/notifications/channels/telegram/users')
+  } catch (e) {
+    // Silently ignore if endpoint not available
+  }
+}
+
+async function generateLinkToken() {
+  linkTokenLoading.value = true
+  linkTokenData.value = null
+  linkCopied.value = false
+  try {
+    linkTokenData.value = await api('POST', '/api/notifications/channels/telegram/link-token')
+  } catch (e) {
+    notifError.value = e.message || 'Failed to generate link'
+  } finally {
+    linkTokenLoading.value = false
+  }
+}
+
+async function copyLink() {
+  if (!linkTokenData.value) return
+  try {
+    await navigator.clipboard.writeText(linkTokenData.value.link)
+    linkCopied.value = true
+    setTimeout(() => { linkCopied.value = false }, 2000)
+  } catch (e) {
+    // Fallback: select input
+  }
+}
+
+async function approveTelegramUser(chatId) {
+  try {
+    await api('PUT', `/api/notifications/channels/telegram/users/${chatId}/approve`)
+    await loadTelegramUsers()
+  } catch (e) {
+    notifError.value = e.message || 'Approve failed'
+  }
+}
+
+async function rejectTelegramUser(chatId) {
+  try {
+    await api('PUT', `/api/notifications/channels/telegram/users/${chatId}/reject`)
+    await loadTelegramUsers()
+  } catch (e) {
+    notifError.value = e.message || 'Reject failed'
+  }
+}
+
+async function removeTelegramUser(chatId) {
+  removeTargetChatId.value = chatId
+  showRemoveConfirm.value = true
+}
+
+async function confirmRemoveUser() {
+  const chatId = removeTargetChatId.value
+  showRemoveConfirm.value = false
+  removeTargetChatId.value = null
+  try {
+    await api('DELETE', `/api/notifications/channels/telegram/users/${chatId}`)
+    await loadTelegramUsers()
+  } catch (e) {
+    notifError.value = e.message || 'Remove failed'
+  }
+}
+
+function cancelRemoveUser() {
+  showRemoveConfirm.value = false
+  removeTargetChatId.value = null
+}
+
+function toggleEvent(evt, enabled) {
+  evt.enabled = enabled
+}
+
+const testingEvent = ref(null)
+
+async function testEvent(evt) {
+  if (!telegramChannel.value) {
+    notifError.value = 'Configure a Telegram channel first'
+    return
+  }
+  testingEvent.value = evt.event_type
+  try {
+    const result = await api('POST', `/api/notifications/channels/${telegramChannel.value.id}/test-event`, { event_type: evt.event_type, vin: store.selectedVin })
+    if (!result.success) {
+      notifError.value = result.message || 'Test failed'
+    }
+  } catch (e) {
+    notifError.value = e.message || 'Test failed'
+  } finally {
+    testingEvent.value = null
+  }
+}
+
+async function saveEventPreferences() {
+  if (!telegramChannel.value) {
+    notifError.value = 'Configure a Telegram channel first'
+    return
+  }
+  notifSaving.value = true
+  eventsSuccess.value = ''
+  try {
+    const preferences = notifEvents.value.map(e => ({
+      event_type: e.event_type,
+      enabled: e.enabled,
+      config: e.config || null,
+    }))
+    await api('PUT', '/api/notifications/events', { channel_id: telegramChannel.value.id, preferences })
+    eventsSuccess.value = 'Preferences saved'
+    setTimeout(() => { eventsSuccess.value = '' }, 3000)
+  } catch (e) {
+    notifError.value = e.message || 'Save failed'
+  } finally {
+    notifSaving.value = false
+  }
+}
+
+// -- Location Tracking ------------------------------------------------------
+const tracking = reactive({ active: false, interval_seconds: 60 })
+const trackingInterval = ref(60)
+const trackingLoading = ref(false)
+let trackingPollTimer = null
+
+function startTrackingPoll() {
+  stopTrackingPoll()
+  trackingPollTimer = setInterval(async () => {
+    if (!store.selectedVin) return
+    try {
+      const data = await api('GET', `/api/tracking/${store.selectedVin}`)
+      if (!data.tracking && tracking.active) {
+        tracking.active = false
+        stopTrackingPoll()
+      }
+    } catch { /* ignore */ }
+  }, 5000)
+}
+
+function stopTrackingPoll() {
+  if (trackingPollTimer) {
+    clearInterval(trackingPollTimer)
+    trackingPollTimer = null
+  }
+}
+
+async function loadTrackingStatus() {
+  if (!store.selectedVin) return
+  try {
+    const data = await api('GET', `/api/tracking/${store.selectedVin}`)
+    tracking.active = data.tracking
+    if (data.interval_seconds) {
+      tracking.interval_seconds = data.interval_seconds
+      trackingInterval.value = data.interval_seconds
+    }
+    if (data.tracking) startTrackingPoll()
+    else stopTrackingPoll()
+  } catch {
+    // ignore
+  }
+}
+
+async function startTracking() {
+  if (!store.selectedVin) return
+  trackingLoading.value = true
+  try {
+    const data = await api('POST', `/api/tracking/${store.selectedVin}/start`, { interval_seconds: trackingInterval.value })
+    tracking.active = data.tracking
+    tracking.interval_seconds = data.interval_seconds
+    startTrackingPoll()
+  } catch (e) {
+    notifError.value = e.message || 'Failed to start tracking'
+  } finally {
+    trackingLoading.value = false
+  }
+}
+
+async function stopTracking() {
+  if (!store.selectedVin) return
+  trackingLoading.value = true
+  try {
+    await api('POST', `/api/tracking/${store.selectedVin}/stop`)
+    tracking.active = false
+    stopTrackingPoll()
+  } catch (e) {
+    notifError.value = e.message || 'Failed to stop tracking'
+  } finally {
+    trackingLoading.value = false
+  }
+}
+
+async function addGeofence() {
+  notifSaving.value = true
+  try {
+    const gf = await api('POST', '/api/notifications/geofences', {
+      name: newGeofence.name,
+      latitude: newGeofence.latitude,
+      longitude: newGeofence.longitude,
+      radius_m: newGeofence.radius_m,
+      notify_on_enter: true,
+      notify_on_exit: true,
+      enabled: true,
+    })
+    geofences.value.push(gf)
+    newGeofence.name = ''
+    newGeofence.latitude = null
+    newGeofence.longitude = null
+    newGeofence.radius_m = 200
+  } catch (e) {
+    notifError.value = e.message || 'Failed to add geofence'
+  } finally {
+    notifSaving.value = false
+  }
+}
+
+async function deleteGeofence(id) {
+  try {
+    await api('DELETE', `/api/notifications/geofences/${id}`)
+    geofences.value = geofences.value.filter(g => g.id !== id)
+  } catch (e) {
+    notifError.value = e.message || 'Failed to delete geofence'
+  }
+}
+
+async function updateGeofenceField(gf, field, value) {
+  try {
+    await api('PUT', `/api/notifications/geofences/${gf.id}`, { [field]: value })
+    gf[field] = value
+  } catch (e) {
+    notifError.value = e.message || 'Failed to update geofence'
+  }
+}
+
 onMounted(() => {
   loadScheduler()
   loadLiveRefresh()
   loadAccount()
   loadCertsStatus()
   loadPreferences()
+  loadDownsamplingSettings()
   loadMqtt()
   loadAbrp()
   loadVehiclePin()
   loadLogLevels()
+  loadNotifications()
 })
+
+onBeforeUnmount(() => {
+  stopTrackingPoll()
+  stopTelegramUsersPolling()
+})
+
+function startTelegramUsersPolling() {
+  stopTelegramUsersPolling()
+  telegramUsersPollingInterval = setInterval(loadTelegramUsers, 5000)
+}
+
+function stopTelegramUsersPolling() {
+  if (telegramUsersPollingInterval) {
+    clearInterval(telegramUsersPollingInterval)
+    telegramUsersPollingInterval = null
+  }
+}
 </script>
 
 <style scoped>
@@ -1381,6 +2450,12 @@ onMounted(() => {
   border-top: 1px solid var(--divider);
 }
 
+.divider {
+  border: none;
+  border-top: 1px solid var(--divider);
+  margin: 14px 0;
+}
+
 .file-upload {
   display: flex;
   align-items: center;
@@ -1439,6 +2514,108 @@ onMounted(() => {
 }
 .notif-row:last-child { border-bottom: none; }
 .notif-label { font-size: 13px; color: var(--sub); }
+
+/* Channel card */
+.channel-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--elevated);
+  overflow: hidden;
+}
+.channel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.channel-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.channel-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.channel-icon { color: var(--sub); flex-shrink: 0; }
+.channel-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.channel-badge {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.channel-badge.active {
+  background: #00e67618;
+  color: #00e676;
+  border: 1px solid #00e67633;
+}
+.channel-badge.inactive {
+  background: var(--bg);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.channel-body {
+  padding: 14px;
+}
+.channel-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.channel-cooldown {
+  margin-top: 14px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.cooldown-desc {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.save-btn-sm {
+  padding: 4px 12px;
+  font-size: 12px;
+  min-width: unset;
+  margin-left: 8px;
+}
+
+/* Secret input with reveal toggle */
+.secret-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.secret-input-wrap input {
+  width: 100%;
+  padding-right: 36px;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 9px 36px 9px 12px;
+  font-size: 13px;
+  color: var(--sub);
+  font-family: var(--mono);
+  transition: border 0.2s;
+}
+.secret-input-wrap input:focus { border-color: #00d4ff55; outline: none; }
+.secret-input-wrap input::placeholder { color: var(--muted2); }
+.secret-toggle-btn {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+.secret-toggle-btn:hover { color: var(--sub); }
 
 .raw-toggle {
   background: transparent;
@@ -1883,5 +3060,300 @@ onMounted(() => {
 .log-level-select option {
   background: var(--card, #1a1e2e);
   color: var(--text);
+}
+
+/* Notifications */
+/* Channel collapse transition */
+.collapse-enter-active, .collapse-leave-active {
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+.collapse-enter-from, .collapse-leave-to {
+  opacity: 0;
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.collapse-enter-to, .collapse-leave-from {
+  opacity: 1;
+  max-height: 400px;
+}
+.channel-chevron { color: var(--muted); flex-shrink: 0; }
+
+/* Event search */
+.event-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.event-search-icon {
+  position: absolute;
+  left: 10px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.event-search-input {
+  width: 100%;
+  padding: 8px 32px 8px 32px;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--sub);
+  transition: border 0.2s;
+}
+.event-search-input:focus { border-color: #00d4ff55; outline: none; }
+.event-search-input::placeholder { color: var(--muted2); }
+.event-search-clear {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+.event-search-clear:hover { color: var(--sub); }
+
+.notif-category { margin-bottom: 16px; }
+.notif-category-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary, #8a919e);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--btn-border, #2a2e3e);
+  user-select: none;
+}
+.notif-category-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.notif-category-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.notif-event-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  gap: 12px;
+}
+.notif-event-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.notif-event-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.event-test-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: none;
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.event-test-btn:hover { color: var(--sub); border-color: #00d4ff44; }
+.event-test-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.notif-event-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.notif-event-desc {
+  font-size: 11px;
+  color: var(--text-secondary, #6a7080);
+}
+.notif-event-config {
+  padding: 4px 0 8px 16px;
+  border-left: 2px solid var(--btn-border, #2a2e3e);
+  margin-bottom: 4px;
+}
+.geofence-map-wrapper {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  height: 240px;
+  margin-bottom: 14px;
+  border: 1px solid var(--btn-border, #2a2e3e);
+}
+.geofence-map-container {
+  width: 100%;
+  height: 100%;
+}
+@media (min-width: 640px) {
+  .geofence-map-wrapper { height: 300px; }
+}
+.geofence-item {
+  padding: 10px;
+  border: 1px solid var(--btn-border, #2a2e3e);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+.geofence-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.geofence-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.geofence-pin { color: var(--sub); flex-shrink: 0; }
+.geofence-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text);
+}
+.geofence-delete-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s, background 0.15s;
+}
+.geofence-delete-btn:hover { color: #f44336; background: #f4433610; }
+.locate-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 0.9rem;
+  background: var(--elevated);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  color: var(--sub);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.2s, color 0.2s;
+}
+.locate-btn:hover { border-color: #00d4ff55; color: #00d4ff; }
+.locate-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.geofence-details {
+  font-size: 11px;
+  color: var(--text-secondary, #6a7080);
+  margin-top: 4px;
+}
+.geofence-toggles {
+  display: flex;
+  gap: 16px;
+  margin-top: 6px;
+}
+.geofence-toggle-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+/* Telegram Linked Users */
+.link-token-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.link-token-url {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.link-input {
+  flex: 1;
+  font-size: 12px;
+  font-family: monospace;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  color: var(--text-primary);
+}
+.telegram-users-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.telegram-user-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.telegram-user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.telegram-user-name {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.telegram-user-handle {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+.telegram-user-status {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.telegram-user-status.status-pending {
+  background: rgba(255, 152, 0, 0.15);
+  color: #ff9800;
+}
+.telegram-user-status.status-approved {
+  background: rgba(76, 175, 80, 0.15);
+  color: #4caf50;
+}
+.telegram-user-status.status-rejected {
+  background: rgba(244, 67, 54, 0.15);
+  color: #f44336;
+}
+.telegram-user-actions {
+  display: flex;
+  gap: 4px;
+}
+.btn-sm {
+  font-size: 11px !important;
+  padding: 3px 8px !important;
 }
 </style>

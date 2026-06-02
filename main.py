@@ -32,7 +32,14 @@ from leapmotor_api.models import MessageList, Vehicle, VehicleStatus
 from pydantic import BaseModel
 from starlette.websockets import WebSocketDisconnect
 
-from models import MqttSettings, UserPreferences, VehicleSnapshot
+from models import (
+    Geofence,
+    MqttSettings,
+    NotificationChannel,
+    NotificationPreference,
+    UserPreferences,
+    VehicleSnapshot,
+)
 from persistence.sqlite_adapter import SQLAlchemyVehicleHistoryRepository
 from schemas import (
     AbrpStatusResponse,
@@ -46,18 +53,28 @@ from schemas import (
     ConsumptionWeeklyRankResponse,
     DailySummaryResponse,
     FullVehicleDataResponse,
+    GeofenceCreate,
+    GeofenceResponse,
+    GeofenceUpdate,
     LiveRefreshStatusResponse,
     LoginResponse,
     MessageListResponse,
     MessageSchema,
     MqttStatusResponse,
     MqttTestResponse,
+    NotificationChannelCreate,
+    NotificationChannelResponse,
+    NotificationChannelUpdate,
+    NotificationEventStatus,
+    NotificationPreferencesUpdate,
     PreferencesResponse,
     ReconnectResponse,
     SchedulerStatusResponse,
     SetPinResponse,
     SetupStatusResponse,
     StatusResponse,
+    TelegramLinkTokenResponse,
+    TelegramUserResponse,
     UnreadCountResponse,
     UserCreateResponse,
     UserInfoResponse,
@@ -71,6 +88,10 @@ from schemas import (
 )
 from services.abrp import AbrpService
 from services.mqtt_ha import HomeAssistantMqttService
+from services.notification_dispatcher import (
+    EVENT_CATALOG,
+    NotificationDispatcher,
+)
 from services.scheduler import VehicleDataScheduler
 from services.vehicle_cache import VehicleStatusCache
 
@@ -161,6 +182,7 @@ _scheduler: VehicleDataScheduler | None = None
 _mqtt_service: HomeAssistantMqttService | None = None
 _abrp_service: AbrpService | None = None
 _vehicle_cache: VehicleStatusCache | None = None
+_notification_dispatcher: NotificationDispatcher | None = None
 
 # Live refresh — periodic cache refresh for VINs with active WebSocket clients
 _live_refresh_task: asyncio.Task | None = None
@@ -371,7 +393,12 @@ async def _auto_connect() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _history_repo, _scheduler, _mqtt_service, _vehicle_cache
+    global \
+        _history_repo, \
+        _scheduler, \
+        _mqtt_service, \
+        _vehicle_cache, \
+        _notification_dispatcher
     # Capture the running event loop for thread-safe log broadcasting
     _log_handler.set_loop(asyncio.get_running_loop())
 
@@ -390,20 +417,42 @@ async def lifespan(app: FastAPI):
     _vehicle_cache = VehicleStatusCache(rate_limit_seconds=saved.rate_limit_seconds)
     _vehicle_cache.set_on_update(_on_cache_update)
 
-    _scheduler = VehicleDataScheduler(_history_repo, cache=_vehicle_cache)
+    # Initialize notification dispatcher
+    _notification_dispatcher = NotificationDispatcher(
+        repo=_history_repo,
+        image_composer=_compose_notification_image,
+        vehicle_cache=_vehicle_cache,
+        command_executor=_execute_vehicle_command,
+        rights_checker=_check_command_right,
+        pin_checker=lambda: bool(_sync_client and _sync_client.operation_password),
+        pin_setter=_set_vehicle_pin,
+    )
+    await _notification_dispatcher.reload_config()
+
+    _scheduler = VehicleDataScheduler(
+        _history_repo,
+        cache=_vehicle_cache,
+        notification_dispatcher=_notification_dispatcher,
+    )
     _scheduler.update_settings(
         enabled=saved.enabled,
         interval_minutes=saved.interval_minutes,
         mqtt_interval_seconds=saved.mqtt_interval_seconds,
         rate_limit_seconds=saved.rate_limit_seconds,
+        transition_detection_enabled=saved.transition_detection_enabled,
+        transition_poll_interval_seconds=saved.transition_poll_interval_seconds,
+        transition_min_event_interval_seconds=saved.transition_min_event_interval_seconds,
     )
     _LOGGER.info(
         "Scheduler settings loaded: enabled=%s, history=%d min,"
-        " mqtt=%d sec, rate_limit=%d sec",
+        " mqtt=%d sec, rate_limit=%d sec, transition=%s (poll=%ds, dedup=%ds)",
         saved.enabled,
         saved.interval_minutes,
         saved.mqtt_interval_seconds,
         saved.rate_limit_seconds,
+        saved.transition_detection_enabled,
+        saved.transition_poll_interval_seconds,
+        saved.transition_min_event_interval_seconds,
     )
 
     # Initialize MQTT Home Assistant service
@@ -431,6 +480,31 @@ async def lifespan(app: FastAPI):
         if _mqtt_service and _mqtt_service.is_connected:
             image_pkg = _image_packages.get(vehicle.vin)
             await _mqtt_service.publish_vehicle_status(vehicle, status, image_pkg)
+
+            # Publish cloud stats (consumption rank + weekly breakdown)
+            try:
+                client = _get_client()
+                cloud_stats: dict = {}
+                with suppress(Exception):
+                    rank_result = await client.get_consumption_weekly_rank(vehicle)
+                    if rank_result and rank_result.rank:
+                        cloud_stats["consumption_rank"] = rank_result.rank.rank
+                        cloud_stats["consumption_kwh_100km"] = (
+                            rank_result.rank.hundred_km_ec
+                        )
+                with suppress(Exception):
+                    breakdown = await client.get_consumption_last_week_breakdown(
+                        vehicle
+                    )
+                    if breakdown:
+                        cloud_stats["weekly_total_ec"] = breakdown.total_ec
+                        cloud_stats["weekly_driver_ec"] = breakdown.driver_ec
+                        cloud_stats["weekly_ac_ec"] = breakdown.ac_ec
+                        cloud_stats["weekly_other_ec"] = breakdown.other_ec
+                if cloud_stats:
+                    await _mqtt_service.publish_cloud_stats(vehicle.vin, cloud_stats)
+            except Exception as exc:
+                _LOGGER.debug("Cloud stats MQTT publish skipped: %s", exc)
 
     _scheduler.set_on_status_callback(_on_scheduler_status)
 
@@ -485,6 +559,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(LeapmotorApiError)
+async def leapmotor_api_error_handler(request: Request, exc: LeapmotorApiError):
+    """Return a proper JSON 502 response for any unhandled LeapmotorApiError."""
+    _LOGGER.warning(
+        "LeapmotorApiError on %s %s: %s", request.method, request.url.path, exc
+    )
+    return JSONResponse(status_code=502, content={"detail": str(exc)})
 
 
 @app.middleware("http")
@@ -1400,6 +1483,163 @@ async def _get_image_package(vin: str) -> CarImagePackage:
     return pkg
 
 
+async def _compose_notification_image(vin: str) -> bytes | None:
+    """Compose a dynamic vehicle image for notifications."""
+    try:
+        pkg = await _get_image_package(vin)
+        vehicle = _find_vehicle(vin)
+        if _vehicle_cache:
+            status = await _vehicle_cache.get(vehicle)
+        else:
+            client = _get_client()
+            status = await client.get_vehicle_status(vehicle)
+        return await asyncio.to_thread(
+            pkg.compose, status, charge_frame=0, format="PNG"
+        )
+    except Exception as exc:
+        _LOGGER.warning("Failed to compose notification image for %s: %s", vin, exc)
+        return None
+
+
+# Command-to-right mapping (same as MQTT HA service)
+_COMMAND_RIGHTS: dict[str, int | None] = {
+    "lock": 110,
+    "unlock": 110,
+    "trunk_open": 130,
+    "trunk_close": 130,
+    "find": 120,
+    "windows_open": 230,
+    "windows_close": 230,
+    "charging_start": 193,
+    "charging_stop": 193,
+    "battery_preheat": 190,
+    "battery_preheat_off": 190,
+    "unlock_charger": 192,
+    "sunroof_open": 160,
+    "sunroof_close": 160,
+    "defrost": 170,
+    "ac_on": None,
+    "ac_off": None,
+    "sentry_mode_on": None,
+    "sentry_mode_off": None,
+    "steering_wheel_heat_on": None,
+    "steering_wheel_heat_off": None,
+}
+
+# Ability → Rights mapping (mirrors mqtt_ha)
+_ABILITY_TO_RIGHTS: dict[int, list[int]] = {
+    1: [110],
+    2: [120],
+    3: [130],
+    4: [150],
+    6: [170],
+    9: [171],
+    10: [190],
+    11: [161],
+    12: [230],
+    14: [301],
+    15: [320],
+    17: [170, 171],
+    18: [460],
+    24: [130],
+    25: [160],
+    30: [180],
+    34: [510],
+    35: [340],
+    36: [230],
+    38: [360, 361],
+    40: [380],
+    42: [370],
+    43: [370],
+    48: [192],
+    50: [220],
+    52: [180],
+}
+_RIGHTS_WITH_ABILITY: set[int] = set()
+for _rl in _ABILITY_TO_RIGHTS.values():
+    _RIGHTS_WITH_ABILITY.update(_rl)
+
+
+def _vehicle_has_right(vehicle: Vehicle, right: int | None) -> bool:
+    """Check if a vehicle has the required right+ability permission."""
+    if right is None:
+        return True
+    user_rights = {r.value if hasattr(r, "value") else int(r) for r in vehicle.rights}
+    if right not in user_rights:
+        return False
+    if right in _RIGHTS_WITH_ABILITY:
+        hw_rights: set[int] = set()
+        for a in vehicle.abilities:
+            a_val = a.value if hasattr(a, "value") else int(a)
+            mapped = _ABILITY_TO_RIGHTS.get(a_val, [])
+            hw_rights.update(mapped)
+        if right not in hw_rights:
+            return False
+    return True
+
+
+def _check_command_right(vin: str, command: str) -> bool:
+    """Check if a command is permitted for the vehicle.
+
+    Sync helper for menu filtering.
+    """
+    try:
+        vehicle = _find_vehicle(vin)
+    except Exception:
+        return False
+    required_right = _COMMAND_RIGHTS.get(command)
+    return _vehicle_has_right(vehicle, required_right)
+
+
+async def _execute_vehicle_command(vin: str, command: str) -> dict | None:
+    """Execute a vehicle command by name. Used by Telegram bot handler.
+
+    Checks vehicle rights/abilities before executing.
+    Raises PermissionError if the command is not allowed.
+    Returns None if the command is unknown.
+    """
+    if not _client:
+        return None
+
+    # Check permissions
+    try:
+        vehicle = _find_vehicle(vin)
+    except Exception:
+        return None
+
+    required_right = _COMMAND_RIGHTS.get(command)
+    if command in _COMMAND_RIGHTS and not _vehicle_has_right(vehicle, required_right):
+        raise PermissionError(f"Command '{command}' not available for this vehicle")
+
+    command_map = {
+        "lock": _client.lock_vehicle,
+        "unlock": _client.unlock_vehicle,
+        "trunk_open": _client.open_trunk,
+        "trunk_close": _client.close_trunk,
+        "find": _client.find_vehicle,
+        "windows_open": _client.open_windows,
+        "windows_close": _client.close_windows,
+        "charging_start": _client.start_charging,
+        "charging_stop": _client.stop_charging,
+        "battery_preheat": _client.battery_preheat,
+        "battery_preheat_off": _client.battery_preheat_off,
+        "unlock_charger": _client.unlock_charger,
+        "sunroof_open": _client.open_sunroof,
+        "sunroof_close": _client.close_sunroof,
+        "defrost": _client.windshield_defrost,
+        "ac_on": _client.ac_on,
+        "ac_off": _client.ac_off,
+        "sentry_mode_on": _client.sentry_mode_on,
+        "sentry_mode_off": _client.sentry_mode_off,
+        "steering_wheel_heat_on": _client.steering_wheel_heat_on,
+        "steering_wheel_heat_off": _client.steering_wheel_heat_off,
+    }
+    fn = command_map.get(command)
+    if not fn:
+        return None
+    return await fn(vin)
+
+
 @app.get("/api/vehicles/{vin}/picture/dynamic")
 async def get_dynamic_picture(vin: str, charge_frame: int = 0) -> Response:
     """Compose a dynamic car image reflecting current vehicle status."""
@@ -1479,11 +1719,19 @@ async def get_full_vehicle_data(vin: str) -> FullVehicleDataResponse:
 
 
 @app.get("/api/vehicles/{vin}/history", response_model=VehicleHistoryResponse)
-async def get_vehicle_history(vin: str, days: int = 30) -> VehicleHistoryResponse:
+async def get_vehicle_history(
+    vin: str,
+    days: int = 30,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    max_points: int | None = None,
+) -> VehicleHistoryResponse:
     """Get historical vehicle snapshots for a given time period."""
     if not _history_repo:
         raise HTTPException(status_code=503, detail="History not available")
-    snapshots = await _history_repo.get_history(vin, days=days)
+    snapshots = await _history_repo.get_history(
+        vin, days=days, from_date=from_date, to_date=to_date, max_points=max_points
+    )
     return VehicleHistoryResponse(
         vin=vin,
         days=days,
@@ -1538,6 +1786,29 @@ async def get_vehicle_daily_summary(vin: str, days: int = 30) -> DailySummaryRes
     )
 
 
+@app.get("/api/vehicles/{vin}/events")
+async def get_vehicle_events(vin: str, days: int = 30, event_type: str | None = None):
+    """Get state-transition events for analytics and duration tracking."""
+    if not _history_repo:
+        raise HTTPException(status_code=503, detail="History not available")
+    events = await _history_repo.get_events(vin, days=days, event_type=event_type)
+    return {
+        "vin": vin,
+        "days": days,
+        "count": len(events),
+        "events": [
+            {
+                "timestamp": e.timestamp.isoformat(),
+                "event_type": e.event_type,
+                "field_name": e.field_name,
+                "old_value": e.old_value,
+                "new_value": e.new_value,
+            }
+            for e in events
+        ],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Routes — User Preferences
 # ---------------------------------------------------------------------------
@@ -1550,6 +1821,8 @@ async def get_preferences() -> PreferencesResponse:
     return PreferencesResponse(
         electricity_price_kwh=prefs.electricity_price_kwh,
         theme=prefs.theme,
+        downsampling_enabled=prefs.downsampling_enabled,
+        downsampling_max_points=prefs.downsampling_max_points,
     )
 
 
@@ -1577,10 +1850,35 @@ async def update_preferences(request: Request) -> PreferencesResponse:
                 status_code=422, detail="'theme' must be 'dark' or 'light'"
             )
         await _history_repo.save_setting("theme", theme)
+    ds_enabled = body.get("downsampling_enabled")
+    if ds_enabled is not None:
+        if not isinstance(ds_enabled, bool):
+            raise HTTPException(
+                status_code=422, detail="'downsampling_enabled' must be a boolean"
+            )
+        await _history_repo.save_setting(
+            "downsampling_enabled", str(ds_enabled).lower()
+        )
+    ds_max_points = body.get("downsampling_max_points")
+    if ds_max_points is not None:
+        try:
+            ds_max_points = int(ds_max_points)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=422, detail="'downsampling_max_points' must be an integer"
+            ) from exc
+        if ds_max_points < 100 or ds_max_points > 50000:
+            raise HTTPException(
+                status_code=422,
+                detail="'downsampling_max_points' must be between 100 and 50000",
+            )
+        await _history_repo.save_setting("downsampling_max_points", str(ds_max_points))
     prefs = await _load_preferences()
     return PreferencesResponse(
         electricity_price_kwh=prefs.electricity_price_kwh,
         theme=prefs.theme,
+        downsampling_enabled=prefs.downsampling_enabled,
+        downsampling_max_points=prefs.downsampling_max_points,
     )
 
 
@@ -1588,9 +1886,13 @@ async def _load_preferences() -> UserPreferences:
     """Load user preferences from DB, falling back to defaults."""
     raw = await _history_repo.get_setting("electricity_price_kwh")
     theme_raw = await _history_repo.get_setting("theme")
+    ds_enabled_raw = await _history_repo.get_setting("downsampling_enabled")
+    ds_max_points_raw = await _history_repo.get_setting("downsampling_max_points")
     return UserPreferences(
         electricity_price_kwh=float(raw) if raw else 0.25,
         theme=theme_raw if theme_raw in ("dark", "light") else "dark",
+        downsampling_enabled=ds_enabled_raw != "false" if ds_enabled_raw else True,
+        downsampling_max_points=int(ds_max_points_raw) if ds_max_points_raw else 2000,
     )
 
 
@@ -1618,9 +1920,16 @@ async def update_scheduler_settings(request: Request) -> SchedulerStatusResponse
     interval = body.get("interval_minutes")
     mqtt_interval = body.get("mqtt_interval_seconds")
     rate_limit = body.get("rate_limit_seconds")
+    transition_enabled = body.get("transition_detection_enabled")
+    transition_poll = body.get("transition_poll_interval_seconds")
+    transition_min_event = body.get("transition_min_event_interval_seconds")
 
     if enabled is not None and not isinstance(enabled, bool):
         raise HTTPException(status_code=422, detail="'enabled' must be a boolean")
+    if transition_enabled is not None and not isinstance(transition_enabled, bool):
+        raise HTTPException(
+            status_code=422, detail="'transition_detection_enabled' must be a boolean"
+        )
     if interval is not None:
         try:
             interval = int(interval)
@@ -1651,6 +1960,9 @@ async def update_scheduler_settings(request: Request) -> SchedulerStatusResponse
         interval_minutes=interval,
         mqtt_interval_seconds=mqtt_interval,
         rate_limit_seconds=rate_limit,
+        transition_detection_enabled=transition_enabled,
+        transition_poll_interval_seconds=transition_poll,
+        transition_min_event_interval_seconds=transition_min_event,
     )
 
     # Persist to DB
@@ -1764,6 +2076,27 @@ async def _save_mqtt_vehicle_pin(pin: str) -> None:
     await _history_repo.save_setting("mqtt_vehicle_pin", pin)
 
 
+def _set_vehicle_pin(pin: str) -> None:
+    """Temporarily set/restore the vehicle operation PIN on the sync client.
+
+    When called with a non-empty pin, saves the current PIN and sets the new one.
+    When called with empty string, restores the previously saved PIN.
+    This ensures Telegram commands don't interfere with the persisted PIN.
+    """
+    if not _sync_client:
+        return
+    if pin.strip():
+        # Save current PIN and set the temporary one
+        _set_vehicle_pin._saved = _sync_client.operation_password
+        _sync_client.operation_password = pin.strip()
+    else:
+        # Restore original PIN
+        _sync_client.operation_password = getattr(_set_vehicle_pin, "_saved", None)
+
+
+_set_vehicle_pin._saved = None
+
+
 async def _handle_mqtt_command(vin: str, command: str) -> None:
     """Handle a command received from Home Assistant via MQTT."""
     if not _client:
@@ -1778,8 +2111,65 @@ async def _handle_mqtt_command(vin: str, command: str) -> None:
             result = await _client.unlock_vehicle(vin)
         elif command == "trunk_open":
             result = await _client.open_trunk(vin)
+        elif command == "trunk_close":
+            result = await _client.close_trunk(vin)
         elif command == "find":
             result = await _client.find_vehicle(vin)
+        elif command == "windows_open":
+            result = await _client.open_windows(vin)
+        elif command == "windows_close":
+            result = await _client.close_windows(vin)
+        elif command == "charging_start":
+            result = await _client.start_charging(vin)
+        elif command == "charging_stop":
+            result = await _client.stop_charging(vin)
+        elif command == "battery_preheat":
+            result = await _client.battery_preheat(vin)
+        elif command == "battery_preheat_off":
+            result = await _client.battery_preheat_off(vin)
+        elif command == "unlock_charger":
+            result = await _client.unlock_charger(vin)
+        elif command == "sunroof_open":
+            result = await _client.open_sunroof(vin)
+        elif command == "sunroof_close":
+            result = await _client.close_sunroof(vin)
+        elif command == "on3_on":
+            result = await _client.on3_on(vin)
+        elif command == "on3_off":
+            result = await _client.on3_off(vin)
+        elif command == "ble_key_restart":
+            result = await _client.ble_key_restart(vin)
+        elif command == "hotspot":
+            result = await _client.hotspot(vin)
+        elif command == "autopark":
+            result = await _client.autopark(vin)
+        elif command == "defrost":
+            result = await _client.windshield_defrost(vin)
+        # Switch on/off commands
+        elif command == "ac_on":
+            result = await _client.ac_on(vin)
+        elif command == "ac_off":
+            result = await _client.ac_off(vin)
+        elif command == "sentry_mode_on":
+            result = await _client.sentry_mode_on(vin)
+        elif command == "sentry_mode_off":
+            result = await _client.sentry_mode_off(vin)
+        elif command == "steering_wheel_heat_on":
+            result = await _client.steering_wheel_heat_on(vin)
+        elif command == "steering_wheel_heat_off":
+            result = await _client.steering_wheel_heat_off(vin)
+        elif command == "fuel_heating_on":
+            result = await _client.fuel_heating_on(vin)
+        elif command == "fuel_heating_off":
+            result = await _client.fuel_heating_off(vin)
+        elif command == "rearview_mirror_heat_on":
+            result = await _client.rearview_mirror_heat_on(vin)
+        elif command == "rearview_mirror_heat_off":
+            result = await _client.rearview_mirror_heat_off(vin)
+        elif command == "healthy_charging_on":
+            result = await _client.healthy_charging_on(vin)
+        elif command == "healthy_charging_off":
+            result = await _client.healthy_charging_off(vin)
         else:
             _LOGGER.warning("MQTT: unknown command '%s' for %s", command, vin)
             return
@@ -1831,6 +2221,16 @@ async def _handle_mqtt_settings(key: str, value: int) -> None:
                 _LOGGER.info("Charge limit set to %d%% for %s", value, v.vin)
             except Exception as exc:
                 _LOGGER.exception("Failed to set charge limit for %s: %s", v.vin, exc)
+    elif key == "ac_temperature":
+        if not _client:
+            _LOGGER.warning("MQTT ac_temperature change ignored: no API client")
+            return
+        for v in _vehicles:
+            try:
+                await _client.ac_on(v.vin, params={"temperature": str(value)})
+                _LOGGER.info("AC temperature set to %d°C for %s", value, v.vin)
+            except Exception as exc:
+                _LOGGER.exception("Failed to set AC temp for %s: %s", v.vin, exc)
     else:
         _LOGGER.warning("MQTT: unknown setting key '%s'", key)
 
@@ -2151,7 +2551,10 @@ async def set_charge_limit(vin: str, request: Request) -> dict:
         raise HTTPException(
             status_code=422, detail="Charge limit must be between 20 and 100"
         )
-    return await client.set_charge_limit(vin, int(limit))
+    try:
+        return await client.set_charge_limit(vin, int(limit))
+    except LeapmotorApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 class ChargeScheduleRequest(BaseModel):
@@ -2716,6 +3119,365 @@ async def get_log_entries(limit: int = 200):
     return {"entries": _log_handler.get_entries(limit)}
 
 
+# ---------------------------------------------------------------------------
+# Notification Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/notifications/channels")
+async def get_notification_channels(
+    request: Request,
+) -> list[NotificationChannelResponse]:
+    """List all configured notification channels."""
+    channels = await _history_repo.get_notification_channels()
+    return [
+        NotificationChannelResponse(
+            id=ch.id,
+            channel_type=ch.channel_type,
+            config=ch.config,
+            enabled=ch.enabled,
+            created_at=ch.created_at.isoformat() if ch.created_at else None,
+        )
+        for ch in channels
+    ]
+
+
+@app.post("/api/notifications/channels")
+async def create_notification_channel(
+    request: Request, body: NotificationChannelCreate
+) -> NotificationChannelResponse:
+    """Create a new notification channel."""
+    channel = NotificationChannel(
+        channel_type=body.channel_type,
+        config=body.config,
+        enabled=body.enabled,
+    )
+    saved = await _history_repo.save_notification_channel(channel)
+    # Reload dispatcher config
+    if _notification_dispatcher:
+        await _notification_dispatcher.reload_config()
+    return NotificationChannelResponse(
+        id=saved.id,
+        channel_type=saved.channel_type,
+        config=saved.config,
+        enabled=saved.enabled,
+        created_at=saved.created_at.isoformat() if saved.created_at else None,
+    )
+
+
+@app.put("/api/notifications/channels/{channel_id}")
+async def update_notification_channel(
+    request: Request, channel_id: int, body: NotificationChannelUpdate
+) -> NotificationChannelResponse:
+    """Update a notification channel."""
+    existing = await _history_repo.get_notification_channel(channel_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    if body.config is not None:
+        existing.config = body.config
+    if body.enabled is not None:
+        existing.enabled = body.enabled
+    saved = await _history_repo.save_notification_channel(existing)
+    if _notification_dispatcher:
+        await _notification_dispatcher.reload_config()
+    return NotificationChannelResponse(
+        id=saved.id,
+        channel_type=saved.channel_type,
+        config=saved.config,
+        enabled=saved.enabled,
+        created_at=saved.created_at.isoformat() if saved.created_at else None,
+    )
+
+
+@app.delete("/api/notifications/channels/{channel_id}")
+async def delete_notification_channel(
+    request: Request, channel_id: int
+) -> StatusResponse:
+    """Delete a notification channel."""
+    deleted = await _history_repo.delete_notification_channel(channel_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    if _notification_dispatcher:
+        await _notification_dispatcher.reload_config()
+    return StatusResponse(status="ok")
+
+
+@app.post("/api/notifications/channels/{channel_id}/test")
+async def test_notification_channel(request: Request, channel_id: int) -> dict:
+    """Send a test notification via the specified channel."""
+    channel = await _history_repo.get_notification_channel(channel_id)
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    notifier = NotificationDispatcher._create_notifier(channel)
+    if not notifier:
+        raise HTTPException(status_code=400, detail="Invalid channel configuration")
+    success, message = await notifier.test_connection()
+    return {"success": success, "message": message}
+
+
+@app.post("/api/notifications/channels/{channel_id}/test-event")
+async def test_notification_event(request: Request, channel_id: int) -> dict:
+    """Send a test notification for a specific event type."""
+    if not _notification_dispatcher:
+        raise HTTPException(
+            status_code=503, detail="Notification dispatcher not available"
+        )
+    body = await request.json()
+    event_type = body.get("event_type")
+    if not event_type:
+        raise HTTPException(status_code=400, detail="event_type is required")
+    vin = body.get("vin", "")
+    success, message = await _notification_dispatcher.send_test_event(
+        channel_id, event_type, vin=vin
+    )
+    return {"success": success, "message": message}
+
+
+@app.get("/api/notifications/cooldown")
+async def get_notification_cooldown() -> dict:
+    """Get the notification cooldown duration in seconds."""
+    raw = await _history_repo.get_setting("notification_cooldown_seconds")
+    return {"cooldown_seconds": int(float(raw)) if raw else 300}
+
+
+@app.put("/api/notifications/cooldown")
+async def update_notification_cooldown(request: Request) -> dict:
+    """Set the notification cooldown duration in seconds."""
+    body = await request.json()
+    value = body.get("cooldown_seconds")
+    if value is None:
+        raise HTTPException(status_code=422, detail="'cooldown_seconds' is required")
+    try:
+        value = int(value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=422, detail="'cooldown_seconds' must be an integer"
+        ) from exc
+    if value < 0 or value > 86400:
+        raise HTTPException(
+            status_code=422, detail="'cooldown_seconds' must be between 0 and 86400"
+        )
+    await _history_repo.save_setting("notification_cooldown_seconds", str(value))
+    if _notification_dispatcher:
+        await _notification_dispatcher.reload_config()
+    return {"cooldown_seconds": value}
+
+
+# ---------------------------------------------------------------------------
+# Routes — Location Tracking
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/tracking/{vin}/start")
+async def start_tracking(request: Request, vin: str) -> dict:
+    """Start periodic location tracking for a vehicle."""
+    if not _notification_dispatcher:
+        raise HTTPException(
+            status_code=503, detail="Notification dispatcher not available"
+        )
+    body = await request.json()
+    interval = body.get("interval_seconds", 60)
+    try:
+        interval = int(interval)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=422, detail="'interval_seconds' must be an integer"
+        ) from exc
+    if interval < 10 or interval > 3600:
+        raise HTTPException(
+            status_code=422, detail="'interval_seconds' must be between 10 and 3600"
+        )
+    await _notification_dispatcher.start_tracking(vin, interval_seconds=interval)
+    return {"tracking": True, "vin": vin, "interval_seconds": interval}
+
+
+@app.post("/api/tracking/{vin}/stop")
+async def stop_tracking_post(request: Request, vin: str) -> dict:
+    """Stop location tracking for a vehicle (POST)."""
+    if not _notification_dispatcher:
+        raise HTTPException(
+            status_code=503, detail="Notification dispatcher not available"
+        )
+    stopped = await _notification_dispatcher.stop_tracking(vin)
+    return {"tracking": False, "vin": vin, "stopped": stopped}
+
+
+@app.get("/api/tracking/{vin}")
+async def get_tracking_status(vin: str) -> dict:
+    """Get tracking status for a vehicle."""
+    if not _notification_dispatcher:
+        return {"tracking": False, "vin": vin}
+    info = _notification_dispatcher.get_tracking_info(vin)
+    if info:
+        return {"tracking": True, "vin": vin, **info}
+    return {"tracking": False, "vin": vin}
+
+
+@app.get("/api/notifications/events")
+async def get_notification_events(
+    request: Request, channel_id: int | None = None
+) -> list[NotificationEventStatus]:
+    """List all available notification events with their current status."""
+
+    # Get preferences for the specified channel (or first channel)
+    prefs_map: dict[str, NotificationPreference] = {}
+    if channel_id:
+        prefs = await _history_repo.get_notification_preferences(channel_id)
+        prefs_map = {p.event_type: p for p in prefs}
+    else:
+        channels = await _history_repo.get_notification_channels()
+        if channels:
+            prefs = await _history_repo.get_notification_preferences(channels[0].id)
+            prefs_map = {p.event_type: p for p in prefs}
+
+    result = []
+    for event in EVENT_CATALOG:
+        pref = prefs_map.get(event["event_type"])
+        result.append(
+            NotificationEventStatus(
+                event_type=event["event_type"],
+                label=event["label"],
+                description=event["description"],
+                category=event["category"],
+                has_image=event.get("has_image", False),
+                configurable=event.get("configurable", False),
+                config_schema=event.get("config_schema"),
+                enabled=pref.enabled if pref else False,
+                config=pref.config if pref else None,
+            )
+        )
+    return result
+
+
+@app.put("/api/notifications/events")
+async def update_notification_events(
+    request: Request, body: NotificationPreferencesUpdate
+) -> StatusResponse:
+    """Bulk update notification preferences for a channel."""
+    channel = await _history_repo.get_notification_channel(body.channel_id)
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    prefs = [
+        NotificationPreference(
+            channel_id=body.channel_id,
+            event_type=item.event_type,
+            enabled=item.enabled,
+            config=item.config,
+        )
+        for item in body.preferences
+    ]
+    await _history_repo.save_notification_preferences(body.channel_id, prefs)
+    if _notification_dispatcher:
+        await _notification_dispatcher.reload_config()
+    return StatusResponse(status="ok")
+
+
+# -- Geofences --
+
+
+@app.get("/api/notifications/geofences")
+async def get_geofences(
+    request: Request, vin: str | None = None
+) -> list[GeofenceResponse]:
+    """List geofences, optionally filtered by VIN."""
+    geofences = await _history_repo.get_geofences(vin=vin)
+    return [
+        GeofenceResponse(
+            id=gf.id,
+            vin=gf.vin,
+            name=gf.name,
+            latitude=gf.latitude,
+            longitude=gf.longitude,
+            radius_m=gf.radius_m,
+            notify_on_enter=gf.notify_on_enter,
+            notify_on_exit=gf.notify_on_exit,
+            enabled=gf.enabled,
+        )
+        for gf in geofences
+    ]
+
+
+@app.post("/api/notifications/geofences")
+async def create_geofence(request: Request, body: GeofenceCreate) -> GeofenceResponse:
+    """Create a new geofence."""
+    gf = Geofence(
+        vin=body.vin,
+        name=body.name,
+        latitude=body.latitude,
+        longitude=body.longitude,
+        radius_m=body.radius_m,
+        notify_on_enter=body.notify_on_enter,
+        notify_on_exit=body.notify_on_exit,
+        enabled=body.enabled,
+    )
+    saved = await _history_repo.save_geofence(gf)
+    if _notification_dispatcher:
+        await _notification_dispatcher.reload_config()
+    return GeofenceResponse(
+        id=saved.id,
+        vin=saved.vin,
+        name=saved.name,
+        latitude=saved.latitude,
+        longitude=saved.longitude,
+        radius_m=saved.radius_m,
+        notify_on_enter=saved.notify_on_enter,
+        notify_on_exit=saved.notify_on_exit,
+        enabled=saved.enabled,
+    )
+
+
+@app.put("/api/notifications/geofences/{geofence_id}")
+async def update_geofence(
+    request: Request, geofence_id: int, body: GeofenceUpdate
+) -> GeofenceResponse:
+    """Update a geofence."""
+    geofences = await _history_repo.get_geofences()
+    existing = next((gf for gf in geofences if gf.id == geofence_id), None)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Geofence not found")
+    if body.name is not None:
+        existing.name = body.name
+    if body.latitude is not None:
+        existing.latitude = body.latitude
+    if body.longitude is not None:
+        existing.longitude = body.longitude
+    if body.radius_m is not None:
+        existing.radius_m = body.radius_m
+    if body.notify_on_enter is not None:
+        existing.notify_on_enter = body.notify_on_enter
+    if body.notify_on_exit is not None:
+        existing.notify_on_exit = body.notify_on_exit
+    if body.enabled is not None:
+        existing.enabled = body.enabled
+    saved = await _history_repo.save_geofence(existing)
+    if _notification_dispatcher:
+        await _notification_dispatcher.reload_config()
+    return GeofenceResponse(
+        id=saved.id,
+        vin=saved.vin,
+        name=saved.name,
+        latitude=saved.latitude,
+        longitude=saved.longitude,
+        radius_m=saved.radius_m,
+        notify_on_enter=saved.notify_on_enter,
+        notify_on_exit=saved.notify_on_exit,
+        enabled=saved.enabled,
+    )
+
+
+@app.delete("/api/notifications/geofences/{geofence_id}")
+async def delete_geofence_endpoint(
+    request: Request, geofence_id: int
+) -> StatusResponse:
+    """Delete a geofence."""
+    deleted = await _history_repo.delete_geofence(geofence_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Geofence not found")
+    if _notification_dispatcher:
+        await _notification_dispatcher.reload_config()
+    return StatusResponse(status="ok")
+
+
 @app.websocket("/ws/logs")
 async def ws_logs(websocket: WebSocket) -> None:
     """Stream live log entries to connected clients via WebSocket."""
@@ -2740,6 +3502,93 @@ async def ws_logs(websocket: WebSocket) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Telegram Users (multi-user access management)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/notifications/channels/telegram/users")
+async def get_telegram_users(
+    request: Request, status: str | None = None
+) -> list[TelegramUserResponse]:
+    """List all Telegram users, optionally filtered by status."""
+    users = await _history_repo.get_telegram_users(status=status)
+    return [
+        TelegramUserResponse(
+            id=u.id,
+            chat_id=u.chat_id,
+            username=u.username,
+            first_name=u.first_name,
+            last_name=u.last_name,
+            status=u.status,
+            created_at=u.created_at.isoformat() if u.created_at else None,
+            approved_at=u.approved_at.isoformat() if u.approved_at else None,
+        )
+        for u in users
+    ]
+
+
+@app.put("/api/notifications/channels/telegram/users/{chat_id}/approve")
+async def approve_telegram_user(request: Request, chat_id: str) -> StatusResponse:
+    """Approve a pending Telegram user."""
+    updated = await _history_repo.update_telegram_user_status(chat_id, "approved")
+    if not updated:
+        raise HTTPException(status_code=404, detail="User not found")
+    if _notification_dispatcher:
+        await _notification_dispatcher.refresh_telegram_users()
+        await _notification_dispatcher.notify_telegram_user_status(chat_id, "approved")
+    return StatusResponse(status="ok")
+
+
+@app.put("/api/notifications/channels/telegram/users/{chat_id}/reject")
+async def reject_telegram_user(request: Request, chat_id: str) -> StatusResponse:
+    """Reject a pending Telegram user."""
+    updated = await _history_repo.update_telegram_user_status(chat_id, "rejected")
+    if not updated:
+        raise HTTPException(status_code=404, detail="User not found")
+    if _notification_dispatcher:
+        await _notification_dispatcher.refresh_telegram_users()
+        await _notification_dispatcher.notify_telegram_user_status(chat_id, "rejected")
+    return StatusResponse(status="ok")
+
+
+@app.delete("/api/notifications/channels/telegram/users/{chat_id}")
+async def delete_telegram_user(request: Request, chat_id: str) -> StatusResponse:
+    """Remove a Telegram user entirely."""
+    deleted = await _history_repo.delete_telegram_user(chat_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="User not found")
+    if _notification_dispatcher:
+        await _notification_dispatcher.refresh_telegram_users()
+    return StatusResponse(status="ok")
+
+
+@app.post("/api/notifications/channels/telegram/link-token")
+async def create_telegram_link_token(request: Request) -> TelegramLinkTokenResponse:
+    """Generate a deep-link token for Telegram account linking."""
+    token = await _history_repo.create_link_token()
+    # Get bot username for the link
+    bot_username = None
+    if _notification_dispatcher:
+        notifier = _notification_dispatcher.get_telegram_notifier()
+        if notifier:
+            bot_username = await notifier.get_bot_username()
+    if not bot_username:
+        raise HTTPException(
+            status_code=503,
+            detail="Bot username not available. Ensure Telegram bot is configured.",
+        )
+    from datetime import UTC, datetime, timedelta
+
+    expires_at = datetime.now(UTC) + timedelta(minutes=10)
+    link = f"https://t.me/{bot_username}?start={token}"
+    return TelegramLinkTokenResponse(
+        token=token,
+        link=link,
+        expires_at=expires_at.isoformat(),
+    )
+
+
+# ---------------------------------------------------------------------------
 # SPA Fallback — must be last
 # ---------------------------------------------------------------------------
 
@@ -2758,7 +3607,44 @@ if FRONTEND_DIST.is_dir():
 # Entry point
 # ---------------------------------------------------------------------------
 
+
+def _cli_reset_password(new_password: str) -> None:
+    """Reset the LeapConnect user password from the command line."""
+    import asyncio as _asyncio
+
+    if len(new_password) < 4:
+        print("Error: Password must be at least 4 characters")
+        raise SystemExit(1)
+
+    db_path = os.environ.get(
+        "HISTORY_DB_PATH", str(Path(__file__).parent / "history.db")
+    )
+    db_url = f"sqlite+aiosqlite:///{db_path}"
+
+    async def _reset():
+        repo = SQLAlchemyVehicleHistoryRepository(db_url)
+        await repo.init_db()
+        user = await repo.get_user()
+        if not user:
+            print("Error: No user account found. Nothing to reset.")
+            return False
+        await repo.update_user(password=new_password)
+        print(f"Password reset successfully for user '{user['display_name']}'.")
+        return True
+
+    success = _asyncio.run(_reset())
+    raise SystemExit(0 if success else 1)
+
+
 if __name__ == "__main__":
+    import sys
+
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8099)
+    if len(sys.argv) >= 2 and sys.argv[1] == "--reset-password":
+        if len(sys.argv) < 3:
+            print("Usage: python main.py --reset-password <new_password>")
+            raise SystemExit(1)
+        _cli_reset_password(sys.argv[2])
+    else:
+        uvicorn.run(app, host="0.0.0.0", port=8099)

@@ -92,6 +92,13 @@
                     {{ store.abrpStatus.is_running ? 'Running' : store.abrpStatus.enabled ? 'Stopped' : 'Disabled' }}
                   </span>
                 </div>
+                <div class="svc-row">
+                  <span class="svc-dot" :class="store.notificationStatus.enabled ? 'on' : 'off'" />
+                  <span class="svc-label">Notifications</span>
+                  <span class="svc-value" :class="store.notificationStatus.enabled ? 'on' : ''">
+                    {{ store.notificationStatus.enabled ? store.notificationStatus.channel : 'Disabled' }}
+                  </span>
+                </div>
               </div>
               <div class="user-menu-divider" />
               <!-- Cloud action -->
@@ -238,7 +245,7 @@ import MessagesTab from './views/MessagesTab.vue'
 import SettingsTab from './views/SettingsTab.vue'
 import ToastContainer from './components/ToastContainer.vue'
 import MessageDropdown from './components/MessageDropdown.vue'
-import { LayoutDashboard, List, TrendingUp, Mail, Settings, RefreshCw, LogOut, Cloud, CloudOff, Sun, Moon, PanelTop, PanelTopClose } from 'lucide-vue-next'
+import { LayoutDashboard, List, TrendingUp, Mail, Settings, RefreshCw, LogOut, Cloud, CloudOff, Sun, Moon, PanelTop, PanelTopClose, Bell } from 'lucide-vue-next'
 
 const store = useAppStore()
 const { toast } = useToast()
@@ -348,6 +355,7 @@ function toggleUserMenu() {
     store.loadMqttStatus()
     store.loadLiveRefreshStatus()
     store.loadAbrpStatus()
+    store.loadNotificationStatus()
   }
 }
 
@@ -403,6 +411,7 @@ onMounted(async () => {
     store.loadMqttStatus()
     store.loadLiveRefreshStatus()
     store.loadAbrpStatus()
+    store.loadNotificationStatus()
     unreadInterval = setInterval(() => store.loadUnreadCount(), 60000)
   }
   // Tick data age every 10s

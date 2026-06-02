@@ -61,6 +61,8 @@ class UserPreferences:
 
     electricity_price_kwh: float = 0.25
     theme: str = "dark"
+    downsampling_enabled: bool = True
+    downsampling_max_points: int = 2000
 
 
 @dataclass
@@ -71,6 +73,10 @@ class SchedulerSettings:
     interval_minutes: int = DEFAULT_INTERVAL_MINUTES
     mqtt_interval_seconds: int = 60
     rate_limit_seconds: int = 10
+    # Transition detection settings
+    transition_detection_enabled: bool = True
+    transition_poll_interval_seconds: int = 10
+    transition_min_event_interval_seconds: int = 10
 
 
 @dataclass
@@ -100,3 +106,92 @@ class AbrpSettings:
 
     enabled: bool = False
     user_token: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class VehicleEvent:
+    """A single state-transition event detected for a vehicle."""
+
+    vin: str
+    timestamp: datetime
+    event_type: str  # e.g. "regen_start", "regen_stop", "charge_start"
+    field_name: str  # e.g. "is_regening", "battery_soc"
+    old_value: str | None = None
+    new_value: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Notifications
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class NotificationChannel:
+    """A configured notification channel (e.g. Telegram bot)."""
+
+    id: int | None = None
+    channel_type: str = "telegram"  # "telegram", "email", "webhook", ...
+    config: dict = None  # type: ignore[assignment]
+    enabled: bool = True
+    created_at: datetime | None = None
+
+    def __post_init__(self):
+        if self.config is None:
+            self.config = {}
+
+
+@dataclass
+class NotificationPreference:
+    """Per-event notification preference for a channel."""
+
+    id: int | None = None
+    channel_id: int = 0
+    event_type: str = ""
+    enabled: bool = True
+    config: dict | None = None  # thresholds, timeouts, etc.
+
+
+@dataclass
+class Geofence:
+    """A geographic zone for enter/exit notifications."""
+
+    id: int | None = None
+    vin: str | None = None  # None = applies to all vehicles
+    name: str = ""
+    latitude: float = 0.0
+    longitude: float = 0.0
+    radius_m: float = 200.0
+    notify_on_enter: bool = True
+    notify_on_exit: bool = True
+    enabled: bool = True
+
+
+# ---------------------------------------------------------------------------
+# Telegram Users
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class TelegramUser:
+    """A Telegram user that has interacted with the bot."""
+
+    id: int | None = None
+    chat_id: str = ""
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    status: str = "pending"  # pending, approved, rejected
+    linked_token: str | None = None
+    created_at: datetime | None = None
+    approved_at: datetime | None = None
+
+
+@dataclass
+class TelegramLinkToken:
+    """A temporary token for Telegram deep-link authentication."""
+
+    id: int | None = None
+    token: str = ""
+    created_at: datetime | None = None
+    expires_at: datetime | None = None
+    used: bool = False
