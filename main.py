@@ -73,6 +73,8 @@ from schemas import (
     SetPinResponse,
     SetupStatusResponse,
     StatusResponse,
+    TelegramLinkTokenResponse,
+    TelegramUserResponse,
     UnreadCountResponse,
     UserCreateResponse,
     UserInfoResponse,
@@ -3500,6 +3502,93 @@ async def ws_logs(websocket: WebSocket) -> None:
     finally:
         _log_handler.unregister_ws(websocket)
         _LOGGER.info("Log viewer WebSocket disconnected")
+
+
+# ---------------------------------------------------------------------------
+# Telegram Users (multi-user access management)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/notifications/channels/telegram/users")
+async def get_telegram_users(
+    request: Request, status: str | None = None
+) -> list[TelegramUserResponse]:
+    """List all Telegram users, optionally filtered by status."""
+    users = await _history_repo.get_telegram_users(status=status)
+    return [
+        TelegramUserResponse(
+            id=u.id,
+            chat_id=u.chat_id,
+            username=u.username,
+            first_name=u.first_name,
+            last_name=u.last_name,
+            status=u.status,
+            created_at=u.created_at.isoformat() if u.created_at else None,
+            approved_at=u.approved_at.isoformat() if u.approved_at else None,
+        )
+        for u in users
+    ]
+
+
+@app.put("/api/notifications/channels/telegram/users/{chat_id}/approve")
+async def approve_telegram_user(request: Request, chat_id: str) -> StatusResponse:
+    """Approve a pending Telegram user."""
+    updated = await _history_repo.update_telegram_user_status(chat_id, "approved")
+    if not updated:
+        raise HTTPException(status_code=404, detail="User not found")
+    if _notification_dispatcher:
+        await _notification_dispatcher.refresh_telegram_users()
+        await _notification_dispatcher.notify_telegram_user_status(chat_id, "approved")
+    return StatusResponse(status="ok")
+
+
+@app.put("/api/notifications/channels/telegram/users/{chat_id}/reject")
+async def reject_telegram_user(request: Request, chat_id: str) -> StatusResponse:
+    """Reject a pending Telegram user."""
+    updated = await _history_repo.update_telegram_user_status(chat_id, "rejected")
+    if not updated:
+        raise HTTPException(status_code=404, detail="User not found")
+    if _notification_dispatcher:
+        await _notification_dispatcher.refresh_telegram_users()
+        await _notification_dispatcher.notify_telegram_user_status(chat_id, "rejected")
+    return StatusResponse(status="ok")
+
+
+@app.delete("/api/notifications/channels/telegram/users/{chat_id}")
+async def delete_telegram_user(request: Request, chat_id: str) -> StatusResponse:
+    """Remove a Telegram user entirely."""
+    deleted = await _history_repo.delete_telegram_user(chat_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="User not found")
+    if _notification_dispatcher:
+        await _notification_dispatcher.refresh_telegram_users()
+    return StatusResponse(status="ok")
+
+
+@app.post("/api/notifications/channels/telegram/link-token")
+async def create_telegram_link_token(request: Request) -> TelegramLinkTokenResponse:
+    """Generate a deep-link token for Telegram account linking."""
+    token = await _history_repo.create_link_token()
+    # Get bot username for the link
+    bot_username = None
+    if _notification_dispatcher:
+        notifier = _notification_dispatcher.get_telegram_notifier()
+        if notifier:
+            bot_username = await notifier.get_bot_username()
+    if not bot_username:
+        raise HTTPException(
+            status_code=503,
+            detail="Bot username not available. Ensure Telegram bot is configured.",
+        )
+    from datetime import UTC, datetime, timedelta
+
+    expires_at = datetime.now(UTC) + timedelta(minutes=10)
+    link = f"https://t.me/{bot_username}?start={token}"
+    return TelegramLinkTokenResponse(
+        token=token,
+        link=link,
+        expires_at=expires_at.isoformat(),
+    )
 
 
 # ---------------------------------------------------------------------------

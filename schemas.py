@@ -919,3 +919,25 @@ class GeofenceResponse(BaseModel):
     notify_on_enter: bool
     notify_on_exit: bool
     enabled: bool
+
+
+# ---------------------------------------------------------------------------
+# Telegram Users
+# ---------------------------------------------------------------------------
+
+
+class TelegramUserResponse(BaseModel):
+    id: int | None = None
+    chat_id: str
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    status: str
+    created_at: str | None = None
+    approved_at: str | None = None
+
+
+class TelegramLinkTokenResponse(BaseModel):
+    token: str
+    link: str
+    expires_at: str

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-06-02
+
+### Added
+- **Telegram Bot: multi-user access management** — the bot now supports multiple users with an approval workflow:
+  - **Dashboard Web Approval**: users send `/start` to the bot and appear as "pending" in the Settings > Services > Telegram section; the admin approves or rejects from the web UI
+  - **Deep Linking via Token**: the web UI generates a one-time `t.me/Bot?start=TOKEN` link (valid 10 minutes); the user clicks it and is auto-approved without manual intervention
+  - **Admin inline notifications**: when a new user sends `/start`, all approved users receive an inline keyboard notification with ✅ Approve / ❌ Reject buttons directly in Telegram
+  - **Status change notifications**: approved/rejected users receive a Telegram message; all admins are also notified of the outcome (with user name and username)
+- **Telegram Users management UI** — new "Linked Users" section in the Telegram Bot card:
+  - User list with status badges (pending/approved/rejected), username, and action buttons
+  - Generate deep-link token with copy-to-clipboard functionality
+  - Approve / Reject / Remove buttons per user
+  - Auto-polling every 5 seconds for real-time updates
+- **Database migration 0006**: added `telegram_users` and `telegram_link_tokens` tables for multi-user state persistence
+- **New API endpoints**:
+  - `GET /api/notifications/channels/telegram/users` — list Telegram users (optional `?status=` filter)
+  - `PUT /api/notifications/channels/telegram/users/{chat_id}/approve` — approve a pending user
+  - `PUT /api/notifications/channels/telegram/users/{chat_id}/reject` — reject a pending user
+  - `DELETE /api/notifications/channels/telegram/users/{chat_id}` — remove a user
+  - `POST /api/notifications/channels/telegram/link-token` — generate a deep-link token
+
+### Changed
+- **Telegram notifier: multi-user dispatch** — notifications are now sent to all approved users instead of a single configured `chat_id`
+- **Bot silence for unapproved users** — the bot no longer responds to messages from users who haven't been approved, preventing information leakage
+- **User profile auto-update** — approved users' username, first name, and last name are kept in sync from their Telegram messages
+
+### Removed
+- **Auto-seed of configured chat_id** — the first user is no longer auto-approved; all users must go through the approval flow (deep link or web approval)
+
 ## [0.8.1] - 2026-06-01
 
 ### Added

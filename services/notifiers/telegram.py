@@ -6,10 +6,12 @@ import asyncio
 import contextlib
 import json
 import logging
+from datetime import UTC, datetime
 from io import BytesIO
 
 import httpx
 
+from models import TelegramUser
 from services.telegram_bot import BOT_COMMANDS, TelegramBotHandler
 from services.telegram_config import TelegramConfig
 
@@ -32,6 +34,38 @@ class TelegramNotifier(BaseNotifier):
         ] = {}  # callback_data_prefix -> dispatcher ref
         self._last_update_id: int = 0
         self._bot_handler: TelegramBotHandler | None = None
+        # Multi-user auth: set of approved chat IDs
+        self._approved_chat_ids: set[str] = set()
+        # Per-user bot handlers (keyed by chat_id)
+        self._bot_handlers: dict[str, TelegramBotHandler] = {}
+        self._repository = None  # Set via set_repository()
+        self._bot_username: str | None = None  # Resolved via getMe
+
+    def set_repository(self, repository) -> None:
+        """Set the persistence repository for telegram user management."""
+        self._repository = repository
+
+    async def refresh_approved_ids(self) -> None:
+        """Reload approved chat IDs from the database."""
+        if not self._repository:
+            self._approved_chat_ids = set()
+            return
+        self._approved_chat_ids = await self._repository.get_approved_chat_ids()
+
+    async def get_bot_username(self) -> str | None:
+        """Get the bot username via getMe API (cached)."""
+        if self._bot_username:
+            return self._bot_username
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(f"{self._base_url}/getMe")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    self._bot_username = data.get("result", {}).get("username")
+                    return self._bot_username
+        except Exception as exc:
+            _LOGGER.debug("getMe error: %s", exc)
+        return None
 
     async def send(self, notification: Notification) -> bool:
         """Send a text message with HTML formatting."""
@@ -184,6 +218,8 @@ class TelegramNotifier(BaseNotifier):
         if self._callback_handler and not self._callback_handler.done():
             return
         self._callback_listeners["stop_tracking:"] = dispatcher
+        # Store dispatcher reference for creating per-user bot handlers
+        self._dispatcher = dispatcher
         # Set up bot command handler only if bot is enabled
         if self._config.bot_enabled:
             vehicle_cache = getattr(dispatcher, "_vehicle_cache", None)
@@ -211,6 +247,8 @@ class TelegramNotifier(BaseNotifier):
         """Long-poll Telegram for all relevant updates (callbacks + bot commands)."""
         _LOGGER.info("Telegram update polling started")
         await self._set_bot_commands()
+        await self.refresh_approved_ids()
+        await self.get_bot_username()
         try:
             while True:
                 try:
@@ -236,24 +274,37 @@ class TelegramNotifier(BaseNotifier):
                             # Handle callback queries (inline buttons)
                             cq = update.get("callback_query")
                             if cq:
-                                await self._handle_callback_query(
-                                    client, cq, dispatcher
+                                cq_chat_id = str(
+                                    cq.get("message", {}).get("chat", {}).get("id", "")
                                 )
+                                if cq_chat_id in self._approved_chat_ids:
+                                    await self._handle_callback_query(
+                                        client, cq, dispatcher
+                                    )
                                 continue
 
                             # Handle text messages (bot commands)
                             msg = update.get("message")
                             if msg and msg.get("text"):
                                 chat_id = str(msg.get("chat", {}).get("id", ""))
-                                if chat_id == self._chat_id:
+                                if chat_id in self._approved_chat_ids:
+                                    # Update user profile info on each message
+                                    await self._update_user_info(msg)
                                     text = msg["text"]
                                     if text.startswith("/"):
-                                        await self._handle_bot_command(client, msg)
+                                        await self._handle_bot_command(
+                                            client, msg, chat_id
+                                        )
                                     elif (
                                         self._bot_handler
                                         and self._bot_handler.awaiting_pin
                                     ):
-                                        await self._handle_pin_message(client, msg)
+                                        await self._handle_pin_message(
+                                            client, msg, chat_id
+                                        )
+                                else:
+                                    # Unapproved user — handle /start or reject
+                                    await self._handle_new_user(client, msg)
 
                 except httpx.TimeoutException:
                     continue
@@ -270,6 +321,7 @@ class TelegramNotifier(BaseNotifier):
     async def _handle_callback_query(self, client, cq, dispatcher) -> None:
         """Process an inline keyboard callback."""
         cb_data = cq.get("data", "")
+        chat_id = str(cq.get("message", {}).get("chat", {}).get("id", ""))
         if cb_data.startswith("stop_tracking:"):
             vin = cb_data.split(":", 1)[1]
             stopped = await dispatcher.stop_tracking(vin)
@@ -310,7 +362,7 @@ class TelegramNotifier(BaseNotifier):
                     await client.post(
                         f"{self._base_url}/sendMessage",
                         json={
-                            "chat_id": self._chat_id,
+                            "chat_id": chat_id or self._chat_id,
                             "text": text,
                             "parse_mode": "HTML",
                         },
@@ -324,17 +376,20 @@ class TelegramNotifier(BaseNotifier):
                 await client.post(
                     f"{self._base_url}/sendMessage",
                     json={
-                        "chat_id": self._chat_id,
+                        "chat_id": chat_id or self._chat_id,
                         "text": response,
                         "parse_mode": "HTML",
                         "disable_web_page_preview": True,
                     },
                 )
             await self.answer_callback_query(cq["id"])
+        elif cb_data.startswith("tguser:"):
+            # Approve/reject user from Telegram inline button
+            await self._handle_user_action_callback(client, cq, cb_data)
         else:
             await self.answer_callback_query(cq["id"], "⚠️ Unknown action")
 
-    async def _handle_bot_command(self, client, msg) -> None:
+    async def _handle_bot_command(self, client, msg, chat_id: str) -> None:
         """Process a bot command message."""
         if not self._bot_handler:
             return
@@ -353,7 +408,7 @@ class TelegramNotifier(BaseNotifier):
                 await client.post(
                     f"{self._base_url}/sendLocation",
                     json={
-                        "chat_id": self._chat_id,
+                        "chat_id": chat_id,
                         "latitude": lat,
                         "longitude": lon,
                     },
@@ -362,7 +417,7 @@ class TelegramNotifier(BaseNotifier):
 
         # For /notifications, include inline keyboard
         payload = {
-            "chat_id": self._chat_id,
+            "chat_id": chat_id,
             "text": response,
             "parse_mode": "HTML",
             "disable_web_page_preview": True,
@@ -373,9 +428,8 @@ class TelegramNotifier(BaseNotifier):
 
         await client.post(f"{self._base_url}/sendMessage", json=payload)
 
-    async def _handle_pin_message(self, client, msg) -> None:
+    async def _handle_pin_message(self, client, msg, chat_id: str) -> None:
         """Process a PIN input message: delete it, set PIN, execute pending command."""
-        chat_id = msg["chat"]["id"]
         message_id = msg["message_id"]
         pin_text = msg.get("text", "").strip()
 
@@ -395,10 +449,269 @@ class TelegramNotifier(BaseNotifier):
             await client.post(
                 f"{self._base_url}/sendMessage",
                 json={
-                    "chat_id": self._chat_id,
+                    "chat_id": chat_id,
                     "text": response,
                     "parse_mode": "HTML",
                     "disable_web_page_preview": True,
+                },
+            )
+
+    async def _handle_new_user(self, client, msg) -> None:
+        """Handle a message from an unapproved user (deep-link or plain /start)."""
+        chat_id = str(msg.get("chat", {}).get("id", ""))
+        text = msg.get("text", "").strip()
+        chat = msg.get("chat", {})
+        username = chat.get("username")
+        first_name = chat.get("first_name")
+        last_name = chat.get("last_name")
+        # Also check from field for user details
+        from_user = msg.get("from", {})
+        username = username or from_user.get("username")
+        first_name = first_name or from_user.get("first_name")
+        last_name = last_name or from_user.get("last_name")
+
+        if not self._repository:
+            return  # Silent — system not ready
+
+        # Handle /start with deep-link token (must be checked FIRST)
+        if text.startswith("/start "):
+            token = text[7:].strip()
+            if token:
+                valid = await self._repository.validate_link_token(token)
+                if valid:
+                    # Auto-approve user
+                    user = TelegramUser(
+                        chat_id=chat_id,
+                        username=username,
+                        first_name=first_name,
+                        last_name=last_name,
+                        status="approved",
+                        linked_token=token,
+                        created_at=datetime.now(UTC),
+                        approved_at=datetime.now(UTC),
+                    )
+                    await self._repository.save_telegram_user(user)
+                    self._approved_chat_ids.add(chat_id)
+                    await self._send_text(
+                        client,
+                        chat_id,
+                        "✅ <b>Account linked successfully!</b>\n\n"
+                        "You can now use all bot commands.\n"
+                        "Type /commands to see what's available.",
+                    )
+                    _LOGGER.info(
+                        "Telegram user auto-approved via deep link: %s (@%s)",
+                        chat_id,
+                        username or "no-username",
+                    )
+                    # Notify all existing admins about the new user
+                    await self._notify_admins_user_joined(client, user)
+                    return
+                # Invalid/expired token — stay silent
+                return
+
+        # For any other message: bot is completely silent for unapproved users
+        # But save new users as pending (only on first /start)
+        existing = await self._repository.get_telegram_user_by_chat_id(chat_id)
+        if existing:
+            # Already known (pending or rejected) — stay silent
+            return
+
+        # New user: save as pending, notify admin, stay silent to user
+        if not text.startswith("/start"):
+            # Only register on /start, ignore random messages
+            return
+
+        user = TelegramUser(
+            chat_id=chat_id,
+            username=username,
+            first_name=first_name,
+            last_name=last_name,
+            status="pending",
+            created_at=datetime.now(UTC),
+        )
+        await self._repository.save_telegram_user(user)
+        _LOGGER.info(
+            "New Telegram user pending approval: %s (@%s)",
+            chat_id,
+            username or "no-username",
+        )
+        # Notify admin with approve/reject buttons
+        await self._notify_admin_new_request(client, user)
+
+    async def _notify_admin_new_request(self, client, user: TelegramUser) -> None:
+        """Notify admin about a new pending access request with inline buttons."""
+        display = user.username and f"@{user.username}" or ""
+        name_parts = [p for p in [user.first_name, user.last_name] if p]
+        name = " ".join(name_parts) if name_parts else "Unknown"
+        text = (
+            "🔔 <b>New Telegram access request</b>\n\n"
+            f"👤 {name}"
+            + (f" ({display})" if display else "")
+            + f"\n🆔 Chat ID: <code>{user.chat_id}</code>"
+        )
+        keyboard = {
+            "inline_keyboard": [
+                [
+                    {
+                        "text": "✅ Approve",
+                        "callback_data": f"tguser:approve:{user.chat_id}",
+                    },
+                    {
+                        "text": "❌ Reject",
+                        "callback_data": f"tguser:reject:{user.chat_id}",
+                    },
+                ]
+            ]
+        }
+        for admin_chat_id in self._approved_chat_ids:
+            with contextlib.suppress(Exception):
+                await client.post(
+                    f"{self._base_url}/sendMessage",
+                    json={
+                        "chat_id": admin_chat_id,
+                        "text": text,
+                        "parse_mode": "HTML",
+                        "reply_markup": json.dumps(keyboard),
+                    },
+                )
+
+    async def _notify_admins_user_joined(self, client, user: TelegramUser) -> None:
+        """Notify all approved users that a new user joined via deep link."""
+        display = user.username and f"@{user.username}" or ""
+        name_parts = [p for p in [user.first_name, user.last_name] if p]
+        name = " ".join(name_parts) if name_parts else "Unknown"
+        text = (
+            "🔗 <b>New user joined via link</b>\n\n"
+            f"👤 {name}"
+            + (f" ({display})" if display else "")
+            + f"\n🆔 Chat ID: <code>{user.chat_id}</code>\n"
+            "✅ Auto-approved"
+        )
+        for admin_chat_id in self._approved_chat_ids:
+            if admin_chat_id == user.chat_id:
+                continue  # Don't notify the user themselves
+            with contextlib.suppress(Exception):
+                await client.post(
+                    f"{self._base_url}/sendMessage",
+                    json={
+                        "chat_id": admin_chat_id,
+                        "text": text,
+                        "parse_mode": "HTML",
+                    },
+                )
+
+    async def _update_user_info(self, msg) -> None:
+        """Update an approved user's profile info from their latest message."""
+        if not self._repository:
+            return
+        chat_id = str(msg.get("chat", {}).get("id", ""))
+        from_user = msg.get("from", {})
+        username = from_user.get("username")
+        first_name = from_user.get("first_name")
+        last_name = from_user.get("last_name")
+        if not username and not first_name:
+            return
+        existing = await self._repository.get_telegram_user_by_chat_id(chat_id)
+        if not existing or existing.status != "approved":
+            return
+        # Update only if info changed
+        changed = False
+        if username and existing.username != username:
+            existing.username = username
+            changed = True
+        if first_name and existing.first_name != first_name:
+            existing.first_name = first_name
+            changed = True
+        if last_name is not None and existing.last_name != last_name:
+            existing.last_name = last_name
+            changed = True
+        if changed:
+            await self._repository.save_telegram_user(existing)
+
+    async def _handle_user_action_callback(self, client, cq, cb_data: str) -> None:
+        """Handle approve/reject inline button for a pending user."""
+        parts = cb_data.split(":")
+        if len(parts) != 3:
+            await self.answer_callback_query(cq["id"], "⚠️ Invalid action")
+            return
+        action = parts[1]  # approve or reject
+        target_chat_id = parts[2]
+
+        if not self._repository:
+            await self.answer_callback_query(cq["id"], "⚠️ System not ready")
+            return
+
+        if action == "approve":
+            updated = await self._repository.update_telegram_user_status(
+                target_chat_id, "approved"
+            )
+            if updated:
+                self._approved_chat_ids.add(target_chat_id)
+                await self.answer_callback_query(cq["id"], "✅ User approved")
+                # Notify the approved user
+                await self._notify_user_status_change(
+                    client, target_chat_id, "approved"
+                )
+            else:
+                await self.answer_callback_query(cq["id"], "⚠️ User not found")
+        elif action == "reject":
+            updated = await self._repository.update_telegram_user_status(
+                target_chat_id, "rejected"
+            )
+            if updated:
+                self._approved_chat_ids.discard(target_chat_id)
+                await self.answer_callback_query(cq["id"], "❌ User rejected")
+                await self._notify_user_status_change(
+                    client, target_chat_id, "rejected"
+                )
+            else:
+                await self.answer_callback_query(cq["id"], "⚠️ User not found")
+        else:
+            await self.answer_callback_query(cq["id"], "⚠️ Unknown action")
+            return
+
+        # Update the admin message to remove buttons
+        msg = cq.get("message")
+        if msg:
+            status_text = "✅ Approved" if action == "approve" else "❌ Rejected"
+            original_text = msg.get("text", "")
+            new_text = f"{original_text}\n\n<b>→ {status_text}</b>"
+            with contextlib.suppress(Exception):
+                await client.post(
+                    f"{self._base_url}/editMessageText",
+                    json={
+                        "chat_id": msg["chat"]["id"],
+                        "message_id": msg["message_id"],
+                        "text": new_text,
+                        "parse_mode": "HTML",
+                        "reply_markup": {"inline_keyboard": []},
+                    },
+                )
+
+    async def _notify_user_status_change(
+        self, client, chat_id: str, status: str
+    ) -> None:
+        """Notify a user that their access request status changed."""
+        if status == "approved":
+            text = (
+                "✅ <b>Access approved!</b>\n\n"
+                "You can now use all bot commands.\n"
+                "Type /commands to see what's available."
+            )
+        else:
+            text = "🚫 Your access request has been declined."
+        await self._send_text(client, chat_id, text)
+
+    async def _send_text(self, client, chat_id: str, text: str) -> None:
+        """Send a simple text message to a chat."""
+        with contextlib.suppress(Exception):
+            await client.post(
+                f"{self._base_url}/sendMessage",
+                json={
+                    "chat_id": chat_id,
+                    "text": text,
+                    "parse_mode": "HTML",
                 },
             )
 

@@ -515,6 +515,88 @@
             {{ telegramBotActive ? 'Disable' : 'Enable' }}
           </button>
         </div>
+
+        <div class="form-divider" style="margin-top:16px">Linked Users</div>
+        <p class="rate-limit-hint" style="margin-bottom:8px">
+          Manage who can interact with the bot. Generate a link for instant access, or approve pending requests.
+        </p>
+
+        <!-- Generate link button -->
+        <div class="channel-actions" style="margin-bottom:12px">
+          <button
+            class="service-btn btn-start"
+            :disabled="!telegramChannel || linkTokenLoading"
+            @click="generateLinkToken"
+            style="display:inline-flex;align-items:center;gap:4px"
+          >
+            <Link2 :size="13" style="flex-shrink:0" />
+            {{ linkTokenLoading ? 'Generating…' : 'Generate Link' }}
+          </button>
+        </div>
+
+        <!-- Generated link display -->
+        <div v-if="linkTokenData" class="link-token-card">
+          <div class="link-token-url">
+            <input type="text" :value="linkTokenData.link" readonly class="link-input" />
+            <button class="secret-toggle-btn" @click="copyLink" title="Copy link">
+              <component :is="linkCopied ? Check : Copy" :size="14" />
+            </button>
+          </div>
+          <p class="rate-limit-hint" style="margin-top:4px">
+            Expires at {{ new Date(linkTokenData.expires_at).toLocaleTimeString() }}. Single use only.
+          </p>
+        </div>
+
+        <!-- Users list -->
+        <div v-if="telegramUsers.length" class="telegram-users-list">
+          <div
+            v-for="user in telegramUsers"
+            :key="user.chat_id"
+            class="telegram-user-row"
+          >
+            <div class="telegram-user-info">
+              <span class="telegram-user-name">
+                {{ user.first_name || '' }} {{ user.last_name || '' }}
+                <span v-if="user.username" class="telegram-user-handle">@{{ user.username }}</span>
+              </span>
+              <span class="telegram-user-status" :class="'status-' + user.status">
+                {{ user.status }}
+              </span>
+            </div>
+            <div class="telegram-user-actions">
+              <button
+                v-if="user.status === 'pending'"
+                class="service-btn btn-start btn-sm"
+                @click="approveTelegramUser(user.chat_id)"
+              >Approve</button>
+              <button
+                v-if="user.status === 'pending'"
+                class="service-btn btn-stop btn-sm"
+                @click="rejectTelegramUser(user.chat_id)"
+              >Reject</button>
+              <button
+                v-if="user.status !== 'pending'"
+                class="service-btn btn-stop btn-sm"
+                @click="removeTelegramUser(user.chat_id)"
+              >Remove</button>
+            </div>
+          </div>
+        </div>
+        <p v-else-if="telegramChannel" class="rate-limit-hint" style="margin-top:8px;opacity:0.6">
+          No linked users yet. Generate a link or wait for /start requests.
+        </p>
+
+        <ConfirmDialog
+          :visible="showRemoveConfirm"
+          title="Remove user"
+          message="This user will lose access to the bot and will need to be re-approved."
+          confirm-label="Remove"
+          cancel-label="Cancel"
+          variant="danger"
+          icon="trash"
+          @confirm="confirmRemoveUser"
+          @cancel="cancelRemoveUser"
+        />
       </SectionCard>
     </template>
 
@@ -1036,12 +1118,13 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, nextTick } 
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import SectionCard from '../components/SectionCard.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 import InfoRow from '../components/InfoRow.vue'
 import ToggleSwitch from '../components/ToggleSwitch.vue'
 import LogViewer from '../components/LogViewer.vue'
 import { api } from '../composables/useApi'
 import { useAppStore } from '../stores/appStore'
-import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity, Eye, EyeOff, Send, ChevronDown, ChevronRight, Search, MapPin, Locate, Zap, CarFront, Lock, X, Trash2 } from 'lucide-vue-next'
+import { User, Car, Bell, SlidersHorizontal, BarChart3, Code, KeyRound, ShieldCheck, Wifi, Wrench, Settings, Github, Info, Star, AlertTriangle, ExternalLink, Moon, Sun, RefreshCw, Terminal, Navigation, Activity, Eye, EyeOff, Send, ChevronDown, ChevronRight, Search, MapPin, Locate, Zap, CarFront, Lock, X, Trash2, Link2, Copy, Check } from 'lucide-vue-next'
 
 const store = useAppStore()
 
@@ -1688,6 +1771,16 @@ const newGeofence = reactive({ name: '', latitude: null, longitude: null, radius
 const geolocating = ref(false)
 const botToggling = ref(false)
 const geofenceMapEl = ref(null)
+
+// Telegram linked users
+const telegramUsers = ref([])
+const linkTokenData = ref(null)
+const linkTokenLoading = ref(false)
+const linkCopied = ref(false)
+let telegramUsersPollingInterval = null
+// Confirm dialog for remove
+const showRemoveConfirm = ref(false)
+const removeTargetChatId = ref(null)
 let geofenceMap = null
 let geofenceMapLayers = []
 let newGeofenceMarker = null
@@ -1829,6 +1922,12 @@ watch(() => activeSection.value, (val) => {
     geofenceMap = null
     nextTick(() => initGeofenceMap())
   }
+  // Start/stop telegram users polling when on services tab
+  if (val === 'services') {
+    startTelegramUsersPolling()
+  } else {
+    stopTelegramUsersPolling()
+  }
 })
 
 function getEventConfigValue(evt, paramKey, defaultVal) {
@@ -1861,6 +1960,8 @@ async function loadNotifications() {
     cooldownSeconds.value = cd.cooldown_seconds ?? 300
     // Load tracking status
     await loadTrackingStatus()
+    // Load telegram linked users
+    await loadTelegramUsers()
   } catch (e) {
     notifError.value = e.message || 'Failed to load notifications'
   }
@@ -1936,6 +2037,80 @@ async function testTelegram() {
   } finally {
     notifTesting.value = false
   }
+}
+
+// -- Telegram Linked Users --
+
+async function loadTelegramUsers() {
+  try {
+    telegramUsers.value = await api('GET', '/api/notifications/channels/telegram/users')
+  } catch (e) {
+    // Silently ignore if endpoint not available
+  }
+}
+
+async function generateLinkToken() {
+  linkTokenLoading.value = true
+  linkTokenData.value = null
+  linkCopied.value = false
+  try {
+    linkTokenData.value = await api('POST', '/api/notifications/channels/telegram/link-token')
+  } catch (e) {
+    notifError.value = e.message || 'Failed to generate link'
+  } finally {
+    linkTokenLoading.value = false
+  }
+}
+
+async function copyLink() {
+  if (!linkTokenData.value) return
+  try {
+    await navigator.clipboard.writeText(linkTokenData.value.link)
+    linkCopied.value = true
+    setTimeout(() => { linkCopied.value = false }, 2000)
+  } catch (e) {
+    // Fallback: select input
+  }
+}
+
+async function approveTelegramUser(chatId) {
+  try {
+    await api('PUT', `/api/notifications/channels/telegram/users/${chatId}/approve`)
+    await loadTelegramUsers()
+  } catch (e) {
+    notifError.value = e.message || 'Approve failed'
+  }
+}
+
+async function rejectTelegramUser(chatId) {
+  try {
+    await api('PUT', `/api/notifications/channels/telegram/users/${chatId}/reject`)
+    await loadTelegramUsers()
+  } catch (e) {
+    notifError.value = e.message || 'Reject failed'
+  }
+}
+
+async function removeTelegramUser(chatId) {
+  removeTargetChatId.value = chatId
+  showRemoveConfirm.value = true
+}
+
+async function confirmRemoveUser() {
+  const chatId = removeTargetChatId.value
+  showRemoveConfirm.value = false
+  removeTargetChatId.value = null
+  try {
+    await api('DELETE', `/api/notifications/channels/telegram/users/${chatId}`)
+    await loadTelegramUsers()
+  } catch (e) {
+    notifError.value = e.message || 'Remove failed'
+  }
+}
+
+function cancelRemoveUser() {
+  showRemoveConfirm.value = false
+  removeTargetChatId.value = null
 }
 
 function toggleEvent(evt, enabled) {
@@ -2115,7 +2290,20 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stopTrackingPoll()
+  stopTelegramUsersPolling()
 })
+
+function startTelegramUsersPolling() {
+  stopTelegramUsersPolling()
+  telegramUsersPollingInterval = setInterval(loadTelegramUsers, 5000)
+}
+
+function stopTelegramUsersPolling() {
+  if (telegramUsersPollingInterval) {
+    clearInterval(telegramUsersPollingInterval)
+    telegramUsersPollingInterval = null
+  }
+}
 </script>
 
 <style scoped>
@@ -3087,5 +3275,85 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 4px;
   cursor: pointer;
+}
+
+/* Telegram Linked Users */
+.link-token-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.link-token-url {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.link-input {
+  flex: 1;
+  font-size: 12px;
+  font-family: monospace;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  color: var(--text-primary);
+}
+.telegram-users-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.telegram-user-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.telegram-user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.telegram-user-name {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.telegram-user-handle {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+.telegram-user-status {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.telegram-user-status.status-pending {
+  background: rgba(255, 152, 0, 0.15);
+  color: #ff9800;
+}
+.telegram-user-status.status-approved {
+  background: rgba(76, 175, 80, 0.15);
+  color: #4caf50;
+}
+.telegram-user-status.status-rejected {
+  background: rgba(244, 67, 54, 0.15);
+  color: #f44336;
+}
+.telegram-user-actions {
+  display: flex;
+  gap: 4px;
+}
+.btn-sm {
+  font-size: 11px !important;
+  padding: 3px 8px !important;
 }
 </style>

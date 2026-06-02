@@ -27,6 +27,7 @@ from models import (
     NotificationChannel,
     NotificationPreference,
     SchedulerSettings,
+    TelegramUser,
     VehicleEvent,
     VehicleSnapshot,
 )
@@ -159,6 +160,34 @@ class GeofenceRow(Base):
     notify_on_enter = Column(Boolean, nullable=False, default=True)
     notify_on_exit = Column(Boolean, nullable=False, default=True)
     enabled = Column(Boolean, nullable=False, default=True)
+
+
+class TelegramUserRow(Base):
+    """A Telegram user that has interacted with the bot."""
+
+    __tablename__ = "telegram_users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    chat_id = Column(String(64), nullable=False, unique=True)
+    username = Column(String(256), nullable=True)
+    first_name = Column(String(256), nullable=True)
+    last_name = Column(String(256), nullable=True)
+    status = Column(String(16), nullable=False, default="pending")
+    linked_token = Column(String(64), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    approved_at = Column(DateTime, nullable=True)
+
+
+class TelegramLinkTokenRow(Base):
+    """A temporary token for Telegram deep-link authentication."""
+
+    __tablename__ = "telegram_link_tokens"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    token = Column(String(64), nullable=False, unique=True)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, nullable=False, default=False)
 
 
 # ---------------------------------------------------------------------------
@@ -928,5 +957,153 @@ class SQLAlchemyVehicleHistoryRepository(VehicleHistoryRepository):
             if not row:
                 return False
             await session.delete(row)
+            await session.commit()
+            return True
+
+    # -- telegram users ------------------------------------------------------
+
+    async def get_telegram_users(self, status: str | None = None) -> list[TelegramUser]:
+        """Return all telegram users, optionally filtered by status."""
+        async with self._session_factory() as session:
+            stmt = select(TelegramUserRow)
+            if status:
+                stmt = stmt.where(TelegramUserRow.status == status)
+            stmt = stmt.order_by(TelegramUserRow.created_at.desc())
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+            return [
+                TelegramUser(
+                    id=r.id,
+                    chat_id=r.chat_id,
+                    username=r.username,
+                    first_name=r.first_name,
+                    last_name=r.last_name,
+                    status=r.status,
+                    linked_token=r.linked_token,
+                    created_at=r.created_at,
+                    approved_at=r.approved_at,
+                )
+                for r in rows
+            ]
+
+    async def get_telegram_user_by_chat_id(self, chat_id: str) -> TelegramUser | None:
+        """Return a single telegram user by chat_id, or None."""
+        async with self._session_factory() as session:
+            stmt = select(TelegramUserRow).where(TelegramUserRow.chat_id == chat_id)
+            result = await session.execute(stmt)
+            r = result.scalar_one_or_none()
+            if not r:
+                return None
+            return TelegramUser(
+                id=r.id,
+                chat_id=r.chat_id,
+                username=r.username,
+                first_name=r.first_name,
+                last_name=r.last_name,
+                status=r.status,
+                linked_token=r.linked_token,
+                created_at=r.created_at,
+                approved_at=r.approved_at,
+            )
+
+    async def save_telegram_user(self, user: TelegramUser) -> TelegramUser:
+        """Create or update a telegram user."""
+        async with self._session_factory() as session:
+            # Check if user already exists
+            stmt = select(TelegramUserRow).where(
+                TelegramUserRow.chat_id == user.chat_id
+            )
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
+            if row:
+                row.username = user.username
+                row.first_name = user.first_name
+                row.last_name = user.last_name
+                row.status = user.status
+                row.linked_token = user.linked_token
+                row.approved_at = user.approved_at
+            else:
+                row = TelegramUserRow(
+                    chat_id=user.chat_id,
+                    username=user.username,
+                    first_name=user.first_name,
+                    last_name=user.last_name,
+                    status=user.status,
+                    linked_token=user.linked_token,
+                    created_at=user.created_at or datetime.now(UTC),
+                    approved_at=user.approved_at,
+                )
+                session.add(row)
+            await session.commit()
+            user.id = row.id
+            return user
+
+    async def update_telegram_user_status(self, chat_id: str, status: str) -> bool:
+        """Update status of a telegram user. Returns False if not found."""
+        async with self._session_factory() as session:
+            stmt = select(TelegramUserRow).where(TelegramUserRow.chat_id == chat_id)
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
+            if not row:
+                return False
+            row.status = status
+            if status == "approved":
+                row.approved_at = datetime.now(UTC)
+            await session.commit()
+            return True
+
+    async def delete_telegram_user(self, chat_id: str) -> bool:
+        """Remove a telegram user entirely."""
+        async with self._session_factory() as session:
+            stmt = select(TelegramUserRow).where(TelegramUserRow.chat_id == chat_id)
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
+            if not row:
+                return False
+            await session.delete(row)
+            await session.commit()
+            return True
+
+    async def get_approved_chat_ids(self) -> set[str]:
+        """Return the set of all approved Telegram chat IDs."""
+        async with self._session_factory() as session:
+            stmt = select(TelegramUserRow.chat_id).where(
+                TelegramUserRow.status == "approved"
+            )
+            result = await session.execute(stmt)
+            return {r[0] for r in result.all()}
+
+    # -- telegram link tokens ------------------------------------------------
+
+    async def create_link_token(self, expires_minutes: int = 10) -> str:
+        """Generate a new deep-link token. Returns the token string."""
+        token = secrets.token_urlsafe(24)
+        now = datetime.utcnow()
+        row = TelegramLinkTokenRow(
+            token=token,
+            created_at=now,
+            expires_at=now + timedelta(minutes=expires_minutes),
+            used=False,
+        )
+        async with self._session_factory() as session:
+            session.add(row)
+            await session.commit()
+        return token
+
+    async def validate_link_token(self, token: str) -> bool:
+        """Validate and consume a token. Returns True if valid."""
+        async with self._session_factory() as session:
+            stmt = select(TelegramLinkTokenRow).where(
+                TelegramLinkTokenRow.token == token
+            )
+            result = await session.execute(stmt)
+            row = result.scalar_one_or_none()
+            if not row:
+                return False
+            if row.used:
+                return False
+            if row.expires_at < datetime.utcnow():
+                return False
+            row.used = True
             await session.commit()
             return True
