@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-06-01
+
 ### Added
 - **Telegram Bot: mute/unmute commands** — `/mute` (permanent), `/mute N` (for N minutes), `/unmute` to control notification delivery directly from the chat
 - **Telegram Bot: notification settings menu** — `/notifications` command opens an interactive inline keyboard with:
