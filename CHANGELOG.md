@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-06-02
+
 ### Added
 - **Login: show/hide password toggle** — the login page now includes an eye icon to reveal the password, helping users verify input of complex passwords with special characters
 - **CLI: password reset command** — locked-out users can reset their LeapConnect password from CLI command (see [README.md](README.md#password-reset) for details)
