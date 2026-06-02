@@ -3610,7 +3610,44 @@ if FRONTEND_DIST.is_dir():
 # Entry point
 # ---------------------------------------------------------------------------
 
+
+def _cli_reset_password(new_password: str) -> None:
+    """Reset the LeapConnect user password from the command line."""
+    import asyncio as _asyncio
+
+    if len(new_password) < 4:
+        print("Error: Password must be at least 4 characters")
+        raise SystemExit(1)
+
+    db_path = os.environ.get(
+        "HISTORY_DB_PATH", str(Path(__file__).parent / "history.db")
+    )
+    db_url = f"sqlite+aiosqlite:///{db_path}"
+
+    async def _reset():
+        repo = SQLAlchemyVehicleHistoryRepository(db_url)
+        await repo.init_db()
+        user = await repo.get_user()
+        if not user:
+            print("Error: No user account found. Nothing to reset.")
+            return False
+        await repo.update_user(password=new_password)
+        print(f"Password reset successfully for user '{user['display_name']}'.")
+        return True
+
+    success = _asyncio.run(_reset())
+    raise SystemExit(0 if success else 1)
+
+
 if __name__ == "__main__":
+    import sys
+
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8099)
+    if len(sys.argv) >= 2 and sys.argv[1] == "--reset-password":
+        if len(sys.argv) < 3:
+            print("Usage: python main.py --reset-password <new_password>")
+            raise SystemExit(1)
+        _cli_reset_password(sys.argv[2])
+    else:
+        uvicorn.run(app, host="0.0.0.0", port=8099)

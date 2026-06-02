@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.8.2] - 2026-06-02
-
 ### Added
+- **Login: show/hide password toggle** — the login page now includes an eye icon to reveal the password, helping users verify input of complex passwords with special characters
+- **CLI: password reset command** — locked-out users can reset their LeapConnect password from CLI command (see [README.md](README.md#password-reset) for details)
 - **Telegram Bot: multi-user access management** — the bot now supports multiple users with an approval workflow:
   - **Dashboard Web Approval**: users send `/start` to the bot and appear as "pending" in the Settings > Services > Telegram section; the admin approves or rejects from the web UI
   - **Deep Linking via Token**: the web UI generates a one-time `t.me/Bot?start=TOKEN` link (valid 10 minutes); the user clicks it and is auto-approved without manual intervention

@@ -197,6 +197,22 @@ You will need:
 - **Email & Password**: Your Leapmotor account credentials
 - **Vehicle PIN** (optional): Required for remote control actions (lock, unlock, climate, etc.)
 
+## Password Reset
+
+If you are locked out of your **LeapConnect local account** (the app login password, not your Leapmotor cloud credentials), you can reset it from the command line:
+
+```bash
+# Direct
+python main.py --reset-password "new_password"
+
+# Docker
+docker compose exec app uv run python main.py --reset-password "new_password"
+```
+
+> **Note:** Quote the password to prevent shell interpretation of special characters (`$`, `&`, `!`, etc.).
+>
+> This does **not** affect your Leapmotor cloud account password — only the local LeapConnect application login.
+
 ## Disclaimer
 
 **This is NOT an official Leapmotor product.**
